@@ -1,0 +1,288 @@
+'use client'
+
+import { useMemo, useState, useEffect } from 'react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Calendar,
+  TrendingUp,
+  Users,
+  Clock,
+  ArrowRight,
+  CalendarDays,
+  DollarSign,
+  Crown,
+  MapPin,
+  Lock,
+} from 'lucide-react'
+import Link from 'next/link'
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+} from 'recharts'
+import { UpgradeModal, FREE_LIMITS } from '@/components/upgrade-modal'
+import { OnboardingBanner } from '@/components/dashboard/onboarding-banner'
+import { useBusinesses } from '@/hooks/use-businesses'
+import { useAuth } from '@/hooks/use-auth'
+import { createClient } from '@/lib/supabase/client'
+
+export default function DashboardPage() {
+  const { user, profile, loading: authLoading } = useAuth()
+  const { businesses, loading: businessesLoading } = useBusinesses()
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [todayReservations, setTodayReservations] = useState<any[]>([])
+  const [servicesCount, setServicesCount] = useState(0)
+  const [clientsCount, setClientsCount] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const supabase = createClient()
+
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      if (!businesses || businesses.length === 0) {
+        setLoading(false)
+        return
+      }
+
+      try {
+        const businessId = businesses[0].id
+        const todayStr = new Date().toISOString().split('T')[0]
+
+        // Fetch today's reservations
+        const { data: reservationsData } = await supabase
+          .from('reservations')
+          .select('*')
+          .eq('business_id', businessId)
+          .gte('start_time', `${todayStr}T00:00:00`)
+          .lt('start_time', `${todayStr}T23:59:59`)
+          .neq('status', 'cancelled')
+          .order('start_time', { ascending: true })
+
+        if (reservationsData) {
+          setTodayReservations(reservationsData)
+        }
+
+        // Fetch services count
+        const { count: servicesTotal } = await supabase
+          .from('services')
+          .select('*', { count: 'exact', head: true })
+          .eq('business_id', businessId)
+
+        setServicesCount(servicesTotal || 0)
+
+        // Fetch clients count
+        const { count: clientsTotal } = await supabase
+          .from('clients')
+          .select('*', { count: 'exact', head: true })
+          .eq('business_id', businessId)
+
+        setClientsCount(clientsTotal || 0)
+      } catch (err) {
+        console.error('[v0] Error fetching dashboard data:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchDashboardData()
+  }, [businesses])
+
+  if (authLoading || businessesLoading || loading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    )
+  }
+
+  if (!user) {
+    return (
+      <div className="text-center">
+        <p className="text-muted-foreground">Cargando...</p>
+      </div>
+    )
+  }
+
+  const isPremium = profile?.plan === 'premium'
+  const displayName = profile?.full_name?.split(' ')[0] || user.email?.split('@')[0] || 'Usuario'
+  const displayEmail = profile?.email || user.email || ''
+  const currentBusiness = businesses?.[0]
+
+  return (
+    <div className="space-y-4 pb-20 sm:space-y-6 lg:pb-6">
+      {/* Header */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-foreground sm:text-2xl">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">
+            Bienvenido, {displayName}
+          </p>
+        </div>
+        <Button asChild size="sm" className="w-full sm:w-auto">
+          <Link href="/dashboard/calendar">
+            <Calendar className="mr-2 h-4 w-4" />
+            Ver Calendario
+          </Link>
+        </Button>
+      </div>
+
+      {/* Onboarding Banner */}
+      <OnboardingBanner
+        hasBusiness={!!currentBusiness}
+        hasServices={servicesCount > 0}
+        hasClients={clientsCount > 0}
+        hasReservations={todayReservations.length > 0}
+      />
+
+      {/* Free Plan Usage Banner */}
+      {!isPremium && (
+        <Card className="border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50">
+          <CardContent className="py-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3 sm:items-center">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100">
+                  <Crown className="h-5 w-5 text-amber-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-amber-900">Plan Gratuito</p>
+                  <p className="text-xs text-amber-700">
+                    {todayReservations.length} reservas hoy
+                  </p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                className="gap-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600"
+                onClick={() => setShowUpgradeModal(true)}
+              >
+                <Crown className="h-4 w-4" />
+                Actualizar
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Stats Grid */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Reservas Hoy</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold">{todayReservations.length}</div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Citas programadas para hoy
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Negocio</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="font-semibold text-foreground">
+              {currentBusiness?.name || 'Sin configurar'}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {currentBusiness?.timezone || 'Zona horaria'}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Plan</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-2">
+              <Badge variant={isPremium ? 'default' : 'secondary'}>
+                {isPremium ? 'Premium' : 'Gratuito'}
+              </Badge>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {isPremium ? 'Todas las funciones' : 'Acceso básico'}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Usuario</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-sm font-medium">{displayEmail}</div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Cuenta activa
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Calendar className="h-5 w-5" />
+              Nueva Reserva
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-4 text-sm text-muted-foreground">
+              Crea una nueva cita para tu cliente
+            </p>
+            <Button asChild className="w-full" size="sm">
+              <Link href="/dashboard/calendar">Ir al Calendario</Link>
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Users className="h-5 w-5" />
+              Clientes
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-4 text-sm text-muted-foreground">
+              Gestiona tu lista de clientes
+            </p>
+            <Button asChild className="w-full" size="sm" variant="outline">
+              <Link href="/dashboard/clients">Ver Clientes</Link>
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Clock className="h-5 w-5" />
+              Servicios
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-4 text-sm text-muted-foreground">
+              Configura tus servicios
+            </p>
+            <Button asChild className="w-full" size="sm" variant="outline">
+              <Link href="/dashboard/services">Ver Servicios</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Upgrade Modal */}
+      <UpgradeModal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} />
+    </div>
+  )
+}
