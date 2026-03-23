@@ -11,14 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ChevronLeft, ChevronRight, User, Clock, MapPin } from 'lucide-react'
-import {
-  reservations,
-  resources,
-  getServiceById,
-  getClientById,
-  getResourceById,
-} from '@/lib/mock-data'
-import type { Reservation, CalendarView, Resource } from '@/lib/types'
+import type { CalendarView } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 interface CalendarViewProps {
@@ -145,6 +138,7 @@ export function CalendarViewComponent({ view, onSelectReservation, onViewChange,
           date={currentDate}
           onSelectReservation={onSelectReservation}
           selectedResourceId={selectedResourceId}
+          reservations={reservations}
         />
       )}
       {view === 'week' && (
@@ -152,6 +146,7 @@ export function CalendarViewComponent({ view, onSelectReservation, onViewChange,
           date={currentDate}
           onSelectReservation={onSelectReservation}
           onDayClick={handleDayClick}
+          reservations={reservations}
         />
       )}
       {view === 'month' && (
@@ -159,6 +154,7 @@ export function CalendarViewComponent({ view, onSelectReservation, onViewChange,
           date={currentDate}
           onSelectReservation={onSelectReservation}
           onDayClick={handleDayClick}
+          reservations={reservations}
         />
       )}
     </div>
@@ -170,153 +166,60 @@ function DayViewByResource({
   date,
   onSelectReservation,
   selectedResourceId,
+  reservations,
 }: {
   date: Date
-  onSelectReservation: (reservation: Reservation) => void
+  onSelectReservation: (reservation: any) => void
   selectedResourceId: string
+  reservations: any[]
 }) {
   const dateStr = date.toISOString().split('T')[0]
-  const activeResources = resources.filter((r) => r.isActive)
+  const activeResources: any[] = []
   
   // Filter resources based on selection
   const displayResources = selectedResourceId === 'all' 
     ? activeResources 
-    : activeResources.filter(r => r.id === selectedResourceId)
+    : activeResources.filter((r: any) => r.id === selectedResourceId)
 
   const dayReservations = reservations.filter(
-    (r) => r.date === dateStr && r.status !== 'cancelled'
+    (r) => r.start_time.split('T')[0] === dateStr && r.status !== 'cancelled'
   )
 
-  // Group reservations by resource
-  const reservationsByResource = useMemo(() => {
-    const grouped: Record<string, Reservation[]> = {}
-    displayResources.forEach((resource) => {
-      grouped[resource.id] = dayReservations.filter(
-        (r) => r.resourceId === resource.id
-      )
-    })
-    // Also include reservations without a resource assigned
-    grouped['unassigned'] = dayReservations.filter((r) => !r.resourceId)
-    return grouped
-  }, [dayReservations, displayResources])
-
-  const getResourceIcon = (type: Resource['type']) => {
-    switch (type) {
-      case 'room':
-        return <MapPin className="h-3 w-3" />
-      case 'person':
-        return <User className="h-3 w-3" />
-      default:
-        return null
-    }
-  }
-
-  const getResourceColor = (index: number) => {
-    const colors = [
-      'bg-blue-50 border-blue-200',
-      'bg-emerald-50 border-emerald-200',
-      'bg-amber-50 border-amber-200',
-      'bg-rose-50 border-rose-200',
-    ]
-    return colors[index % colors.length]
-  }
-
+  // Show simplified day view for now (resources feature not fully implemented)
   return (
-    <div className="rounded-lg border bg-card overflow-x-auto">
-      <div
-        className="grid min-w-[600px]"
-        style={{ gridTemplateColumns: `80px repeat(${displayResources.length}, 1fr)` }}
-      >
-        {/* Header row with resource names */}
-        <div className="border-b border-r bg-muted/30 p-2" />
-        {displayResources.map((resource, index) => (
-          <div
-            key={resource.id}
-            className={cn(
-              'border-b border-r p-3 text-center',
-              getResourceColor(index)
-            )}
-          >
-            <div className="flex items-center justify-center gap-1.5">
-              {getResourceIcon(resource.type)}
-              <span className="text-sm font-medium truncate">{resource.name}</span>
-            </div>
-            <p className="text-xs text-muted-foreground mt-0.5 capitalize">
-              {resource.type === 'room' ? 'Sala' : resource.type === 'person' ? 'Personal' : 'Equipo'}
-            </p>
+    <div className="rounded-lg border bg-card p-6">
+      <div className="space-y-3">
+        {dayReservations.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <CalendarDays className="mb-3 h-8 w-8 text-muted-foreground/50" />
+            <p className="text-muted-foreground">No hay reservas para este día</p>
           </div>
-        ))}
-
-        {/* Time slots */}
-        {HOURS.map((hour) => (
-          <div key={hour} className="contents">
-            <div className="flex h-20 items-start justify-end border-b border-r px-2 pt-1 text-xs text-muted-foreground">
-              {hour}:00
-            </div>
-            {displayResources.map((resource, resourceIndex) => {
-              const hourReservations = reservationsByResource[resource.id]?.filter(
-                (r) => {
-                  const startHour = parseInt(r.startTime.split(':')[0])
-                  return startHour === hour
-                }
-              ) || []
-
-              return (
-                <div
-                  key={`${resource.id}-${hour}`}
-                  className={cn(
-                    'relative h-20 border-b border-r p-0.5',
-                    resourceIndex % 2 === 1 && 'bg-muted/10'
-                  )}
-                >
-                  {hourReservations.map((reservation) => {
-                    const service = getServiceById(reservation.serviceId)
-                    const client = getClientById(reservation.clientId)
-                    const startMin = parseInt(reservation.startTime.split(':')[1])
-                    const endHour = parseInt(reservation.endTime.split(':')[0])
-                    const endMin = parseInt(reservation.endTime.split(':')[1])
-                    
-                    const top = (startMin / 60) * 80
-                    const duration = ((endHour - hour) * 60 + (endMin - startMin))
-                    const height = (duration / 60) * 80
-
-                    return (
-                      <button
-                        key={reservation.id}
-                        type="button"
-                        className="absolute left-0.5 right-0.5 cursor-pointer rounded-md p-2 text-left transition-all hover:shadow-md hover:scale-[1.02] active:scale-[0.98]"
-                        style={{
-                          top: `${top}px`,
-                          height: `${Math.max(height, 32)}px`,
-                          backgroundColor: service?.color || '#3B82F6',
-                        }}
-                        onClick={() => onSelectReservation(reservation)}
-                      >
-                        <div className="flex items-start gap-1">
-                          <div
-                            className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-white/30"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-xs font-medium text-white">
-                              {client?.name}
-                            </p>
-                            <p className="truncate text-[10px] text-white/80">
-                              {service?.name}
-                            </p>
-                            <p className="text-[10px] text-white/70 flex items-center gap-0.5">
-                              <Clock className="h-2.5 w-2.5" />
-                              {reservation.startTime}
-                            </p>
-                          </div>
-                        </div>
-                      </button>
-                    )
-                  })}
+        ) : (
+          dayReservations.map((reservation) => (
+            <button
+              key={reservation.id}
+              type="button"
+              className="w-full rounded-lg border p-4 text-left transition-colors hover:bg-muted/50"
+              onClick={() => onSelectReservation(reservation)}
+            >
+              <div className="flex items-start gap-3">
+                <div className="mt-1 h-full w-1 rounded-full bg-primary" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold">Reserva: {reservation.id}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(reservation.start_time).toLocaleTimeString('es-ES', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </p>
+                  <p className="text-xs text-muted-foreground capitalize mt-1">
+                    Estado: {reservation.status}
+                  </p>
                 </div>
-              )
-            })}
-          </div>
-        ))}
+              </div>
+            </button>
+          ))
+        )}
       </div>
     </div>
   )
@@ -326,10 +229,12 @@ function WeekView({
   date,
   onSelectReservation,
   onDayClick,
+  reservations,
 }: {
   date: Date
-  onSelectReservation: (reservation: Reservation) => void
+  onSelectReservation: (reservation: any) => void
   onDayClick: (date: Date) => void
+  reservations: any[]
 }) {
   const weekDays = useMemo(() => {
     const days = []
@@ -360,7 +265,7 @@ function WeekView({
           const dateStr = d.toISOString().split('T')[0]
           const isToday = dateStr === today
           const dayReservations = reservations.filter(
-            (r) => r.date === dateStr && r.status !== 'cancelled'
+            (r) => r.start_time.split('T')[0] === dateStr && r.status !== 'cancelled'
           )
           return (
             <button
@@ -392,56 +297,7 @@ function WeekView({
           )
         })}
 
-        {/* Time slots */}
-        {HOURS.map((hour) => (
-          <div key={`time-row-${hour}`} className="contents">
-            <div
-              className="flex h-14 items-start justify-end border-b border-r px-1 pt-1 text-[10px] text-muted-foreground sm:px-2 sm:text-xs"
-            >
-              {hour}:00
-            </div>
-            {weekDays.map((d) => {
-              const dateStr = d.toISOString().split('T')[0]
-              const hourReservations = reservations.filter((r) => {
-                if (r.date !== dateStr || r.status === 'cancelled') return false
-                const startHour = parseInt(r.startTime.split(':')[0])
-                return startHour === hour
-              })
 
-              return (
-                <div
-                  key={`${dateStr}-${hour}`}
-                  className="relative h-14 border-b border-r p-0.5"
-                >
-                  {hourReservations.map((reservation) => {
-                    const service = getServiceById(reservation.serviceId)
-                    const client = getClientById(reservation.clientId)
-                    const resource = getResourceById(reservation.resourceId || '')
-                    return (
-                      <button
-                        key={reservation.id}
-                        type="button"
-                        className="w-full cursor-pointer rounded p-1 text-left text-[10px] transition-opacity hover:opacity-80 sm:text-xs"
-                        style={{
-                          backgroundColor: service?.color || '#3B82F6',
-                        }}
-                        onClick={() => onSelectReservation(reservation)}
-                      >
-                        <p className="truncate font-medium text-white">
-                          {reservation.startTime}
-                        </p>
-                        <p className="truncate text-white/80 hidden sm:block">{client?.name}</p>
-                        {resource && (
-                          <p className="truncate text-white/60 hidden md:block">{resource.name}</p>
-                        )}
-                      </button>
-                    )
-                  })}
-                </div>
-              )
-            })}
-          </div>
-        ))}
       </div>
     </div>
   )
@@ -451,10 +307,12 @@ function MonthView({
   date,
   onSelectReservation,
   onDayClick,
+  reservations,
 }: {
   date: Date
-  onSelectReservation: (reservation: Reservation) => void
+  onSelectReservation: (reservation: any) => void
   onDayClick: (date: Date) => void
+  reservations: any[]
 }) {
   const monthDays = useMemo(() => {
     const year = date.getFullYear()
@@ -510,7 +368,7 @@ function MonthView({
           const dateStr = d.toISOString().split('T')[0]
           const isToday = dateStr === today
           const dayReservations = reservations.filter(
-            (r) => r.date === dateStr && r.status !== 'cancelled'
+            (r) => r.start_time.split('T')[0] === dateStr && r.status !== 'cancelled'
           )
 
           return (
@@ -535,19 +393,19 @@ function MonthView({
               </div>
               <div className="space-y-0.5">
                 {dayReservations.slice(0, 2).map((reservation) => {
-                  const service = getServiceById(reservation.serviceId)
-                  const resource = getResourceById(reservation.resourceId || '')
                   return (
                     <div
                       key={reservation.id}
-                      className="w-full truncate rounded px-1 py-0.5 text-left text-[10px] text-white sm:text-xs"
-                      style={{
-                        backgroundColor: service?.color || '#3B82F6',
-                      }}
+                      className="w-full truncate rounded px-1 py-0.5 text-left text-[10px] text-white sm:text-xs bg-primary"
                     >
-                      <span className="sm:hidden">{reservation.startTime.slice(0, 2)}h</span>
+                      <span className="sm:hidden">
+                        {new Date(reservation.start_time).getHours()}h
+                      </span>
                       <span className="hidden sm:inline">
-                        {reservation.startTime} {resource?.name ? `- ${resource.name.slice(0, 8)}` : ''}
+                        {new Date(reservation.start_time).toLocaleTimeString('es-ES', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
                       </span>
                     </div>
                   )

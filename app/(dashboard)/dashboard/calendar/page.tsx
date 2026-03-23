@@ -236,7 +236,6 @@ export default function CalendarPage() {
       </div>
 
       {/* Reservation Modal */}
-      
       <ReservationModal
         isOpen={isModalOpen}
         onClose={handleCloseModal}
