@@ -23,18 +23,19 @@ import { cn } from '@/lib/utils'
 
 interface CalendarViewProps {
   view: CalendarView
-  onSelectReservation: (reservation: Reservation) => void
+  onSelectReservation: (reservation: any) => void
   onViewChange?: (view: CalendarView) => void
+  reservations: any[]
 }
 
 const HOURS = Array.from({ length: 12 }, (_, i) => i + 8) // 8:00 to 19:00
 
-export function CalendarViewComponent({ view, onSelectReservation, onViewChange }: CalendarViewProps) {
+export function CalendarViewComponent({ view, onSelectReservation, onViewChange, reservations }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedResourceId, setSelectedResourceId] = useState<string>('all')
   const [selectedDayFromMonth, setSelectedDayFromMonth] = useState<Date | null>(null)
 
-  const activeResources = resources.filter((r) => r.isActive)
+  const activeResources: any[] = []
 
   const navigatePrev = () => {
     const newDate = new Date(currentDate)

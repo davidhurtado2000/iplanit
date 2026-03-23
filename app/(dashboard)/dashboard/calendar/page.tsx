@@ -174,6 +174,7 @@ export default function CalendarPage() {
           view={view}
           onSelectReservation={handleSelectReservation}
           onViewChange={setView}
+          reservations={reservations}
         />
 
         {/* Sidebar - Today's Schedule */}
@@ -235,6 +236,7 @@ export default function CalendarPage() {
       </div>
 
       {/* Reservation Modal */}
+      
       <ReservationModal
         isOpen={isModalOpen}
         onClose={handleCloseModal}
