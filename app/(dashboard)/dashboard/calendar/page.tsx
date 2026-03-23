@@ -177,38 +177,7 @@ export default function CalendarPage() {
         />
 
         {/* Sidebar - Today's Schedule & Legend */}
-        <div className="order-first space-y-4 lg:order-last">
-          {/* Resources Legend - Important for understanding the calendar */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Recursos / Consultorios</CardTitle>
-            </CardHeader>
-            <CardContent className="pb-3">
-              <div className="space-y-1.5">
-                {resources.filter((r) => r.isActive).map((resource, index) => {
-                  const colors = [
-                    'bg-blue-100 border-blue-300',
-                    'bg-emerald-100 border-emerald-300',
-                    'bg-amber-100 border-amber-300',
-                    'bg-rose-100 border-rose-300',
-                  ]
-                  return (
-                    <div key={resource.id} className="flex items-center gap-2">
-                      <div className={`h-3 w-6 rounded border ${colors[index % colors.length]}`} />
-                      <div className="flex items-center gap-1.5 text-sm">
-                        {resource.type === 'room' ? (
-                          <MapPin className="h-3 w-3 text-muted-foreground" />
-                        ) : (
-                          <User className="h-3 w-3 text-muted-foreground" />
-                        )}
-                        <span className="truncate">{resource.name}</span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </CardContent>
-          </Card>
+
 
           {/* Today's Schedule */}
           <Card>
