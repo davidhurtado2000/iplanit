@@ -235,13 +235,33 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {/* Reservation Modal */}
       <ReservationModal
         isOpen={isModalOpen}
         onClose={handleCloseModal}
         reservation={selectedReservation}
         selectedDate={today}
         mode={modalMode}
+        onSave={() => {
+          // Refetch reservations after save
+          const fetchReservations = async () => {
+            if (!currentBusiness) return
+            try {
+              const { data, error } = await supabase
+                .from('reservations')
+                .select('*')
+                .eq('business_id', currentBusiness.id)
+                .order('start_time', { ascending: true })
+
+              if (error) throw error
+              if (data) {
+                setReservations(data)
+              }
+            } catch (err) {
+              console.error('[v0] Error fetching reservations:', err)
+            }
+          }
+          fetchReservations()
+        }}
       />
     </div>
   )
