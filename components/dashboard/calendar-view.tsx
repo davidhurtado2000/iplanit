@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ChevronLeft, ChevronRight, User, Clock, MapPin } from 'lucide-react'
+import { ChevronLeft, ChevronRight, User, Clock, MapPin, CalendarDays } from 'lucide-react'
 import type { CalendarView } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
