@@ -269,7 +269,7 @@ export function ReservationModal({
               <Button onClick={() => setIsEditing(true)} disabled={isLoading}>Editar</Button>
             </DialogFooter>
           </div>
-        ) : (
+        ) : isEditing || mode === 'create' ? (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="client">Cliente</Label>
