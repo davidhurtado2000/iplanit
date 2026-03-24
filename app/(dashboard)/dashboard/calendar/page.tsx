@@ -174,42 +174,11 @@ export default function CalendarPage() {
           view={view}
           onSelectReservation={handleSelectReservation}
           onViewChange={setView}
+          reservations={reservations}
         />
 
-        {/* Sidebar - Today's Schedule & Legend */}
+        {/* Sidebar - Today's Schedule */}
         <div className="order-first space-y-4 lg:order-last">
-          {/* Resources Legend - Important for understanding the calendar */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Recursos / Consultorios</CardTitle>
-            </CardHeader>
-            <CardContent className="pb-3">
-              <div className="space-y-1.5">
-                {resources.filter((r) => r.isActive).map((resource, index) => {
-                  const colors = [
-                    'bg-blue-100 border-blue-300',
-                    'bg-emerald-100 border-emerald-300',
-                    'bg-amber-100 border-amber-300',
-                    'bg-rose-100 border-rose-300',
-                  ]
-                  return (
-                    <div key={resource.id} className="flex items-center gap-2">
-                      <div className={`h-3 w-6 rounded border ${colors[index % colors.length]}`} />
-                      <div className="flex items-center gap-1.5 text-sm">
-                        {resource.type === 'room' ? (
-                          <MapPin className="h-3 w-3 text-muted-foreground" />
-                        ) : (
-                          <User className="h-3 w-3 text-muted-foreground" />
-                        )}
-                        <span className="truncate">{resource.name}</span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </CardContent>
-          </Card>
-
           {/* Today's Schedule */}
           <Card>
             <CardHeader className="pb-2">
@@ -232,81 +201,67 @@ export default function CalendarPage() {
                 </div>
               ) : (
                 <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                  {todayReservations.map((reservation) => {
-                    const service = getServiceById(reservation.serviceId)
-                    const client = getClientById(reservation.clientId)
-                    const resource = getResourceById(reservation.resourceId || '')
-                    return (
-                      <button
-                        key={reservation.id}
-                        type="button"
-                        className="w-full rounded-lg border p-2.5 text-left transition-colors hover:bg-muted/50"
-                        onClick={() => handleSelectReservation(reservation)}
-                      >
-                        <div className="flex items-start gap-2">
-                          <div
-                            className="mt-0.5 h-full w-1 rounded-full self-stretch min-h-[40px]"
-                            style={{ backgroundColor: service?.color || '#3B82F6' }}
-                          />
-                          <div className="flex-1 min-w-0 space-y-0.5">
-                            <p className="text-sm font-medium truncate">{client?.name}</p>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {service?.name}
-                            </p>
-                            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                              <span className="flex items-center gap-1">
-                                <Clock className="h-3 w-3" />
-                                {reservation.startTime} - {reservation.endTime}
-                              </span>
-                              {resource && (
-                                <span className="flex items-center gap-1">
-                                  <MapPin className="h-3 w-3" />
-                                  {resource.name}
-                                </span>
-                              )}
-                            </div>
+                  {todayReservations.map((reservation) => (
+                    <button
+                      key={reservation.id}
+                      type="button"
+                      className="w-full rounded-lg border p-2.5 text-left transition-colors hover:bg-muted/50"
+                      onClick={() => handleSelectReservation(reservation)}
+                    >
+                      <div className="flex items-start gap-2">
+                        <div className="mt-0.5 h-full w-1 rounded-full self-stretch min-h-[40px] bg-primary" />
+                        <div className="flex-1 min-w-0 space-y-0.5">
+                          <p className="text-sm font-medium truncate">{reservation.id}</p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            Estado: {reservation.status}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {new Date(reservation.start_time).toLocaleTimeString('es-ES', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
                           </div>
                         </div>
-                      </button>
-                    )
-                  })}
+                      </div>
+                    </button>
+                  ))}
                 </div>
               )}
-            </CardContent>
-          </Card>
-
-          {/* Services Legend */}
-          <Card className="hidden lg:block">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Servicios</CardTitle>
-            </CardHeader>
-            <CardContent className="pb-3">
-              <div className="space-y-1.5">
-                {services.filter((s) => s.isActive).map((service) => (
-                  <div key={service.id} className="flex items-center gap-2">
-                    <div
-                      className="h-3 w-3 rounded-full shrink-0"
-                      style={{ backgroundColor: service.color }}
-                    />
-                    <span className="text-xs truncate flex-1">{service.name}</span>
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                      {service.duration}m
-                    </Badge>
-                  </div>
-                ))}
-              </div>
             </CardContent>
           </Card>
         </div>
       </div>
 
-      {/* Reservation Modal */}
       <ReservationModal
         isOpen={isModalOpen}
         onClose={handleCloseModal}
         reservation={selectedReservation}
         selectedDate={today}
         mode={modalMode}
+        onSave={() => {
+          // Refetch reservations after save
+          const fetchReservations = async () => {
+            if (!currentBusiness) return
+            try {
+              const { data, error } = await supabase
+                .from('reservations')
+                .select('*')
+                .eq('business_id', currentBusiness.id)
+                .order('start_time', { ascending: true })
+
+              if (error) throw error
+              if (data) {
+                setReservations(data)
+              }
+            } catch (err) {
+              console.error('[v0] Error fetching reservations:', err)
+            }
+          }
+          fetchReservations()
+        }}
       />
     </div>
   )

@@ -23,16 +23,19 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { services, clients, resources, getServiceById, getClientById, getResourceById } from '@/lib/mock-data'
-import type { Reservation } from '@/lib/types'
+import { Loader2 } from 'lucide-react'
 import { Calendar, Clock, User, Briefcase, MapPin, Trash2 } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+import { useAuth } from '@/hooks/use-auth'
+import { useBusinesses } from '@/hooks/use-businesses'
 
 interface ReservationModalProps {
   isOpen: boolean
   onClose: () => void
-  reservation?: Reservation | null
+  reservation?: any | null
   selectedDate?: string
   mode: 'create' | 'edit' | 'view'
+  onSave?: () => void
 }
 
 export function ReservationModal({
@@ -41,14 +44,18 @@ export function ReservationModal({
   reservation,
   selectedDate,
   mode,
+  onSave,
 }: ReservationModalProps) {
+  const supabase = createClient()
+  const { authProfile } = useAuth()
+  const { businesses } = useBusinesses()
+  const [isLoading, setIsLoading] = useState(false)
+  
   const [formData, setFormData] = useState({
-    clientId: '',
-    serviceId: '',
-    resourceId: '',
-    date: '',
-    startTime: '',
-    endTime: '',
+    client_id: '',
+    service_id: '',
+    resource_id: '',
+    start_time: '',
     notes: '',
   })
   const [isEditing, setIsEditing] = useState(mode === 'create')
@@ -56,58 +63,89 @@ export function ReservationModal({
   useEffect(() => {
     if (reservation) {
       setFormData({
-        clientId: reservation.clientId,
-        serviceId: reservation.serviceId,
-        resourceId: reservation.resourceId || '',
-        date: reservation.date,
-        startTime: reservation.startTime,
-        endTime: reservation.endTime,
+        client_id: reservation.client_id,
+        service_id: reservation.service_id,
+        resource_id: reservation.resource_id || '',
+        start_time: reservation.start_time,
         notes: reservation.notes || '',
       })
       setIsEditing(mode === 'edit')
     } else {
       setFormData({
-        clientId: '',
-        serviceId: '',
-        resourceId: '',
-        date: selectedDate || new Date().toISOString().split('T')[0],
-        startTime: '09:00',
-        endTime: '09:30',
+        client_id: '',
+        service_id: '',
+        resource_id: '',
+        start_time: selectedDate ? `${selectedDate}T09:00` : new Date().toISOString().slice(0, 16),
         notes: '',
       })
       setIsEditing(true)
     }
   }, [reservation, selectedDate, mode])
 
-  const handleServiceChange = (serviceId: string) => {
-    const service = services.find((s) => s.id === serviceId)
-    if (service && formData.startTime) {
-      const [hours, minutes] = formData.startTime.split(':').map(Number)
-      const endDate = new Date()
-      endDate.setHours(hours, minutes + service.duration)
-      const endTime = `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`
-      setFormData({ ...formData, serviceId, endTime })
-    } else {
-      setFormData({ ...formData, serviceId })
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!authProfile || !businesses?.[0]) return
+    
+    try {
+      setIsLoading(true)
+      const currentBusiness = businesses[0]
+      
+      const reservationData = {
+        business_id: currentBusiness.id,
+        client_id: formData.client_id,
+        service_id: formData.service_id,
+        resource_id: formData.resource_id || null,
+        start_time: formData.start_time,
+        status: 'pending',
+        notes: formData.notes || null,
+      }
+
+      if (mode === 'create') {
+        const { error } = await supabase
+          .from('reservations')
+          .insert([reservationData])
+        
+        if (error) throw error
+        console.log('[v0] Reservation created successfully')
+      } else if (mode === 'edit' && reservation?.id) {
+        const { error } = await supabase
+          .from('reservations')
+          .update(reservationData)
+          .eq('id', reservation.id)
+        
+        if (error) throw error
+        console.log('[v0] Reservation updated successfully')
+      }
+      
+      onSave?.()
+      onClose()
+    } catch (error) {
+      console.error('[v0] Error saving reservation:', error)
+    } finally {
+      setIsLoading(false)
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    // In production, this would call an API to create/update the reservation
-    console.log('[v0] Reservation submitted:', formData)
-    onClose()
+  const handleDelete = async () => {
+    if (!reservation?.id) return
+    
+    try {
+      setIsLoading(true)
+      const { error } = await supabase
+        .from('reservations')
+        .update({ status: 'cancelled' })
+        .eq('id', reservation.id)
+      
+      if (error) throw error
+      console.log('[v0] Reservation cancelled successfully')
+      onSave?.()
+      onClose()
+    } catch (error) {
+      console.error('[v0] Error deleting reservation:', error)
+    } finally {
+      setIsLoading(false)
+    }
   }
-
-  const handleDelete = () => {
-    // In production, this would call an API to delete the reservation
-    console.log('[v0] Reservation deleted:', reservation?.id)
-    onClose()
-  }
-
-  const selectedService = formData.serviceId ? getServiceById(formData.serviceId) : null
-  const selectedClient = formData.clientId ? getClientById(formData.clientId) : null
-  const selectedResource = formData.resourceId ? getResourceById(formData.resourceId) : null
 
   const getTitle = () => {
     if (mode === 'create') return 'Nueva Reserva'
@@ -129,63 +167,38 @@ export function ReservationModal({
           </DialogDescription>
         </DialogHeader>
 
-        {mode === 'view' && reservation ? (
+        {mode === 'view' && reservation && !isEditing ? (
           <div className="space-y-4">
-            <div className="rounded-lg border p-4 space-y-3">
-              <div className="flex items-center gap-3">
-                <div
-                  className="h-10 w-1 rounded-full"
-                  style={{ backgroundColor: selectedService?.color || '#3B82F6' }}
-                />
-                <div>
-                  <p className="font-medium">{selectedService?.name}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {selectedService?.duration} minutos
-                  </p>
-                </div>
-                <Badge
-                  variant={reservation.status === 'confirmed' ? 'default' : 'secondary'}
-                  className="ml-auto"
-                >
-                  {reservation.status === 'confirmed' ? 'Confirmada' : 'Pendiente'}
-                </Badge>
-              </div>
-            </div>
-
             <div className="grid gap-3">
               <div className="flex items-center gap-3 text-sm">
-                <User className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">Cliente:</span>
-                <span>{selectedClient?.name}</span>
+                <Calendar className="h-4 w-4 text-muted-foreground" />
+                <span className="font-medium">Reserva ID:</span>
+                <span>{reservation.id}</span>
               </div>
               <div className="flex items-center gap-3 text-sm">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">Fecha:</span>
+                <Clock className="h-4 w-4 text-muted-foreground" />
+                <span className="font-medium">Fecha y hora:</span>
                 <span>
-                  {new Date(reservation.date).toLocaleDateString('es-ES', {
-                    weekday: 'long',
+                  {new Date(reservation.start_time).toLocaleDateString('es-ES', {
+                    weekday: 'short',
                     day: 'numeric',
-                    month: 'long',
+                    month: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit',
                   })}
                 </span>
               </div>
               <div className="flex items-center gap-3 text-sm">
-                <Clock className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">Horario:</span>
-                <span>
-                  {reservation.startTime} - {reservation.endTime}
-                </span>
+                <Badge
+                  variant={reservation.status === 'confirmed' ? 'default' : 'secondary'}
+                >
+                  {reservation.status === 'confirmed' ? 'Confirmada' : 'Pendiente'}
+                </Badge>
               </div>
-              {selectedResource && (
-                <div className="flex items-center gap-3 text-sm">
-                  <MapPin className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-medium">Recurso:</span>
-                  <span>{selectedResource.name}</span>
-                </div>
-              )}
               {reservation.notes && (
                 <div className="mt-2 rounded-md bg-muted p-3">
-                  <p className="text-sm text-muted-foreground">{reservation.notes}</p>
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Notas:</p>
+                  <p className="text-sm">{reservation.notes}</p>
                 </div>
               )}
             </div>
@@ -194,111 +207,45 @@ export function ReservationModal({
               <Button
                 variant="destructive"
                 onClick={handleDelete}
+                disabled={isLoading}
                 className="gap-2"
               >
-                <Trash2 className="h-4 w-4" />
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                 Cancelar reserva
               </Button>
-              <Button onClick={() => setIsEditing(true)}>Editar</Button>
+              <Button onClick={() => setIsEditing(true)} disabled={isLoading}>Editar</Button>
             </DialogFooter>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="client">Cliente</Label>
-              <Select
-                value={formData.clientId}
-                onValueChange={(value) => setFormData({ ...formData, clientId: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona un cliente" />
-                </SelectTrigger>
-                <SelectContent>
-                  {clients.map((client) => (
-                    <SelectItem key={client.id} value={client.id}>
-                      {client.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="service">Servicio</Label>
-              <Select
-                value={formData.serviceId}
-                onValueChange={handleServiceChange}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona un servicio" />
-                </SelectTrigger>
-                <SelectContent>
-                  {services.filter((s) => s.isActive).map((service) => (
-                    <SelectItem key={service.id} value={service.id}>
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="h-3 w-3 rounded-full"
-                          style={{ backgroundColor: service.color }}
-                        />
-                        {service.name} ({service.duration} min)
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="resource">Recurso (opcional)</Label>
-              <Select
-                value={formData.resourceId}
-                onValueChange={(value) => setFormData({ ...formData, resourceId: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona un recurso" />
-                </SelectTrigger>
-                <SelectContent>
-                  {resources.filter((r) => r.isActive).map((resource) => (
-                    <SelectItem key={resource.id} value={resource.id}>
-                      {resource.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="date">Fecha</Label>
+              <Label htmlFor="client">ID del Cliente</Label>
               <Input
-                id="date"
-                type="date"
-                value={formData.date}
-                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                required
+                id="client"
+                value={formData.client_id}
+                onChange={(e) => setFormData({ ...formData, client_id: e.target.value })}
+                placeholder="Ingresa el ID del cliente"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="startTime">Hora inicio</Label>
-                <Input
-                  id="startTime"
-                  type="time"
-                  value={formData.startTime}
-                  onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="endTime">Hora fin</Label>
-                <Input
-                  id="endTime"
-                  type="time"
-                  value={formData.endTime}
-                  onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
-                  required
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="service">ID del Servicio</Label>
+              <Input
+                id="service"
+                value={formData.service_id}
+                onChange={(e) => setFormData({ ...formData, service_id: e.target.value })}
+                placeholder="Ingresa el ID del servicio"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="datetime">Fecha y Hora</Label>
+              <Input
+                id="datetime"
+                type="datetime-local"
+                value={formData.start_time}
+                onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
+              />
             </div>
 
             <div className="space-y-2">
@@ -313,10 +260,11 @@ export function ReservationModal({
             </div>
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={onClose}>
+              <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>
                 Cancelar
               </Button>
-              <Button type="submit">
+              <Button type="submit" disabled={isLoading} className="gap-2">
+                {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
                 {mode === 'create' ? 'Crear reserva' : 'Guardar cambios'}
               </Button>
             </DialogFooter>
