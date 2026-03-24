@@ -124,15 +124,13 @@ export function ReservationModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    console.log('[v0] handleSubmit called - authProfile:', !!authProfile, 'businesses:', !!businesses?.[0], 'formData:', formData)
     
     if (!authProfile || !businesses?.[0]) {
-      console.log('[v0] Missing authProfile or business')
+      alert('Error: No hay datos de autenticación o negocio')
       return
     }
     
     if (!formData.client_id || !formData.service_id || !formData.start_time) {
-      console.log('[v0] Missing required fields - client_id:', formData.client_id, 'service_id:', formData.service_id, 'start_time:', formData.start_time)
       alert('Por favor completa los campos requeridos (Cliente, Servicio, Fecha y Hora)')
       return
     }
@@ -150,30 +148,35 @@ export function ReservationModal({
         status: 'pending',
         notes: formData.notes || null,
       }
-      console.log('[v0] Sending reservation data:', reservationData)
 
       if (mode === 'create') {
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from('reservations')
           .insert([reservationData])
         
-        console.log('[v0] Insert response - data:', data, 'error:', error)
-        if (error) throw error
-        console.log('[v0] Reservation created successfully')
+        if (error) {
+          console.error('[v0] Error creating reservation:', error)
+          alert(`Error al crear reserva: ${error.message}`)
+          return
+        }
       } else if (mode === 'edit' && reservation?.id) {
         const { error } = await supabase
           .from('reservations')
           .update(reservationData)
           .eq('id', reservation.id)
         
-        if (error) throw error
-        console.log('[v0] Reservation updated successfully')
+        if (error) {
+          console.error('[v0] Error updating reservation:', error)
+          alert(`Error al actualizar reserva: ${error.message}`)
+          return
+        }
       }
       
       onSave?.()
       onClose()
     } catch (error) {
       console.error('[v0] Error saving reservation:', error)
+      alert(`Error: ${error instanceof Error ? error.message : 'Error desconocido'}`)
     } finally {
       setIsLoading(false)
     }
