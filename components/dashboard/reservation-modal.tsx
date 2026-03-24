@@ -352,7 +352,7 @@ export function ReservationModal({
               </Button>
             </DialogFooter>
           </form>
-        )}
+        ) : null}
       </DialogContent>
     </Dialog>
   )
