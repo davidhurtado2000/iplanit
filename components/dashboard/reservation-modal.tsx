@@ -319,26 +319,6 @@ export function ReservationModal({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="service">ID del Servicio</Label>
-              <Input
-                id="service"
-                value={formData.service_id}
-                onChange={(e) => setFormData({ ...formData, service_id: e.target.value })}
-                placeholder="Ingresa el ID del servicio"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="datetime">Fecha y Hora</Label>
-              <Input
-                id="datetime"
-                type="datetime-local"
-                value={formData.start_time}
-                onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2">
               <Label htmlFor="notes">Notas (opcional)</Label>
               <Textarea
                 id="notes"
