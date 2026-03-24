@@ -50,6 +50,9 @@ export function ReservationModal({
   const { authProfile } = useAuth()
   const { businesses } = useBusinesses()
   const [isLoading, setIsLoading] = useState(false)
+  const [clients, setClients] = useState<any[]>([])
+  const [services, setServices] = useState<any[]>([])
+  const [loadingData, setLoadingData] = useState(true)
   
   const [formData, setFormData] = useState({
     client_id: '',
@@ -59,6 +62,43 @@ export function ReservationModal({
     notes: '',
   })
   const [isEditing, setIsEditing] = useState(mode === 'create')
+
+  // Cargar clientes y servicios de Supabase
+  useEffect(() => {
+    const loadData = async () => {
+      if (!businesses?.[0]) return
+      
+      try {
+        setLoadingData(true)
+        const currentBusiness = businesses[0]
+        
+        const [clientsResponse, servicesResponse] = await Promise.all([
+          supabase
+            .from('clients')
+            .select('id, name')
+            .eq('business_id', currentBusiness.id)
+            .order('name'),
+          supabase
+            .from('services')
+            .select('id, name, duration_minutes')
+            .eq('business_id', currentBusiness.id)
+            .eq('is_active', true)
+            .order('name'),
+        ])
+
+        if (clientsResponse.data) setClients(clientsResponse.data)
+        if (servicesResponse.data) setServices(servicesResponse.data)
+      } catch (error) {
+        console.error('[v0] Error loading clients and services:', error)
+      } finally {
+        setLoadingData(false)
+      }
+    }
+
+    if (isOpen) {
+      loadData()
+    }
+  }, [isOpen, businesses])
 
   useEffect(() => {
     if (reservation) {
@@ -219,12 +259,62 @@ export function ReservationModal({
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="client">ID del Cliente</Label>
-              <Input
-                id="client"
+              <Label htmlFor="client">Cliente</Label>
+              <Select
                 value={formData.client_id}
-                onChange={(e) => setFormData({ ...formData, client_id: e.target.value })}
-                placeholder="Ingresa el ID del cliente"
+                onValueChange={(value) => setFormData({ ...formData, client_id: value })}
+                disabled={loadingData}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={loadingData ? "Cargando..." : "Selecciona un cliente"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {clients.map((client) => (
+                    <SelectItem key={client.id} value={client.id}>
+                      {client.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="service">Servicio</Label>
+              <Select
+                value={formData.service_id}
+                onValueChange={(value) => setFormData({ ...formData, service_id: value })}
+                disabled={loadingData}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={loadingData ? "Cargando..." : "Selecciona un servicio"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {services.map((service) => (
+                    <SelectItem key={service.id} value={service.id}>
+                      {service.name} ({service.duration_minutes} min)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="datetime">Fecha y Hora</Label>
+              <Input
+                id="datetime"
+                type="datetime-local"
+                value={formData.start_time}
+                onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="resource">Recurso (opcional)</Label>
+              <Input
+                id="resource"
+                value={formData.resource_id}
+                onChange={(e) => setFormData({ ...formData, resource_id: e.target.value })}
+                placeholder="ID del recurso (opcional)"
               />
             </div>
 
