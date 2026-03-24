@@ -24,10 +24,25 @@ import {
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Loader2 } from 'lucide-react'
-import { Calendar, Clock, User, Briefcase, MapPin, Trash2 } from 'lucide-react'
+import { Calendar, Clock, User, Briefcase, Trash2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
+
+interface Client {
+  id: string
+  name: string
+  email: string | null
+  phone: string | null
+}
+
+interface Service {
+  id: string
+  name: string
+  duration_minutes: number
+  price: number
+  color: string
+}
 
 interface ReservationModalProps {
   isOpen: boolean
@@ -47,10 +62,13 @@ export function ReservationModal({
   onSave,
 }: ReservationModalProps) {
   const supabase = createClient()
-  const { authProfile } = useAuth()
+  const { profile } = useAuth()
   const { businesses } = useBusinesses()
   const [isLoading, setIsLoading] = useState(false)
-  
+  const [clients, setClients] = useState<Client[]>([])
+  const [services, setServices] = useState<Service[]>([])
+  const [loadingOptions, setLoadingOptions] = useState(false)
+
   const [formData, setFormData] = useState({
     client_id: '',
     service_id: '',
@@ -59,6 +77,39 @@ export function ReservationModal({
     notes: '',
   })
   const [isEditing, setIsEditing] = useState(mode === 'create')
+
+  const currentBusiness = businesses?.[0]
+
+  // Load clients and services when modal opens
+  useEffect(() => {
+    if (!isOpen || !currentBusiness) return
+
+    const loadOptions = async () => {
+      setLoadingOptions(true)
+      try {
+        const [{ data: clientsData }, { data: servicesData }] = await Promise.all([
+          supabase
+            .from('clients')
+            .select('id, name, email, phone')
+            .eq('business_id', currentBusiness.id)
+            .eq('is_active', true)
+            .order('name'),
+          supabase
+            .from('services')
+            .select('id, name, duration_minutes, price, color')
+            .eq('business_id', currentBusiness.id)
+            .eq('is_active', true)
+            .order('name'),
+        ])
+        setClients(clientsData || [])
+        setServices(servicesData || [])
+      } finally {
+        setLoadingOptions(false)
+      }
+    }
+
+    loadOptions()
+  }, [isOpen, currentBusiness?.id])
 
   useEffect(() => {
     if (reservation) {
@@ -82,20 +133,30 @@ export function ReservationModal({
     }
   }, [reservation, selectedDate, mode])
 
+  const selectedService = services.find((s) => s.id === formData.service_id)
+  const selectedClient = clients.find((c) => c.id === formData.client_id)
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!authProfile || !businesses?.[0]) return
-    
+    if (!profile || !currentBusiness) {
+      console.error('[v0] Error: No hay datos de autenticación o negocio')
+      return
+    }
+
     try {
       setIsLoading(true)
-      const currentBusiness = businesses[0]
-      
+
+      const durationMinutes = selectedService?.duration_minutes ?? 60
+      const startDate = new Date(formData.start_time)
+      const endDate = new Date(startDate.getTime() + durationMinutes * 60 * 1000)
+
       const reservationData = {
         business_id: currentBusiness.id,
         client_id: formData.client_id,
         service_id: formData.service_id,
         resource_id: formData.resource_id || null,
-        start_time: formData.start_time,
+        start_time: startDate.toISOString(),
+        end_time: endDate.toISOString(),
         status: 'pending',
         notes: formData.notes || null,
       }
@@ -104,7 +165,7 @@ export function ReservationModal({
         const { error } = await supabase
           .from('reservations')
           .insert([reservationData])
-        
+
         if (error) throw error
         console.log('[v0] Reservation created successfully')
       } else if (mode === 'edit' && reservation?.id) {
@@ -112,11 +173,11 @@ export function ReservationModal({
           .from('reservations')
           .update(reservationData)
           .eq('id', reservation.id)
-        
+
         if (error) throw error
         console.log('[v0] Reservation updated successfully')
       }
-      
+
       onSave?.()
       onClose()
     } catch (error) {
@@ -128,14 +189,14 @@ export function ReservationModal({
 
   const handleDelete = async () => {
     if (!reservation?.id) return
-    
+
     try {
       setIsLoading(true)
       const { error } = await supabase
         .from('reservations')
         .update({ status: 'cancelled' })
         .eq('id', reservation.id)
-      
+
       if (error) throw error
       console.log('[v0] Reservation cancelled successfully')
       onSave?.()
@@ -153,6 +214,10 @@ export function ReservationModal({
     return 'Editar Reserva'
   }
 
+  // Lookup names for view mode
+  const viewClient = clients.find((c) => c.id === reservation?.client_id)
+  const viewService = services.find((s) => s.id === reservation?.service_id)
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-lg">
@@ -162,7 +227,7 @@ export function ReservationModal({
             {mode === 'create'
               ? 'Completa los datos para crear una nueva reserva'
               : mode === 'view'
-                ? 'Informacion de la reserva seleccionada'
+                ? 'Información de la reserva seleccionada'
                 : 'Modifica los datos de la reserva'}
           </DialogDescription>
         </DialogHeader>
@@ -171,9 +236,18 @@ export function ReservationModal({
           <div className="space-y-4">
             <div className="grid gap-3">
               <div className="flex items-center gap-3 text-sm">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">Reserva ID:</span>
-                <span>{reservation.id}</span>
+                <User className="h-4 w-4 text-muted-foreground" />
+                <span className="font-medium">Cliente:</span>
+                <span>{viewClient?.name ?? reservation.client_id}</span>
+              </div>
+              <div className="flex items-center gap-3 text-sm">
+                <Briefcase className="h-4 w-4 text-muted-foreground" />
+                <span className="font-medium">Servicio:</span>
+                <span>
+                  {viewService
+                    ? `${viewService.name} (${viewService.duration_minutes} min)`
+                    : reservation.service_id}
+                </span>
               </div>
               <div className="flex items-center gap-3 text-sm">
                 <Clock className="h-4 w-4 text-muted-foreground" />
@@ -218,26 +292,78 @@ export function ReservationModal({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Cliente */}
             <div className="space-y-2">
-              <Label htmlFor="client">ID del Cliente</Label>
-              <Input
-                id="client"
+              <Label htmlFor="client">Cliente</Label>
+              <Select
                 value={formData.client_id}
-                onChange={(e) => setFormData({ ...formData, client_id: e.target.value })}
-                placeholder="Ingresa el ID del cliente"
-              />
+                onValueChange={(val) => setFormData({ ...formData, client_id: val })}
+                disabled={loadingOptions}
+              >
+                <SelectTrigger id="client">
+                  <SelectValue placeholder={loadingOptions ? 'Cargando...' : 'Selecciona un cliente'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {clients.length === 0 && !loadingOptions ? (
+                    <SelectItem value="_empty" disabled>
+                      No hay clientes registrados
+                    </SelectItem>
+                  ) : (
+                    clients.map((client) => (
+                      <SelectItem key={client.id} value={client.id}>
+                        <span className="font-medium">{client.name}</span>
+                        {client.email && (
+                          <span className="ml-2 text-xs text-muted-foreground">{client.email}</span>
+                        )}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
             </div>
 
+            {/* Servicio */}
             <div className="space-y-2">
-              <Label htmlFor="service">ID del Servicio</Label>
-              <Input
-                id="service"
+              <Label htmlFor="service">Servicio</Label>
+              <Select
                 value={formData.service_id}
-                onChange={(e) => setFormData({ ...formData, service_id: e.target.value })}
-                placeholder="Ingresa el ID del servicio"
-              />
+                onValueChange={(val) => setFormData({ ...formData, service_id: val })}
+                disabled={loadingOptions}
+              >
+                <SelectTrigger id="service">
+                  <SelectValue placeholder={loadingOptions ? 'Cargando...' : 'Selecciona un servicio'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {services.length === 0 && !loadingOptions ? (
+                    <SelectItem value="_empty" disabled>
+                      No hay servicios registrados
+                    </SelectItem>
+                  ) : (
+                    services.map((service) => (
+                      <SelectItem key={service.id} value={service.id}>
+                        <span className="font-medium">{service.name}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {service.duration_minutes} min · S/ {service.price}
+                        </span>
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              {selectedService && (
+                <p className="text-xs text-muted-foreground">
+                  Duración: {selectedService.duration_minutes} min — la reserva terminará a las{' '}
+                  {formData.start_time
+                    ? new Date(
+                        new Date(formData.start_time).getTime() +
+                          selectedService.duration_minutes * 60 * 1000
+                      ).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+                    : '—'}
+                </p>
+              )}
             </div>
 
+            {/* Fecha y hora */}
             <div className="space-y-2">
               <Label htmlFor="datetime">Fecha y Hora</Label>
               <Input
@@ -248,6 +374,7 @@ export function ReservationModal({
               />
             </div>
 
+            {/* Notas */}
             <div className="space-y-2">
               <Label htmlFor="notes">Notas (opcional)</Label>
               <Textarea
@@ -263,7 +390,11 @@ export function ReservationModal({
               <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={isLoading} className="gap-2">
+              <Button
+                type="submit"
+                disabled={isLoading || !formData.client_id || !formData.service_id}
+                className="gap-2"
+              >
                 {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
                 {mode === 'create' ? 'Crear reserva' : 'Guardar cambios'}
               </Button>
