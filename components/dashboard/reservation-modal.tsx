@@ -24,10 +24,11 @@ import {
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Loader2 } from 'lucide-react'
-import { Calendar, Clock, User, Briefcase, Trash2 } from 'lucide-react'
+import { Calendar, Clock, User, Briefcase, Trash2, MapPin } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
+import { useLanguage } from '@/context/language-context'
 
 interface Client {
   id: string
@@ -44,6 +45,20 @@ interface Service {
   color: string
 }
 
+interface Resource {
+  id: string
+  name: string
+  type: 'room' | 'person' | 'equipment'
+  description: string | null
+}
+
+interface BusinessHour {
+  day_of_week: number
+  open_time: string
+  close_time: string
+  is_closed: boolean
+}
+
 interface ReservationModalProps {
   isOpen: boolean
   onClose: () => void
@@ -51,6 +66,43 @@ interface ReservationModalProps {
   selectedDate?: string
   mode: 'create' | 'edit' | 'view'
   onSave?: () => void
+}
+
+/**
+ * Converts a UTC ISO timestamp to "YYYY-MM-DDTHH:MM" expressed in the given
+ * IANA timezone. Used to populate datetime-local inputs with the correct
+ * business-timezone time regardless of the browser's own timezone.
+ */
+function toTzLocalInput(utcString: string, timezone: string): string {
+  const d = new Date(utcString)
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(d)
+  const p = Object.fromEntries(parts.map(x => [x.type, x.value]))
+  const h = p.hour === '24' ? '00' : p.hour
+  return `${p.year}-${p.month}-${p.day}T${h}:${p.minute}`
+}
+
+/**
+ * Interprets "YYYY-MM-DDTHH:MM" as a wall-clock time in the given IANA
+ * timezone and returns the corresponding UTC Date.
+ * This is browser-timezone-independent — it always uses the business timezone.
+ */
+function parseInTimezone(localString: string, timezone: string): Date {
+  // Treat the string as UTC first (no browser-tz conversion happens with 'Z')
+  const fakeUtc = new Date(localString + ':00Z')
+  // Find out what wall-clock time that UTC moment shows in the target timezone
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric', month: 'numeric', day: 'numeric',
+    hour: 'numeric', minute: 'numeric', hour12: false,
+  }).formatToParts(fakeUtc)
+  const p = Object.fromEntries(parts.map(x => [x.type, Number(x.value)]))
+  const tzAsUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour % 24, p.minute)
+  // Shift fakeUtc by the difference so the wall-clock time matches localString
+  return new Date(fakeUtc.getTime() + (fakeUtc.getTime() - tzAsUtc))
 }
 
 export function ReservationModal({
@@ -64,9 +116,12 @@ export function ReservationModal({
   const supabase = createClient()
   const { profile } = useAuth()
   const { businesses } = useBusinesses()
+  const { t, locale } = useLanguage()
   const [isLoading, setIsLoading] = useState(false)
   const [clients, setClients] = useState<Client[]>([])
   const [services, setServices] = useState<Service[]>([])
+  const [resources, setResources] = useState<Resource[]>([])
+  const [businessHours, setBusinessHours] = useState<BusinessHour[]>([])
   const [loadingOptions, setLoadingOptions] = useState(false)
 
   const [formData, setFormData] = useState({
@@ -87,7 +142,7 @@ export function ReservationModal({
     const loadOptions = async () => {
       setLoadingOptions(true)
       try {
-        const [{ data: clientsData }, { data: servicesData }] = await Promise.all([
+        const [{ data: clientsData }, { data: servicesData }, { data: resourcesData }, { data: hoursData }] = await Promise.all([
           supabase
             .from('clients')
             .select('id, name, email, phone')
@@ -100,9 +155,21 @@ export function ReservationModal({
             .eq('business_id', currentBusiness.id)
             .eq('is_active', true)
             .order('name'),
+          supabase
+            .from('resources')
+            .select('id, name, type, description')
+            .eq('business_id', currentBusiness.id)
+            .eq('is_active', true)
+            .order('name'),
+          supabase
+            .from('business_hours')
+            .select('day_of_week, open_time, close_time, is_closed')
+            .eq('business_id', currentBusiness.id),
         ])
         setClients(clientsData || [])
         setServices(servicesData || [])
+        setResources(resourcesData || [])
+        setBusinessHours(hoursData || [])
       } finally {
         setLoadingOptions(false)
       }
@@ -111,13 +178,15 @@ export function ReservationModal({
     loadOptions()
   }, [isOpen, currentBusiness?.id])
 
+  const tz = currentBusiness?.timezone || 'America/Lima'
+
   useEffect(() => {
     if (reservation) {
       setFormData({
         client_id: reservation.client_id,
         service_id: reservation.service_id,
         resource_id: reservation.resource_id || '',
-        start_time: reservation.start_time,
+        start_time: toTzLocalInput(reservation.start_time, tz),
         notes: reservation.notes || '',
       })
       setIsEditing(mode === 'edit')
@@ -126,15 +195,62 @@ export function ReservationModal({
         client_id: '',
         service_id: '',
         resource_id: '',
-        start_time: selectedDate ? `${selectedDate}T09:00` : new Date().toISOString().slice(0, 16),
+        start_time: selectedDate ? `${selectedDate}T09:00` : toTzLocalInput(new Date().toISOString(), tz),
         notes: '',
       })
       setIsEditing(true)
     }
-  }, [reservation, selectedDate, mode])
+  }, [reservation, selectedDate, mode, tz])
 
   const selectedService = services.find((s) => s.id === formData.service_id)
   const selectedClient = clients.find((c) => c.id === formData.client_id)
+  const selectedResource = resources.find((r) => r.id === formData.resource_id)
+
+  const resourceTypeLabel: Record<Resource['type'], string> = {
+    room: t.reservation.roomType,
+    person: t.reservation.personType,
+    equipment: t.reservation.equipmentType,
+  }
+
+  // When user clicks "Edit" from view mode, isEditing becomes true but mode stays 'view'.
+  // Use effectiveMode so handleSubmit knows whether to insert or update.
+  const effectiveMode = isEditing && mode === 'view' ? 'edit' : mode
+
+  // Business hours validation — use business timezone for day/hour checks
+  const hoursError = (() => {
+    if (!formData.start_time || businessHours.length === 0) return null
+    // formData.start_time is "YYYY-MM-DDTHH:MM" in business timezone already,
+    // so we can parse it directly for day-of-week and hour/minute.
+    const [datePart, timePart] = formData.start_time.split('T')
+    const [hours, minutes] = (timePart || '09:00').split(':').map(Number)
+    const jsDate = new Date(datePart + 'T12:00:00Z') // noon UTC avoids DST edge cases for weekday
+    const dayOfWeek = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' })
+      .format(jsDate)
+    // Map English short weekday to JS day number (0=Sun … 6=Sat)
+    const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+    const dayNum = dayMap[dayOfWeek] ?? new Date(`${datePart}T12:00:00Z`).getDay()
+    const bh = businessHours.find((h) => h.day_of_week === dayNum)
+    if (!bh) return null
+    if (bh.is_closed) {
+      return t.reservation.businessClosed
+    }
+    const toMinutes = (t: string) => {
+      const [h, m] = t.split(':').map(Number)
+      return h * 60 + m
+    }
+    const startMinutes = hours * 60 + minutes
+    const durationMinutes = selectedService?.duration_minutes ?? 0
+    const endMinutes = startMinutes + durationMinutes
+    const openMinutes = toMinutes(bh.open_time)
+    const closeMinutes = toMinutes(bh.close_time)
+    if (startMinutes < openMinutes) {
+      return `${t.reservation.businessOpensAt} ${bh.open_time.slice(0, 5)}`
+    }
+    if (durationMinutes > 0 && endMinutes > closeMinutes) {
+      return `${t.reservation.reservationAfterClose} (${bh.close_time.slice(0, 5)})`
+    }
+    return null
+  })()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -147,7 +263,9 @@ export function ReservationModal({
       setIsLoading(true)
 
       const durationMinutes = selectedService?.duration_minutes ?? 60
-      const startDate = new Date(formData.start_time)
+      // parseInTimezone ensures the datetime-local value is interpreted as
+      // business timezone time, not browser timezone — prevents off-by-one-day bugs.
+      const startDate = parseInTimezone(formData.start_time, currentBusiness.timezone || 'America/Lima')
       const endDate = new Date(startDate.getTime() + durationMinutes * 60 * 1000)
 
       const reservationData = {
@@ -161,14 +279,14 @@ export function ReservationModal({
         notes: formData.notes || null,
       }
 
-      if (mode === 'create') {
+      if (effectiveMode === 'create') {
         const { error } = await supabase
           .from('reservations')
           .insert([reservationData])
 
         if (error) throw error
         console.log('[v0] Reservation created successfully')
-      } else if (mode === 'edit' && reservation?.id) {
+      } else if (effectiveMode === 'edit' && reservation?.id) {
         const { error } = await supabase
           .from('reservations')
           .update(reservationData)
@@ -209,27 +327,28 @@ export function ReservationModal({
   }
 
   const getTitle = () => {
-    if (mode === 'create') return 'Nueva Reserva'
-    if (mode === 'view') return 'Detalles de Reserva'
-    return 'Editar Reserva'
+    if (mode === 'create') return t.reservation.newTitle
+    if (mode === 'view') return t.reservation.viewTitle
+    return t.reservation.editTitle
+  }
+
+  const getDesc = () => {
+    if (mode === 'create') return t.reservation.newDesc
+    if (mode === 'view') return t.reservation.viewDesc
+    return t.reservation.editDesc
   }
 
   // Lookup names for view mode
   const viewClient = clients.find((c) => c.id === reservation?.client_id)
   const viewService = services.find((s) => s.id === reservation?.service_id)
+  const viewResource = resources.find((r) => r.id === reservation?.resource_id)
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>{getTitle()}</DialogTitle>
-          <DialogDescription>
-            {mode === 'create'
-              ? 'Completa los datos para crear una nueva reserva'
-              : mode === 'view'
-                ? 'Información de la reserva seleccionada'
-                : 'Modifica los datos de la reserva'}
-          </DialogDescription>
+          <DialogDescription>{getDesc()}</DialogDescription>
         </DialogHeader>
 
         {mode === 'view' && reservation && !isEditing ? (
@@ -237,23 +356,35 @@ export function ReservationModal({
             <div className="grid gap-3">
               <div className="flex items-center gap-3 text-sm">
                 <User className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">Cliente:</span>
+                <span className="font-medium">{t.reservation.clientLabel}</span>
                 <span>{viewClient?.name ?? reservation.client_id}</span>
               </div>
               <div className="flex items-center gap-3 text-sm">
                 <Briefcase className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">Servicio:</span>
+                <span className="font-medium">{t.reservation.serviceLabel}</span>
                 <span>
                   {viewService
                     ? `${viewService.name} (${viewService.duration_minutes} min)`
                     : reservation.service_id}
                 </span>
               </div>
+              {viewResource && (
+                <div className="flex items-center gap-3 text-sm">
+                  <MapPin className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-medium">{t.reservation.resourceLabel}</span>
+                  <span>
+                    {viewResource.name}
+                    <span className="ml-1 text-xs text-muted-foreground">
+                      ({resourceTypeLabel[viewResource.type]})
+                    </span>
+                  </span>
+                </div>
+              )}
               <div className="flex items-center gap-3 text-sm">
                 <Clock className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">Fecha y hora:</span>
+                <span className="font-medium">{t.reservation.datetimeLabel}</span>
                 <span>
-                  {new Date(reservation.start_time).toLocaleDateString('es-ES', {
+                  {new Date(reservation.start_time).toLocaleDateString(locale, {
                     weekday: 'short',
                     day: 'numeric',
                     month: 'short',
@@ -266,12 +397,12 @@ export function ReservationModal({
                 <Badge
                   variant={reservation.status === 'confirmed' ? 'default' : 'secondary'}
                 >
-                  {reservation.status === 'confirmed' ? 'Confirmada' : 'Pendiente'}
+                  {reservation.status === 'confirmed' ? t.reservation.confirmed : t.reservation.pending}
                 </Badge>
               </div>
               {reservation.notes && (
                 <div className="mt-2 rounded-md bg-muted p-3">
-                  <p className="text-xs font-medium text-muted-foreground mb-1">Notas:</p>
+                  <p className="text-xs font-medium text-muted-foreground mb-1">{t.reservation.notesLabel}</p>
                   <p className="text-sm">{reservation.notes}</p>
                 </div>
               )}
@@ -285,28 +416,28 @@ export function ReservationModal({
                 className="gap-2"
               >
                 {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                Cancelar reserva
+                {t.reservation.cancelReservation}
               </Button>
-              <Button onClick={() => setIsEditing(true)} disabled={isLoading}>Editar</Button>
+              <Button onClick={() => setIsEditing(true)} disabled={isLoading}>{t.reservation.editBtn}</Button>
             </DialogFooter>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Cliente */}
+            {/* Client */}
             <div className="space-y-2">
-              <Label htmlFor="client">Cliente</Label>
+              <Label htmlFor="client">{t.reservation.clientSelect}</Label>
               <Select
                 value={formData.client_id}
                 onValueChange={(val) => setFormData({ ...formData, client_id: val })}
                 disabled={loadingOptions}
               >
                 <SelectTrigger id="client">
-                  <SelectValue placeholder={loadingOptions ? 'Cargando...' : 'Selecciona un cliente'} />
+                  <SelectValue placeholder={loadingOptions ? t.reservation.loading : t.reservation.selectClient} />
                 </SelectTrigger>
                 <SelectContent>
                   {clients.length === 0 && !loadingOptions ? (
                     <SelectItem value="_empty" disabled>
-                      No hay clientes registrados
+                      {t.reservation.noClients}
                     </SelectItem>
                   ) : (
                     clients.map((client) => (
@@ -322,21 +453,21 @@ export function ReservationModal({
               </Select>
             </div>
 
-            {/* Servicio */}
+            {/* Service */}
             <div className="space-y-2">
-              <Label htmlFor="service">Servicio</Label>
+              <Label htmlFor="service">{t.reservation.serviceSelect}</Label>
               <Select
                 value={formData.service_id}
                 onValueChange={(val) => setFormData({ ...formData, service_id: val })}
                 disabled={loadingOptions}
               >
                 <SelectTrigger id="service">
-                  <SelectValue placeholder={loadingOptions ? 'Cargando...' : 'Selecciona un servicio'} />
+                  <SelectValue placeholder={loadingOptions ? t.reservation.loading : t.reservation.selectService} />
                 </SelectTrigger>
                 <SelectContent>
                   {services.length === 0 && !loadingOptions ? (
                     <SelectItem value="_empty" disabled>
-                      No hay servicios registrados
+                      {t.reservation.noServices}
                     </SelectItem>
                   ) : (
                     services.map((service) => (
@@ -352,34 +483,69 @@ export function ReservationModal({
               </Select>
               {selectedService && (
                 <p className="text-xs text-muted-foreground">
-                  Duración: {selectedService.duration_minutes} min — la reserva terminará a las{' '}
+                  {t.reservation.durationInfo} {selectedService.duration_minutes} min — {t.reservation.durationEnd}{' '}
                   {formData.start_time
                     ? new Date(
                         new Date(formData.start_time).getTime() +
                           selectedService.duration_minutes * 60 * 1000
-                      ).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+                      ).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
                     : '—'}
                 </p>
               )}
             </div>
 
-            {/* Fecha y hora */}
+            {/* Resource (optional) */}
             <div className="space-y-2">
-              <Label htmlFor="datetime">Fecha y Hora</Label>
+              <Label htmlFor="resource">
+                {t.reservation.resourceSelect}{' '}
+                <span className="text-muted-foreground font-normal">{t.reservation.resourceOptional}</span>
+              </Label>
+              <Select
+                value={formData.resource_id || '_none'}
+                onValueChange={(val) => setFormData({ ...formData, resource_id: val === '_none' ? '' : val })}
+                disabled={loadingOptions}
+              >
+                <SelectTrigger id="resource">
+                  <SelectValue placeholder={loadingOptions ? t.reservation.loading : t.reservation.noResource} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">{t.reservation.noResource}</SelectItem>
+                  {resources.map((resource) => (
+                    <SelectItem key={resource.id} value={resource.id}>
+                      <span className="font-medium">{resource.name}</span>
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {resourceTypeLabel[resource.type]}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Date & Time */}
+            <div className="space-y-2">
+              <Label htmlFor="datetime">{t.reservation.datetimeInput}</Label>
               <Input
                 id="datetime"
                 type="datetime-local"
                 value={formData.start_time}
                 onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
+                className={hoursError ? 'border-destructive focus-visible:ring-destructive' : ''}
               />
+              {hoursError && (
+                <p className="flex items-center gap-1.5 text-xs text-destructive">
+                  <Clock className="h-3.5 w-3.5 shrink-0" />
+                  {hoursError}
+                </p>
+              )}
             </div>
 
-            {/* Notas */}
+            {/* Notes */}
             <div className="space-y-2">
-              <Label htmlFor="notes">Notas (opcional)</Label>
+              <Label htmlFor="notes">{t.reservation.notesOptional}</Label>
               <Textarea
                 id="notes"
-                placeholder="Agrega notas adicionales..."
+                placeholder={t.reservation.notesPlaceholder}
                 value={formData.notes}
                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                 rows={3}
@@ -388,15 +554,15 @@ export function ReservationModal({
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>
-                Cancelar
+                {t.reservation.cancelBtn}
               </Button>
               <Button
                 type="submit"
-                disabled={isLoading || !formData.client_id || !formData.service_id}
+                disabled={isLoading || !formData.client_id || !formData.service_id || !!hoursError}
                 className="gap-2"
               >
                 {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-                {mode === 'create' ? 'Crear reserva' : 'Guardar cambios'}
+                {mode === 'create' ? t.reservation.createBtn : t.reservation.saveBtn}
               </Button>
             </DialogFooter>
           </form>

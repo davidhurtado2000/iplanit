@@ -34,6 +34,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useBusinesses } from '@/hooks/use-businesses'
+import { useLanguage } from '@/context/language-context'
 import { createClient } from '@/lib/supabase/client'
 import {
   Plus,
@@ -76,6 +77,7 @@ const SERVICE_COLORS = [
 
 export default function ServicesPage() {
   const { businesses, loading: businessLoading } = useBusinesses()
+  const { t } = useLanguage()
   const [services, setServices] = useState<Service[]>([])
   const [resources, setResources] = useState<Resource[]>([])
   const [loading, setLoading] = useState(true)
@@ -178,7 +180,7 @@ export default function ServicesPage() {
   const handleSaveService = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!currentBusiness) return
-    
+
     setSaving(true)
     try {
       const serviceData = {
@@ -198,7 +200,7 @@ export default function ServicesPage() {
           .eq('id', editingService.id)
           .select()
           .single()
-        
+
         if (error) throw error
         setServices(services.map((s) => s.id === editingService.id ? data : s))
       } else {
@@ -207,7 +209,7 @@ export default function ServicesPage() {
           .insert(serviceData)
           .select()
           .single()
-        
+
         if (error) throw error
         setServices([...services, data])
       }
@@ -225,7 +227,7 @@ export default function ServicesPage() {
         .from('services')
         .delete()
         .eq('id', id)
-      
+
       if (error) throw error
       setServices(services.filter((s) => s.id !== id))
     } catch (err) {
@@ -257,7 +259,7 @@ export default function ServicesPage() {
   const handleSaveResource = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!currentBusiness) return
-    
+
     setSaving(true)
     try {
       const resourceData = {
@@ -275,7 +277,7 @@ export default function ServicesPage() {
           .eq('id', editingResource.id)
           .select()
           .single()
-        
+
         if (error) throw error
         setResources(resources.map((r) => r.id === editingResource.id ? data : r))
       } else {
@@ -284,7 +286,7 @@ export default function ServicesPage() {
           .insert(resourceData)
           .select()
           .single()
-        
+
         if (error) throw error
         setResources([...resources, data])
       }
@@ -302,7 +304,7 @@ export default function ServicesPage() {
         .from('resources')
         .delete()
         .eq('id', id)
-      
+
       if (error) throw error
       setResources(resources.filter((r) => r.id !== id))
     } catch (err) {
@@ -319,6 +321,12 @@ export default function ServicesPage() {
       default:
         return Briefcase
     }
+  }
+
+  const getResourceTypeLabel = (type: string) => {
+    if (type === 'room') return t.services.roomTypeLabel
+    if (type === 'person') return t.services.personType
+    return t.services.equipmentType
   }
 
   if (businessLoading || loading) {
@@ -338,10 +346,8 @@ export default function ServicesPage() {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
         <Building className="mb-4 h-12 w-12 text-muted-foreground/50" />
-        <h2 className="text-xl font-semibold">Configura tu negocio primero</h2>
-        <p className="mt-2 text-muted-foreground">
-          Necesitas configurar tu negocio antes de agregar servicios
-        </p>
+        <h2 className="text-xl font-semibold">{t.services.setupRequired}</h2>
+        <p className="mt-2 text-muted-foreground">{t.services.setupRequiredDesc}</p>
       </div>
     )
   }
@@ -351,10 +357,8 @@ export default function ServicesPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Servicios y Recursos</h1>
-          <p className="text-muted-foreground">
-            Administra los servicios que ofreces y los recursos disponibles
-          </p>
+          <h1 className="text-2xl font-bold text-foreground">{t.services.title}</h1>
+          <p className="text-muted-foreground">{t.services.subtitle}</p>
         </div>
       </div>
 
@@ -369,7 +373,7 @@ export default function ServicesPage() {
           }`}
           onClick={() => setActiveTab('services')}
         >
-          Servicios ({services.length})
+          {t.services.servicesTab} ({services.length})
         </button>
         <button
           type="button"
@@ -380,7 +384,7 @@ export default function ServicesPage() {
           }`}
           onClick={() => setActiveTab('resources')}
         >
-          Recursos ({resources.length})
+          {t.services.resourcesTab} ({resources.length})
         </button>
       </div>
 
@@ -389,7 +393,7 @@ export default function ServicesPage() {
         <div className="relative max-w-sm flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder={`Buscar ${activeTab === 'services' ? 'servicios' : 'recursos'}...`}
+            placeholder={activeTab === 'services' ? t.services.searchServices : t.services.searchResources}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
@@ -404,7 +408,7 @@ export default function ServicesPage() {
           className="gap-2"
         >
           <Plus className="h-4 w-4" />
-          {activeTab === 'services' ? 'Nuevo Servicio' : 'Nuevo Recurso'}
+          {activeTab === 'services' ? t.services.newService : t.services.newResource}
         </Button>
       </div>
 
@@ -415,10 +419,10 @@ export default function ServicesPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Servicio</TableHead>
-                  <TableHead>Duracion</TableHead>
-                  <TableHead>Precio</TableHead>
-                  <TableHead>Estado</TableHead>
+                  <TableHead>{t.services.serviceCol}</TableHead>
+                  <TableHead>{t.services.durationCol}</TableHead>
+                  <TableHead>{t.services.priceCol}</TableHead>
+                  <TableHead>{t.services.statusCol}</TableHead>
                   <TableHead className="w-[50px]" />
                 </TableRow>
               </TableHeader>
@@ -459,7 +463,7 @@ export default function ServicesPage() {
                     </TableCell>
                     <TableCell>
                       <Badge variant={service.is_active ? 'default' : 'secondary'}>
-                        {service.is_active ? 'Activo' : 'Inactivo'}
+                        {service.is_active ? t.services.active : t.services.inactive}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -472,14 +476,14 @@ export default function ServicesPage() {
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => handleOpenServiceModal(service)}>
                             <Pencil className="mr-2 h-4 w-4" />
-                            Editar
+                            {t.services.edit}
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() => handleDeleteService(service.id)}
                             className="text-destructive"
                           >
                             <Trash2 className="mr-2 h-4 w-4" />
-                            Eliminar
+                            {t.services.delete}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -489,7 +493,7 @@ export default function ServicesPage() {
                 {filteredServices.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={5} className="py-8 text-center">
-                      <p className="text-muted-foreground">No se encontraron servicios</p>
+                      <p className="text-muted-foreground">{t.services.notFoundServices}</p>
                     </TableCell>
                   </TableRow>
                 )}
@@ -514,9 +518,7 @@ export default function ServicesPage() {
                     <div>
                       <CardTitle className="text-base">{resource.name}</CardTitle>
                       <CardDescription>
-                        {resource.type === 'room' && 'Sala / Espacio'}
-                        {resource.type === 'person' && 'Persona'}
-                        {resource.type === 'equipment' && 'Equipo'}
+                        {getResourceTypeLabel(resource.type)}
                       </CardDescription>
                     </div>
                   </div>
@@ -529,14 +531,14 @@ export default function ServicesPage() {
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => handleOpenResourceModal(resource)}>
                         <Pencil className="mr-2 h-4 w-4" />
-                        Editar
+                        {t.services.edit}
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => handleDeleteResource(resource.id)}
                         className="text-destructive"
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
-                        Eliminar
+                        {t.services.delete}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -548,7 +550,7 @@ export default function ServicesPage() {
                     </p>
                   )}
                   <Badge variant={resource.is_active ? 'default' : 'secondary'}>
-                    {resource.is_active ? 'Activo' : 'Inactivo'}
+                    {resource.is_active ? t.services.active : t.services.inactive}
                   </Badge>
                 </CardContent>
               </Card>
@@ -557,7 +559,7 @@ export default function ServicesPage() {
           {filteredResources.length === 0 && (
             <div className="col-span-full flex flex-col items-center justify-center py-12">
               <Building className="mb-4 h-12 w-12 text-muted-foreground/50" />
-              <p className="text-muted-foreground">No se encontraron recursos</p>
+              <p className="text-muted-foreground">{t.services.notFoundResources}</p>
             </div>
           )}
         </div>
@@ -568,40 +570,38 @@ export default function ServicesPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {editingService ? 'Editar Servicio' : 'Nuevo Servicio'}
+              {editingService ? t.services.editServiceTitle : t.services.newServiceTitle}
             </DialogTitle>
             <DialogDescription>
-              {editingService
-                ? 'Modifica los datos del servicio'
-                : 'Agrega un nuevo servicio a tu catalogo'}
+              {editingService ? t.services.editServiceDesc : t.services.newServiceDesc}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSaveService} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="service-name">Nombre</Label>
+              <Label htmlFor="service-name">{t.services.nameLabel}</Label>
               <Input
                 id="service-name"
                 value={serviceForm.name}
                 onChange={(e) => setServiceForm({ ...serviceForm, name: e.target.value })}
-                placeholder="Ej: Consulta General"
+                placeholder={t.services.namePlaceholder}
                 required
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="service-description">Descripcion</Label>
+              <Label htmlFor="service-description">{t.services.descLabel}</Label>
               <Textarea
                 id="service-description"
                 value={serviceForm.description}
                 onChange={(e) => setServiceForm({ ...serviceForm, description: e.target.value })}
-                placeholder="Descripcion del servicio..."
+                placeholder={t.services.descPlaceholder}
                 rows={2}
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="service-duration">Duracion (minutos)</Label>
+                <Label htmlFor="service-duration">{t.services.durationLabel}</Label>
                 <Input
                   id="service-duration"
                   type="number"
@@ -613,7 +613,7 @@ export default function ServicesPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="service-price">Precio (opcional)</Label>
+                <Label htmlFor="service-price">{t.services.priceLabel}</Label>
                 <Input
                   id="service-price"
                   type="number"
@@ -625,7 +625,7 @@ export default function ServicesPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Color</Label>
+              <Label>{t.services.colorLabel}</Label>
               <div className="flex gap-2">
                 {SERVICE_COLORS.map((color) => (
                   <button
@@ -644,7 +644,7 @@ export default function ServicesPage() {
             </div>
 
             <div className="flex items-center justify-between">
-              <Label htmlFor="service-active">Servicio activo</Label>
+              <Label htmlFor="service-active">{t.services.serviceActive}</Label>
               <Switch
                 id="service-active"
                 checked={serviceForm.isActive}
@@ -654,11 +654,11 @@ export default function ServicesPage() {
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsServiceModalOpen(false)} disabled={saving}>
-                Cancelar
+                {t.services.cancelBtn}
               </Button>
               <Button type="submit" disabled={saving}>
                 {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {editingService ? 'Guardar cambios' : 'Crear servicio'}
+                {editingService ? t.services.saveBtn : t.services.createServiceBtn}
               </Button>
             </DialogFooter>
           </form>
@@ -670,44 +670,42 @@ export default function ServicesPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {editingResource ? 'Editar Recurso' : 'Nuevo Recurso'}
+              {editingResource ? t.services.editResourceTitle : t.services.newResourceTitle}
             </DialogTitle>
             <DialogDescription>
-              {editingResource
-                ? 'Modifica los datos del recurso'
-                : 'Agrega un nuevo recurso (sala, persona, equipo)'}
+              {editingResource ? t.services.editResourceDesc : t.services.newResourceDesc}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSaveResource} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="resource-name">Nombre</Label>
+              <Label htmlFor="resource-name">{t.services.nameLabel}</Label>
               <Input
                 id="resource-name"
                 value={resourceForm.name}
                 onChange={(e) => setResourceForm({ ...resourceForm, name: e.target.value })}
-                placeholder="Ej: Consultorio 1"
+                placeholder={t.services.resourceNamePlaceholder}
                 required
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="resource-description">Descripcion</Label>
+              <Label htmlFor="resource-description">{t.services.descLabel}</Label>
               <Textarea
                 id="resource-description"
                 value={resourceForm.description}
                 onChange={(e) => setResourceForm({ ...resourceForm, description: e.target.value })}
-                placeholder="Descripcion del recurso..."
+                placeholder={t.services.resourceDescPlaceholder}
                 rows={2}
               />
             </div>
 
             <div className="space-y-2">
-              <Label>Tipo de recurso</Label>
+              <Label>{t.services.resourceTypeLabel}</Label>
               <div className="grid grid-cols-3 gap-2">
                 {[
-                  { value: 'room', label: 'Sala', icon: Building },
-                  { value: 'person', label: 'Persona', icon: User },
-                  { value: 'equipment', label: 'Equipo', icon: Briefcase },
+                  { value: 'room', label: t.services.roomType, icon: Building },
+                  { value: 'person', label: t.services.personType, icon: User },
+                  { value: 'equipment', label: t.services.equipmentType, icon: Briefcase },
                 ].map((option) => (
                   <button
                     key={option.value}
@@ -727,7 +725,7 @@ export default function ServicesPage() {
             </div>
 
             <div className="flex items-center justify-between">
-              <Label htmlFor="resource-active">Recurso activo</Label>
+              <Label htmlFor="resource-active">{t.services.resourceActive}</Label>
               <Switch
                 id="resource-active"
                 checked={resourceForm.isActive}
@@ -737,11 +735,11 @@ export default function ServicesPage() {
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsResourceModalOpen(false)} disabled={saving}>
-                Cancelar
+                {t.services.cancelBtn}
               </Button>
               <Button type="submit" disabled={saving}>
                 {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {editingResource ? 'Guardar cambios' : 'Crear recurso'}
+                {editingResource ? t.services.saveBtn : t.services.createResourceBtn}
               </Button>
             </DialogFooter>
           </form>

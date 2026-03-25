@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
+import { useLanguage } from '@/context/language-context'
 import {
   Calendar,
   LayoutDashboard,
@@ -29,12 +30,12 @@ interface MobileNavProps {
   onToggle: () => void
 }
 
-const navigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { name: 'Calendario', href: '/dashboard/calendar', icon: Calendar },
-  { name: 'Servicios', href: '/dashboard/services', icon: Briefcase },
-  { name: 'Clientes', href: '/dashboard/clients', icon: Users },
-  { name: 'Configuracion', href: '/dashboard/settings', icon: Settings },
+const NAV_ITEMS = [
+  { key: 'dashboard' as const, href: '/dashboard', icon: LayoutDashboard },
+  { key: 'calendar' as const, href: '/dashboard/calendar', icon: Calendar },
+  { key: 'services' as const, href: '/dashboard/services', icon: Briefcase },
+  { key: 'clients' as const, href: '/dashboard/clients', icon: Users },
+  { key: 'settings' as const, href: '/dashboard/settings', icon: Settings },
 ]
 
 export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
@@ -42,10 +43,11 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const { user, profile, signOut } = useAuth()
   const { businesses, loading: businessLoading } = useBusinesses()
+  const { t } = useLanguage()
 
   const currentBusiness = businesses?.[0]
   const userPlan = profile?.plan || 'free'
-  const userName = profile?.full_name || user?.email?.split('@')[0] || 'Usuario'
+  const userName = profile?.full_name || user?.email?.split('@')[0] || t.mobileNav.defaultUser
   const userEmail = profile?.email || user?.email || ''
 
   const getInitials = (name: string) => {
@@ -72,15 +74,15 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
           <SheetTrigger asChild>
             <Button variant="ghost" size="icon" className="lg:hidden">
               <Menu className="h-5 w-5" />
-              <span className="sr-only">Abrir menu</span>
+              <span className="sr-only">{t.mobileNav.openMenu}</span>
             </Button>
           </SheetTrigger>
           <SheetContent side="right" className="w-[280px] p-0">
-            <SheetTitle className="sr-only">Menu de navegacion</SheetTitle>
+            <SheetTitle className="sr-only">{t.mobileNav.menuTitle}</SheetTitle>
             <div className="flex h-full flex-col">
               {/* Header */}
               <div className="flex h-14 items-center justify-between border-b px-4">
-                <span className="text-lg font-bold">Menu</span>
+                <span className="text-lg font-bold">{t.mobileNav.menu}</span>
                 <Button variant="ghost" size="icon" onClick={onToggle}>
                   <X className="h-5 w-5" />
                 </Button>
@@ -118,8 +120,8 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
                     </div>
                   </div>
                 ) : (
-                  <Link 
-                    href="/dashboard/settings" 
+                  <Link
+                    href="/dashboard/settings"
                     onClick={onToggle}
                     className="flex items-center gap-3"
                   >
@@ -127,8 +129,8 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
                       <Building2 className="h-5 w-5 text-muted-foreground/50" />
                     </div>
                     <div className="flex-1 overflow-hidden">
-                      <p className="truncate text-sm font-medium">Configurar negocio</p>
-                      <p className="truncate text-xs text-amber-500">Toca para comenzar</p>
+                      <p className="truncate text-sm font-medium">{t.mobileNav.setupBusiness}</p>
+                      <p className="truncate text-xs text-amber-500">{t.mobileNav.setupBusinessCta}</p>
                     </div>
                   </Link>
                 )}
@@ -136,11 +138,11 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
 
               {/* Navigation */}
               <nav className="flex-1 space-y-1 p-2">
-                {navigation.map((item) => {
+                {NAV_ITEMS.map((item) => {
                   const isActive = pathname === item.href
                   return (
                     <Link
-                      key={item.name}
+                      key={item.key}
                       href={item.href}
                       onClick={onToggle}
                       className={cn(
@@ -151,7 +153,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
                       )}
                     >
                       <item.icon className="h-5 w-5 shrink-0" />
-                      <span>{item.name}</span>
+                      <span>{t.nav[item.key]}</span>
                     </Link>
                   )
                 })}
@@ -163,7 +165,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
                   <div className="rounded-lg bg-gradient-to-r from-amber-500/10 to-orange-500/10 p-3">
                     <div className="flex items-center gap-2">
                       <Crown className="h-4 w-4 text-amber-500" />
-                      <span className="text-sm font-medium">Plan Premium</span>
+                      <span className="text-sm font-medium">{t.mobileNav.premium}</span>
                     </div>
                   </div>
                 ) : (
@@ -175,7 +177,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
                     }}
                   >
                     <Crown className="h-4 w-4" />
-                    Plan Premium
+                    {t.mobileNav.premium}
                   </Button>
                 )}
               </div>
@@ -190,7 +192,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
                   className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
                 >
                   <LogOut className="h-5 w-5" />
-                  <span>Cerrar sesion</span>
+                  <span>{t.mobileNav.signOut}</span>
                 </button>
               </div>
             </div>
@@ -201,11 +203,11 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
       {/* Bottom Navigation Bar for quick access on mobile */}
       <div className="fixed inset-x-0 bottom-0 z-50 border-t bg-background lg:hidden">
         <nav className="flex items-center justify-around py-2">
-          {navigation.slice(0, 5).map((item) => {
+          {NAV_ITEMS.slice(0, 5).map((item) => {
             const isActive = pathname === item.href
             return (
               <Link
-                key={item.name}
+                key={item.key}
                 href={item.href}
                 className={cn(
                   'flex flex-col items-center gap-1 p-2 text-xs transition-colors',
@@ -213,7 +215,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
                 )}
               >
                 <item.icon className={cn('h-5 w-5', isActive && 'text-primary')} />
-                <span className="truncate max-w-[60px]">{item.name.slice(0, 6)}</span>
+                <span className="truncate max-w-[60px]">{t.nav[item.key].slice(0, 6)}</span>
               </Link>
             )
           })}

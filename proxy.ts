@@ -4,10 +4,14 @@ import { createServerClient } from '@supabase/ssr'
 const protectedRoutes = ['/dashboard', '/app']
 const authRoutes = ['/login', '/register', '/forgot-password']
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Create a Supabase client for the middleware
+  // Start with a passthrough response so we can attach refreshed cookies to it
+  let response = NextResponse.next({ request })
+
+  // Create a Supabase client that can refresh the JWT and write updated
+  // cookies to the response (required so the browser keeps a valid session)
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -17,36 +21,41 @@ export async function middleware(request: NextRequest) {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
+          // Write to the request (so server components can read it this cycle)
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
+          )
+          // Recreate the response so it carries the updated Set-Cookie headers
+          response = NextResponse.next({ request })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options)
           )
         },
       },
     }
   )
 
-  // Get the session
+  // getUser() is preferred over getSession() in middleware – it validates the
+  // JWT server-side and also triggers a token refresh when needed.
   const {
-    data: { session },
-  } = await supabase.auth.getSession()
+    data: { user },
+  } = await supabase.auth.getUser()
 
-  // Check if the route is protected
   const isProtectedRoute = protectedRoutes.some((route) =>
     pathname.startsWith(route)
   )
   const isAuthRoute = authRoutes.some((route) => pathname.startsWith(route))
 
-  // If no session and trying to access protected route, redirect to login
-  if (isProtectedRoute && !session) {
+  if (isProtectedRoute && !user) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  // If session exists and trying to access auth routes, redirect to dashboard
-  if (isAuthRoute && session) {
+  if (isAuthRoute && user) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
-  return NextResponse.next()
+  // Return the response with any refreshed session cookies attached
+  return response
 }
 
 export const config = {

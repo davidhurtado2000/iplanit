@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -18,6 +18,7 @@ import {
   Crown,
   Building2,
   Loader2,
+  Clock,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -28,27 +29,45 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { UpgradeModal } from '@/components/upgrade-modal'
+import { useLanguage } from '@/context/language-context'
 
 interface SidebarProps {
   isCollapsed: boolean
   onToggle: () => void
 }
 
-const navigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { name: 'Calendario', href: '/dashboard/calendar', icon: Calendar },
-  { name: 'Servicios', href: '/dashboard/services', icon: Briefcase },
-  { name: 'Clientes', href: '/dashboard/clients', icon: Users },
-  { name: 'Configuracion', href: '/dashboard/settings', icon: Settings },
+const NAV_ITEMS = [
+  { key: 'dashboard' as const, href: '/dashboard', icon: LayoutDashboard },
+  { key: 'calendar' as const, href: '/dashboard/calendar', icon: Calendar },
+  { key: 'services' as const, href: '/dashboard/services', icon: Briefcase },
+  { key: 'clients' as const, href: '/dashboard/clients', icon: Users },
+  { key: 'settings' as const, href: '/dashboard/settings', icon: Settings },
 ]
 
 export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
   const pathname = usePathname()
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [now, setNow] = useState<Date | null>(null)
   const { user, profile, loading: authLoading, signOut } = useAuth()
   const { businesses, loading: businessLoading } = useBusinesses()
+  const { t } = useLanguage()
 
   const currentBusiness = businesses?.[0]
+
+  useEffect(() => {
+    setNow(new Date())
+    const timer = setInterval(() => setNow(new Date()), 60_000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const tz = currentBusiness?.timezone || 'America/Lima'
+  const localDate = now
+    ? now.toLocaleDateString('es-ES', { timeZone: tz, weekday: 'short', day: 'numeric', month: 'short' })
+    : null
+  const localTime = now
+    ? now.toLocaleTimeString('es-ES', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: true })
+    : null
+
   const userPlan = profile?.plan || 'free'
   const userName = profile?.full_name || user?.email?.split('@')[0] || 'Usuario'
   const userEmail = profile?.email || user?.email || ''
@@ -136,13 +155,34 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
           </div>
         )}
 
+        {/* Date & Time — only rendered client-side to avoid hydration mismatch */}
+        {now && (!isCollapsed ? (
+          <div className="border-b border-sidebar-border px-4 py-2.5 flex items-center justify-between">
+            <span className="text-xs text-sidebar-foreground/60 capitalize">{localDate}</span>
+            <span className="flex items-center gap-1 text-sm font-semibold text-sidebar-foreground tabular-nums">
+              <Clock className="h-3.5 w-3.5 text-sidebar-foreground/50" />
+              {localTime}
+            </span>
+          </div>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex justify-center border-b border-sidebar-border py-2.5">
+                <Clock className="h-4 w-4 text-sidebar-foreground/50" />
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="right">{localDate} · {localTime}</TooltipContent>
+          </Tooltip>
+        ))}
+
         {/* Navigation */}
         <nav className="flex-1 space-y-1 p-2">
-          {navigation.map((item) => {
+          {NAV_ITEMS.map((item) => {
+            const label = t.nav[item.key]
             const isActive = pathname === item.href
             const NavLink = (
               <Link
-                key={item.name}
+                key={item.key}
                 href={item.href}
                 className={cn(
                   'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
@@ -152,16 +192,16 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
                 )}
               >
                 <item.icon className="h-5 w-5 shrink-0" />
-                {!isCollapsed && <span>{item.name}</span>}
+                {!isCollapsed && <span>{label}</span>}
               </Link>
             )
 
             if (isCollapsed) {
               return (
-                <Tooltip key={item.name}>
+                <Tooltip key={item.key}>
                   <TooltipTrigger asChild>{NavLink}</TooltipTrigger>
                   <TooltipContent side="right" className="font-medium">
-                    {item.name}
+                    {label}
                   </TooltipContent>
                 </Tooltip>
               )
@@ -226,7 +266,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
                     <LogOut className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Cerrar sesion</TooltipContent>
+                <TooltipContent>{t.signOut}</TooltipContent>
               </Tooltip>
             )}
           </div>

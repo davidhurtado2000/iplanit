@@ -20,6 +20,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
+import { useLanguage } from '@/context/language-context'
 import { createClient } from '@/lib/supabase/client'
 import {
   User,
@@ -47,25 +48,6 @@ const TIMEZONES = [
   { value: 'America/Bogota', label: 'Bogota, Colombia (GMT-5)' },
 ]
 
-const DAYS: { value: DayOfWeek; label: string }[] = [
-  { value: 'monday', label: 'Lunes' },
-  { value: 'tuesday', label: 'Martes' },
-  { value: 'wednesday', label: 'Miercoles' },
-  { value: 'thursday', label: 'Jueves' },
-  { value: 'friday', label: 'Viernes' },
-  { value: 'saturday', label: 'Sabado' },
-  { value: 'sunday', label: 'Domingo' },
-]
-
-const PREMIUM_FEATURES = [
-  'Analisis y reportes avanzados',
-  'Historial completo de clientes',
-  'Graficos de demanda y horas pico',
-  'Reportes financieros',
-  'Exportacion de datos',
-  'Soporte prioritario',
-]
-
 const DEFAULT_BUSINESS_HOURS = [
   { dayOfWeek: 'monday', startTime: '09:00', endTime: '18:00', isOpen: true },
   { dayOfWeek: 'tuesday', startTime: '09:00', endTime: '18:00', isOpen: true },
@@ -77,19 +59,32 @@ const DEFAULT_BUSINESS_HOURS = [
 ]
 
 export default function SettingsPage() {
-  const { user, profile: authProfile, loading: authLoading } = useAuth()
+  const { user, profile: authProfile, loading: authLoading, refreshProfile } = useAuth()
   const { businesses, loading: businessLoading } = useBusinesses()
+  const { language, setLanguage, t } = useLanguage()
   const [isSaving, setIsSaving] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [isCreatingBusiness, setIsCreatingBusiness] = useState(false)
   const supabase = createClient()
 
   const currentBusiness = businesses?.[0]
 
+  // DAYS computed from translations so they update when language changes
+  const DAYS: { value: DayOfWeek; label: string }[] = [
+    { value: 'monday', label: t.settings.days.monday },
+    { value: 'tuesday', label: t.settings.days.tuesday },
+    { value: 'wednesday', label: t.settings.days.wednesday },
+    { value: 'thursday', label: t.settings.days.thursday },
+    { value: 'friday', label: t.settings.days.friday },
+    { value: 'saturday', label: t.settings.days.saturday },
+    { value: 'sunday', label: t.settings.days.sunday },
+  ]
+
   // Profile State
   const [profileForm, setProfileForm] = useState({
     name: '',
     email: '',
-    language: 'es' as 'es' | 'en',
+    language: language,
   })
 
   // Business State
@@ -118,13 +113,13 @@ export default function SettingsPage() {
       setProfileForm({
         name: authProfile.full_name || '',
         email: authProfile.email || '',
-        language: 'es',
+        language,
       })
     } else if (user) {
       setProfileForm({
         name: user.user_metadata?.full_name || '',
         email: user.email || '',
-        language: 'es',
+        language,
       })
     }
 
@@ -155,7 +150,6 @@ export default function SettingsPage() {
         })
 
       if (error) throw error
-      // Refresh the page to reload businesses
       window.location.reload()
     } catch (err) {
       console.error('[v0] Error creating business:', err)
@@ -166,30 +160,37 @@ export default function SettingsPage() {
 
   const handleSave = async () => {
     setIsSaving(true)
+    setSaveStatus('idle')
     try {
-      // Update profile
       if (user) {
-        await supabase
+        const { error: profileError } = await supabase
           .from('profiles')
-          .upsert({
-            id: user.id,
-            email: profileForm.email,
-            full_name: profileForm.name,
-          })
+          .update({ full_name: profileForm.name })
+          .eq('id', user.id)
+        if (profileError) throw profileError
       }
 
-      // Update business if exists
       if (currentBusiness) {
-        await supabase
+        const { error: bizError } = await supabase
           .from('businesses')
           .update({
             name: business.name,
             timezone: business.timezone,
           })
           .eq('id', currentBusiness.id)
+        if (bizError) throw bizError
       }
+
+      // Apply language change immediately
+      setLanguage(profileForm.language)
+      await refreshProfile()
+
+      setSaveStatus('success')
+      setTimeout(() => setSaveStatus('idle'), 3000)
     } catch (err) {
       console.error('[v0] Error saving settings:', err)
+      setSaveStatus('error')
+      setTimeout(() => setSaveStatus('idle'), 4000)
     } finally {
       setIsSaving(false)
     }
@@ -227,41 +228,39 @@ export default function SettingsPage() {
         <>
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Configuracion</h1>
-        <p className="text-muted-foreground">
-          Administra tu perfil, negocio y preferencias
-        </p>
+        <h1 className="text-2xl font-bold text-foreground">{t.settings.title}</h1>
+        <p className="text-muted-foreground">{t.settings.subtitle}</p>
       </div>
 
       <Tabs defaultValue="profile" className="space-y-6">
         <TabsList className="grid h-auto w-full grid-cols-2 gap-2 bg-muted/50 p-2 sm:grid-cols-4 lg:w-auto">
-          <TabsTrigger 
-            value="profile" 
+          <TabsTrigger
+            value="profile"
             className="flex-col gap-1 py-3 data-[state=active]:bg-card data-[state=active]:shadow-sm sm:flex-row sm:gap-2 sm:py-2"
           >
             <User className="h-5 w-5 sm:h-4 sm:w-4" />
-            <span className="text-xs sm:text-sm">Perfil</span>
+            <span className="text-xs sm:text-sm">{t.settings.profileTab}</span>
           </TabsTrigger>
-          <TabsTrigger 
-            value="business" 
+          <TabsTrigger
+            value="business"
             className="flex-col gap-1 py-3 data-[state=active]:bg-card data-[state=active]:shadow-sm sm:flex-row sm:gap-2 sm:py-2"
           >
             <Building2 className="h-5 w-5 sm:h-4 sm:w-4" />
-            <span className="text-xs sm:text-sm">Negocio</span>
+            <span className="text-xs sm:text-sm">{t.settings.businessTab}</span>
           </TabsTrigger>
-          <TabsTrigger 
-            value="notifications" 
+          <TabsTrigger
+            value="notifications"
             className="flex-col gap-1 py-3 data-[state=active]:bg-card data-[state=active]:shadow-sm sm:flex-row sm:gap-2 sm:py-2"
           >
             <Bell className="h-5 w-5 sm:h-4 sm:w-4" />
-            <span className="text-xs sm:text-sm">Alertas</span>
+            <span className="text-xs sm:text-sm">{t.settings.notificationsTab}</span>
           </TabsTrigger>
-          <TabsTrigger 
-            value="plan" 
+          <TabsTrigger
+            value="plan"
             className="flex-col gap-1 py-3 data-[state=active]:bg-card data-[state=active]:shadow-sm sm:flex-row sm:gap-2 sm:py-2"
           >
             <CreditCard className="h-5 w-5 sm:h-4 sm:w-4" />
-            <span className="text-xs sm:text-sm">Plan</span>
+            <span className="text-xs sm:text-sm">{t.settings.planTab}</span>
           </TabsTrigger>
         </TabsList>
 
@@ -269,10 +268,8 @@ export default function SettingsPage() {
         <TabsContent value="profile" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Perfil de Usuario</CardTitle>
-              <CardDescription>
-                Actualiza tu informacion personal
-              </CardDescription>
+              <CardTitle>{t.settings.profileTitle}</CardTitle>
+              <CardDescription>{t.settings.profileDesc}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="flex items-center gap-4">
@@ -283,17 +280,17 @@ export default function SettingsPage() {
                 </Avatar>
                 <div>
                   <Button variant="outline" size="sm">
-                    Cambiar foto
+                    {t.settings.changePhoto}
                   </Button>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    JPG, PNG o GIF. Maximo 2MB.
+                    {t.settings.photoHint}
                   </p>
                 </div>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="profile-name">Nombre completo</Label>
+                  <Label htmlFor="profile-name">{t.settings.fullName}</Label>
                   <Input
                     id="profile-name"
                     value={profileForm.name}
@@ -301,7 +298,7 @@ export default function SettingsPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="profile-email">Correo electronico</Label>
+                  <Label htmlFor="profile-email">{t.settings.emailLabel}</Label>
                   <Input
                     id="profile-email"
                     type="email"
@@ -310,13 +307,13 @@ export default function SettingsPage() {
                     placeholder="tu@email.com"
                   />
                   <p className="mt-1 text-xs text-muted-foreground">
-                    El correo no puede ser cambiado
+                    {t.settings.emailHint}
                   </p>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="profile-language">Idioma</Label>
+                <Label htmlFor="profile-language">{t.language.label}</Label>
                 <Select
                   value={profileForm.language}
                   onValueChange={(value) => setProfileForm({ ...profileForm, language: value as 'es' | 'en' })}
@@ -325,8 +322,8 @@ export default function SettingsPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="es">Espanol</SelectItem>
-                    <SelectItem value="en">English</SelectItem>
+                    <SelectItem value="es">{t.language.es}</SelectItem>
+                    <SelectItem value="en">{t.language.en}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -336,23 +333,34 @@ export default function SettingsPage() {
               <div className="space-y-4">
                 <h4 className="flex items-center gap-2 font-medium">
                   <Shield className="h-4 w-4" />
-                  Seguridad
+                  {t.settings.securityTitle}
                 </h4>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <Button variant="outline">Cambiar contrasena</Button>
+                  <Button variant="outline">{t.settings.changePassword}</Button>
                   <p className="text-sm text-muted-foreground">
-                    Ultima actualizacion hace 3 meses
+                    {t.settings.lastUpdated}
                   </p>
                 </div>
               </div>
 
               <Separator />
 
-              <Button onClick={handleSave} disabled={isSaving} className="gap-2">
-                {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
-                <Save className="h-4 w-4" />
-                Guardar cambios
-              </Button>
+              <div className="flex items-center gap-3">
+                <Button onClick={handleSave} disabled={isSaving} className="gap-2">
+                  {isSaving
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : saveStatus === 'success'
+                      ? <Check className="h-4 w-4" />
+                      : <Save className="h-4 w-4" />}
+                  {t.saveChanges}
+                </Button>
+                {saveStatus === 'success' && (
+                  <p className="text-sm text-green-600">{t.changesSaved}</p>
+                )}
+                {saveStatus === 'error' && (
+                  <p className="text-sm text-destructive">{t.saveError}</p>
+                )}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -363,15 +371,13 @@ export default function SettingsPage() {
             <>
               <Card>
                 <CardHeader>
-                  <CardTitle>Informacion del Negocio</CardTitle>
-                  <CardDescription>
-                    Configura los datos de tu empresa
-                  </CardDescription>
+                  <CardTitle>{t.settings.businessTitle}</CardTitle>
+                  <CardDescription>{t.settings.businessDesc}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
-                      <Label htmlFor="business-name">Nombre del negocio</Label>
+                      <Label htmlFor="business-name">{t.settings.businessName}</Label>
                       <Input
                         id="business-name"
                         value={business.name}
@@ -379,7 +385,7 @@ export default function SettingsPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="business-timezone">Zona horaria</Label>
+                      <Label htmlFor="business-timezone">{t.settings.timezone}</Label>
                       <Select
                         value={business.timezone}
                         onValueChange={(value) => setBusiness({ ...business, timezone: value })}
@@ -399,33 +405,33 @@ export default function SettingsPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="business-address">Direccion</Label>
+                    <Label htmlFor="business-address">{t.settings.address}</Label>
                     <Input
                       id="business-address"
                       value={business.address}
                       onChange={(e) => setBusiness({ ...business, address: e.target.value })}
-                      placeholder="Direccion de tu negocio"
+                      placeholder={t.settings.addressPlaceholder}
                     />
                   </div>
 
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
-                      <Label htmlFor="business-phone">Telefono</Label>
+                      <Label htmlFor="business-phone">{t.settings.phone}</Label>
                       <Input
                         id="business-phone"
                         value={business.phone}
                         onChange={(e) => setBusiness({ ...business, phone: e.target.value })}
-                        placeholder="+51 1 234 5678"
+                        placeholder={t.settings.phonePlaceholder}
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="business-email">Email de contacto</Label>
+                      <Label htmlFor="business-email">{t.settings.contactEmail}</Label>
                       <Input
                         id="business-email"
                         type="email"
                         value={business.email}
                         onChange={(e) => setBusiness({ ...business, email: e.target.value })}
-                        placeholder="contacto@tunegocio.com"
+                        placeholder={t.settings.contactEmailPlaceholder}
                       />
                     </div>
                   </div>
@@ -435,7 +441,7 @@ export default function SettingsPage() {
                   <Button onClick={handleSave} disabled={isSaving} className="gap-2">
                     {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
                     <Save className="h-4 w-4" />
-                    Guardar cambios
+                    {t.saveChanges}
                   </Button>
                 </CardContent>
               </Card>
@@ -444,11 +450,9 @@ export default function SettingsPage() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Clock className="h-5 w-5" />
-                    Horario de Atencion
+                    {t.settings.hoursTitle}
                   </CardTitle>
-                  <CardDescription>
-                    Define los horarios en que tu negocio esta disponible
-                  </CardDescription>
+                  <CardDescription>{t.settings.hoursDesc}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
@@ -480,7 +484,7 @@ export default function SettingsPage() {
                                 }
                                 className="w-full sm:w-auto"
                               />
-                              <span className="text-muted-foreground">a</span>
+                              <span className="text-muted-foreground">{t.settings.to}</span>
                               <Input
                                 type="time"
                                 value={hours.endTime}
@@ -492,7 +496,7 @@ export default function SettingsPage() {
                             </div>
                           )}
                           {!hours.isOpen && (
-                            <span className="text-sm text-muted-foreground">Cerrado</span>
+                            <span className="text-sm text-muted-foreground">{t.settings.closed}</span>
                           )}
                         </div>
                       )
@@ -504,14 +508,12 @@ export default function SettingsPage() {
           ) : (
             <Card>
               <CardHeader>
-                <CardTitle>Crear Negocio</CardTitle>
-                <CardDescription>
-                  Aún no tienes un negocio configurado. Crea uno para comenzar.
-                </CardDescription>
+                <CardTitle>{t.settings.createBusinessTitle}</CardTitle>
+                <CardDescription>{t.settings.createBusinessDesc}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <Label htmlFor="new-biz-name">Nombre del negocio</Label>
+                  <Label htmlFor="new-biz-name">{t.settings.businessName}</Label>
                   <Input
                     id="new-biz-name"
                     value={business.name}
@@ -521,7 +523,7 @@ export default function SettingsPage() {
                 </div>
 
                 <div>
-                  <Label htmlFor="new-timezone">Zona horaria</Label>
+                  <Label htmlFor="new-timezone">{t.settings.timezone}</Label>
                   <Select
                     value={business.timezone}
                     onValueChange={(value) => setBusiness({ ...business, timezone: value })}
@@ -546,7 +548,7 @@ export default function SettingsPage() {
                 >
                   {isCreatingBusiness && <Loader2 className="h-4 w-4 animate-spin" />}
                   <Plus className="h-4 w-4" />
-                  Crear negocio
+                  {t.settings.createBusinessBtn}
                 </Button>
               </CardContent>
             </Card>
@@ -557,17 +559,15 @@ export default function SettingsPage() {
         <TabsContent value="notifications" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Notificaciones por Email</CardTitle>
-              <CardDescription>
-                Configura que notificaciones deseas recibir
-              </CardDescription>
+              <CardTitle>{t.settings.notifTitle}</CardTitle>
+              <CardDescription>{t.settings.notifDesc}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label>Confirmaciones de reserva</Label>
+                  <Label>{t.settings.confirmations}</Label>
                   <p className="text-sm text-muted-foreground">
-                    Recibir email cuando se crea una nueva reserva
+                    {t.settings.confirmationsDesc}
                   </p>
                 </div>
                 <Switch
@@ -582,9 +582,9 @@ export default function SettingsPage() {
 
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label>Recordatorios</Label>
+                  <Label>{t.settings.reminders}</Label>
                   <p className="text-sm text-muted-foreground">
-                    Enviar recordatorios a clientes antes de su cita
+                    {t.settings.remindersDesc}
                   </p>
                 </div>
                 <Switch
@@ -597,7 +597,7 @@ export default function SettingsPage() {
 
               {notifications.emailReminders && (
                 <div className="ml-4 space-y-2 border-l-2 pl-4">
-                  <Label>Anticipacion del recordatorio</Label>
+                  <Label>{t.settings.reminderTiming}</Label>
                   <Select
                     value={String(notifications.reminderHours)}
                     onValueChange={(value) =>
@@ -608,10 +608,10 @@ export default function SettingsPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="1">1 hora antes</SelectItem>
-                      <SelectItem value="2">2 horas antes</SelectItem>
-                      <SelectItem value="24">24 horas antes</SelectItem>
-                      <SelectItem value="48">48 horas antes</SelectItem>
+                      <SelectItem value="1">{t.settings.reminderH1}</SelectItem>
+                      <SelectItem value="2">{t.settings.reminderH2}</SelectItem>
+                      <SelectItem value="24">{t.settings.reminderH24}</SelectItem>
+                      <SelectItem value="48">{t.settings.reminderH48}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -621,9 +621,9 @@ export default function SettingsPage() {
 
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label>Cancelaciones</Label>
+                  <Label>{t.settings.cancellations}</Label>
                   <p className="text-sm text-muted-foreground">
-                    Recibir email cuando una reserva es cancelada
+                    {t.settings.cancellationsDesc}
                   </p>
                 </div>
                 <Switch
@@ -641,11 +641,11 @@ export default function SettingsPage() {
         <TabsContent value="plan" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Plan Actual</CardTitle>
+              <CardTitle>{t.settings.planTitle}</CardTitle>
               <CardDescription>
                 {authProfile?.plan === 'premium'
-                  ? 'Disfrutas del plan premium'
-                  : 'Estás en el plan gratuito'}
+                  ? t.settings.premiumPlanDesc
+                  : t.settings.freePlanDesc}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -655,23 +655,23 @@ export default function SettingsPage() {
                   <div>
                     <p className="font-semibold">
                       {authProfile?.plan === 'premium'
-                        ? 'Plan Premium'
-                        : 'Plan Gratuito'}
+                        ? t.settings.premiumPlanName
+                        : t.settings.freePlanName}
                     </p>
                     <p className="text-sm text-muted-foreground">
                       {authProfile?.plan === 'premium'
-                        ? '$20/mes - Acceso completo a todas las funciones'
-                        : 'Funciones básicas limitadas'}
+                        ? t.settings.premiumFeatures
+                        : t.settings.freeFeatures}
                     </p>
                   </div>
                 </div>
                 {authProfile?.plan === 'premium' ? (
                   <Badge>
                     <Check className="mr-1 h-3 w-3" />
-                    Activo
+                    {t.settings.activeStatus}
                   </Badge>
                 ) : (
-                  <Button>Actualizar a Premium</Button>
+                  <Button>{t.settings.upgradePremium}</Button>
                 )}
               </div>
 
@@ -680,12 +680,12 @@ export default function SettingsPage() {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-base">
                       <Crown className="h-5 w-5 text-amber-500" />
-                      Características Premium
+                      {t.settings.premiumFeaturesTitle}
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <ul className="space-y-2">
-                      {PREMIUM_FEATURES.map((feature) => (
+                      {t.settings.premiumFeaturesList.map((feature) => (
                         <li key={feature} className="flex items-center gap-2 text-sm">
                           <Check className="h-4 w-4 text-amber-500" />
                           <span>{feature}</span>

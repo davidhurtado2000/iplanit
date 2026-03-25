@@ -18,24 +18,17 @@ import {
   Lock,
 } from 'lucide-react'
 import Link from 'next/link'
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-} from 'recharts'
 import { UpgradeModal, FREE_LIMITS } from '@/components/upgrade-modal'
 import { OnboardingBanner } from '@/components/dashboard/onboarding-banner'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useAuth } from '@/hooks/use-auth'
+import { useLanguage } from '@/context/language-context'
 import { createClient } from '@/lib/supabase/client'
 
 export default function DashboardPage() {
   const { user, profile, loading: authLoading } = useAuth()
   const { businesses, loading: businessesLoading } = useBusinesses()
+  const { t } = useLanguage()
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [todayReservations, setTodayReservations] = useState<any[]>([])
   const [servicesCount, setServicesCount] = useState(0)
@@ -52,15 +45,22 @@ export default function DashboardPage() {
 
       try {
         const businessId = businesses[0].id
-        const todayStr = new Date().toISOString().split('T')[0]
+        const tz = businesses[0].timezone || 'America/Lima'
+        const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date())
+
+        // Build UTC range for today in the business timezone
+        const startUtc = new Date(`${todayStr}T00:00:00`)
+        const offsetMs = startUtc.getTime() - new Date(startUtc.toLocaleString('en-US', { timeZone: tz })).getTime()
+        const startOfDay = new Date(startUtc.getTime() + offsetMs).toISOString()
+        const endOfDay = new Date(new Date(`${todayStr}T23:59:59`).getTime() + offsetMs).toISOString()
 
         // Fetch today's reservations
         const { data: reservationsData } = await supabase
           .from('reservations')
           .select('*')
           .eq('business_id', businessId)
-          .gte('start_time', `${todayStr}T00:00:00`)
-          .lt('start_time', `${todayStr}T23:59:59`)
+          .gte('start_time', startOfDay)
+          .lte('start_time', endOfDay)
           .neq('status', 'cancelled')
           .order('start_time', { ascending: true })
 
@@ -105,7 +105,7 @@ export default function DashboardPage() {
   if (!user) {
     return (
       <div className="text-center">
-        <p className="text-muted-foreground">Cargando...</p>
+        <p className="text-muted-foreground">{t.reservation.loading}</p>
       </div>
     )
   }
@@ -120,15 +120,15 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-bold text-foreground sm:text-2xl">Dashboard</h1>
+          <h1 className="text-xl font-bold text-foreground sm:text-2xl">{t.dashboard.title}</h1>
           <p className="text-sm text-muted-foreground">
-            Bienvenido, {displayName}
+            {t.welcome}, {displayName}
           </p>
         </div>
         <Button asChild size="sm" className="w-full sm:w-auto">
           <Link href="/dashboard/calendar">
             <Calendar className="mr-2 h-4 w-4" />
-            Ver Calendario
+            {t.dashboard.viewCalendar}
           </Link>
         </Button>
       </div>
@@ -151,9 +151,9 @@ export default function DashboardPage() {
                   <Crown className="h-5 w-5 text-amber-600" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-amber-900">Plan Gratuito</p>
+                  <p className="text-sm font-medium text-amber-900">{t.dashboard.freePlan}</p>
                   <p className="text-xs text-amber-700">
-                    {todayReservations.length} reservas hoy
+                    {todayReservations.length} {t.dashboard.reservationsWord}
                   </p>
                 </div>
               </div>
@@ -163,7 +163,7 @@ export default function DashboardPage() {
                 onClick={() => setShowUpgradeModal(true)}
               >
                 <Crown className="h-4 w-4" />
-                Actualizar
+                {t.dashboard.upgrade}
               </Button>
             </div>
           </CardContent>
@@ -174,54 +174,54 @@ export default function DashboardPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Reservas Hoy</CardTitle>
+            <CardTitle className="text-sm font-medium">{t.dashboard.reservationsToday}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{todayReservations.length}</div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Citas programadas para hoy
+              {t.dashboard.appointmentsSubtitle}
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Negocio</CardTitle>
+            <CardTitle className="text-sm font-medium">{t.dashboard.businessCard}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="font-semibold text-foreground">
-              {currentBusiness?.name || 'Sin configurar'}
+              {currentBusiness?.name || t.dashboard.notConfigured}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              {currentBusiness?.timezone || 'Zona horaria'}
+              {currentBusiness?.timezone || ''}
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Plan</CardTitle>
+            <CardTitle className="text-sm font-medium">{t.dashboard.planCard}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
               <Badge variant={isPremium ? 'default' : 'secondary'}>
-                {isPremium ? 'Premium' : 'Gratuito'}
+                {isPremium ? t.dashboard.premium : t.dashboard.free}
               </Badge>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              {isPremium ? 'Todas las funciones' : 'Acceso básico'}
+              {isPremium ? t.dashboard.allFeatures : t.dashboard.basicAccess}
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Usuario</CardTitle>
+            <CardTitle className="text-sm font-medium">{t.dashboard.userCard}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-sm font-medium">{displayEmail}</div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Cuenta activa
+              {t.dashboard.activeAccount}
             </p>
           </CardContent>
         </Card>
@@ -233,15 +233,15 @@ export default function DashboardPage() {
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <Calendar className="h-5 w-5" />
-              Nueva Reserva
+              {t.dashboard.newReservation}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="mb-4 text-sm text-muted-foreground">
-              Crea una nueva cita para tu cliente
+              {t.dashboard.createAppointment}
             </p>
             <Button asChild className="w-full" size="sm">
-              <Link href="/dashboard/calendar">Ir al Calendario</Link>
+              <Link href="/dashboard/calendar">{t.dashboard.goToCalendar}</Link>
             </Button>
           </CardContent>
         </Card>
@@ -250,15 +250,15 @@ export default function DashboardPage() {
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <Users className="h-5 w-5" />
-              Clientes
+              {t.dashboard.clientsCard}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="mb-4 text-sm text-muted-foreground">
-              Gestiona tu lista de clientes
+              {t.dashboard.manageClients}
             </p>
             <Button asChild className="w-full" size="sm" variant="outline">
-              <Link href="/dashboard/clients">Ver Clientes</Link>
+              <Link href="/dashboard/clients">{t.dashboard.viewClients}</Link>
             </Button>
           </CardContent>
         </Card>
@@ -267,15 +267,15 @@ export default function DashboardPage() {
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <Clock className="h-5 w-5" />
-              Servicios
+              {t.dashboard.servicesCard}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="mb-4 text-sm text-muted-foreground">
-              Configura tus servicios
+              {t.dashboard.configureServices}
             </p>
             <Button asChild className="w-full" size="sm" variant="outline">
-              <Link href="/dashboard/services">Ver Servicios</Link>
+              <Link href="/dashboard/services">{t.dashboard.viewServices}</Link>
             </Button>
           </CardContent>
         </Card>

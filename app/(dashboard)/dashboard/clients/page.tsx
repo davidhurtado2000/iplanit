@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useAuth } from '@/hooks/use-auth'
+import { useLanguage } from '@/context/language-context'
 import { createClient } from '@/lib/supabase/client'
 import {
   Plus,
@@ -65,6 +66,7 @@ interface Client {
 export default function ClientsPage() {
   const { businesses, loading: businessLoading } = useBusinesses()
   const { profile } = useAuth()
+  const { t, locale } = useLanguage()
   const [clients, setClients] = useState<Client[]>([])
   const [reservations, setReservations] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -185,7 +187,7 @@ export default function ClientsPage() {
           .eq('id', editingClient.id)
           .select()
           .single()
-        
+
         if (error) throw error
         setClients(clients.map((c) => c.id === editingClient.id ? data : c))
       } else {
@@ -194,7 +196,7 @@ export default function ClientsPage() {
           .insert(clientData)
           .select()
           .single()
-        
+
         if (error) throw error
         setClients([...clients, data])
       }
@@ -212,7 +214,7 @@ export default function ClientsPage() {
         .from('clients')
         .delete()
         .eq('id', id)
-      
+
       if (error) throw error
       setClients(clients.filter((c) => c.id !== id))
     } catch (err) {
@@ -245,10 +247,8 @@ export default function ClientsPage() {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
         <Building2 className="mb-4 h-12 w-12 text-muted-foreground/50" />
-        <h2 className="text-xl font-semibold">Configura tu negocio primero</h2>
-        <p className="mt-2 text-muted-foreground">
-          Necesitas configurar tu negocio antes de agregar clientes
-        </p>
+        <h2 className="text-xl font-semibold">{t.clients.setupRequired}</h2>
+        <p className="mt-2 text-muted-foreground">{t.clients.setupRequiredDesc}</p>
       </div>
     )
   }
@@ -258,14 +258,12 @@ export default function ClientsPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Clientes</h1>
-          <p className="text-muted-foreground">
-            Administra tu base de clientes
-          </p>
+          <h1 className="text-2xl font-bold text-foreground">{t.clients.title}</h1>
+          <p className="text-muted-foreground">{t.clients.subtitle}</p>
         </div>
         <Button onClick={() => handleOpenModal()} className="gap-2">
           <Plus className="h-4 w-4" />
-          Nuevo Cliente
+          {t.clients.newClient}
         </Button>
       </div>
 
@@ -274,7 +272,7 @@ export default function ClientsPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total Clientes
+              {t.clients.totalClients}
             </CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -285,7 +283,7 @@ export default function ClientsPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Nuevos este mes
+              {t.clients.newThisMonth}
             </CardTitle>
             <Calendar className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -305,7 +303,7 @@ export default function ClientsPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Con reservas activas
+              {t.clients.withActiveReservations}
             </CardTitle>
             <Calendar className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -325,7 +323,7 @@ export default function ClientsPage() {
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
-          placeholder="Buscar clientes..."
+          placeholder={t.clients.search}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="pl-9"
@@ -338,10 +336,10 @@ export default function ClientsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Cliente</TableHead>
-                <TableHead>Contacto</TableHead>
-                <TableHead>Reservas</TableHead>
-                <TableHead>Desde</TableHead>
+                <TableHead>{t.clients.clientCol}</TableHead>
+                <TableHead>{t.clients.contactCol}</TableHead>
+                <TableHead>{t.clients.reservationsCol}</TableHead>
+                <TableHead>{t.clients.sinceCol}</TableHead>
                 <TableHead className="w-[50px]" />
               </TableRow>
             </TableHeader>
@@ -381,11 +379,11 @@ export default function ClientsPage() {
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary">
-                        {clientReservations.length} reservas
+                        {clientReservations.length} {t.clients.reservationsWord}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {new Date(client.created_at).toLocaleDateString('es-ES', {
+                      {new Date(client.created_at).toLocaleDateString(locale, {
                         day: 'numeric',
                         month: 'short',
                         year: 'numeric',
@@ -401,18 +399,18 @@ export default function ClientsPage() {
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => handleViewDetails(client)}>
                             <FileText className="mr-2 h-4 w-4" />
-                            Ver detalles
+                            {t.clients.viewDetailsBtn}
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleOpenModal(client)}>
                             <Pencil className="mr-2 h-4 w-4" />
-                            Editar
+                            {t.clients.editBtn}
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() => handleDelete(client.id)}
                             className="text-destructive"
                           >
                             <Trash2 className="mr-2 h-4 w-4" />
-                            Eliminar
+                            {t.clients.deleteBtn}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -424,7 +422,7 @@ export default function ClientsPage() {
                 <TableRow>
                   <TableCell colSpan={5} className="py-8 text-center">
                     <Users className="mx-auto mb-2 h-8 w-8 text-muted-foreground/50" />
-                    <p className="text-muted-foreground">No se encontraron clientes</p>
+                    <p className="text-muted-foreground">{t.clients.notFound}</p>
                   </TableCell>
                 </TableRow>
               )}
@@ -438,67 +436,65 @@ export default function ClientsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {editingClient ? 'Editar Cliente' : 'Nuevo Cliente'}
+              {editingClient ? t.clients.editTitle : t.clients.newTitle}
             </DialogTitle>
             <DialogDescription>
-              {editingClient
-                ? 'Modifica los datos del cliente'
-                : 'Agrega un nuevo cliente a tu base de datos'}
+              {editingClient ? t.clients.editDesc : t.clients.newDesc}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSave} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="name">Nombre completo</Label>
+              <Label htmlFor="name">{t.clients.fullName}</Label>
               <Input
                 id="name"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="Nombre del cliente"
+                placeholder={t.clients.namePlaceholder}
                 required
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="email">Correo electronico</Label>
+              <Label htmlFor="email">{t.clients.emailLabel}</Label>
               <Input
                 id="email"
                 type="email"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                placeholder="cliente@email.com"
+                placeholder={t.clients.emailPlaceholder}
                 required
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="phone">Telefono (opcional)</Label>
+              <Label htmlFor="phone">{t.clients.phoneLabel}</Label>
               <Input
                 id="phone"
                 type="tel"
                 value={formData.phone}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                placeholder="+51 999 999 999"
+                placeholder={t.clients.phonePlaceholder}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="notes">Notas (opcional)</Label>
+              <Label htmlFor="notes">{t.clients.notesLabel}</Label>
               <Textarea
                 id="notes"
                 value={formData.notes}
                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                placeholder="Notas importantes sobre el cliente..."
+                placeholder={t.clients.notesPlaceholder}
                 rows={3}
               />
             </div>
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} disabled={saving}>
-                Cancelar
+                {t.clients.cancelBtn}
               </Button>
               <Button type="submit" disabled={saving}>
                 {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {editingClient ? 'Guardar cambios' : 'Crear cliente'}
+                {editingClient ? t.clients.saveBtn : t.clients.createBtn}
               </Button>
             </DialogFooter>
           </form>
@@ -509,7 +505,7 @@ export default function ClientsPage() {
       <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Detalles del Cliente</DialogTitle>
+            <DialogTitle>{t.clients.detailTitle}</DialogTitle>
           </DialogHeader>
           {selectedClient && (
             <div className="space-y-6">
@@ -540,7 +536,7 @@ export default function ClientsPage() {
                   handleOpenModal(selectedClient)
                 }}>
                   <Pencil className="mr-2 h-4 w-4" />
-                  Editar
+                  {t.clients.editBtn}
                 </Button>
               </div>
 
@@ -554,7 +550,7 @@ export default function ClientsPage() {
               <div>
                 <div className="mb-3 flex items-center gap-2">
                   <History className="h-4 w-4" />
-                  <h4 className="font-medium">Historial de Reservas</h4>
+                  <h4 className="font-medium">{t.clients.reservationHistory}</h4>
                   {!isPremium && (
                     <Badge variant="secondary" className="ml-auto">Premium</Badge>
                   )}
@@ -576,7 +572,7 @@ export default function ClientsPage() {
                           <div className="flex-1">
                             <p className="text-sm font-medium">{service?.name}</p>
                             <p className="text-xs text-muted-foreground">
-                              {new Date(reservation.date).toLocaleDateString('es-ES', {
+                              {new Date(reservation.date).toLocaleDateString(locale, {
                                 day: 'numeric',
                                 month: 'short',
                                 year: 'numeric',
@@ -592,16 +588,16 @@ export default function ClientsPage() {
                                   : 'secondary'
                             }
                           >
-                            {reservation.status === 'confirmed' && 'Confirmada'}
-                            {reservation.status === 'cancelled' && 'Cancelada'}
-                            {reservation.status === 'rescheduled' && 'Reprogramada'}
+                            {reservation.status === 'confirmed' && t.clients.confirmed}
+                            {reservation.status === 'cancelled' && t.clients.cancelled}
+                            {reservation.status === 'rescheduled' && t.clients.rescheduled}
                           </Badge>
                         </div>
                       )
                     })}
                     {getClientReservations(selectedClient.id).length === 0 && (
                       <p className="py-4 text-center text-sm text-muted-foreground">
-                        Este cliente no tiene reservas
+                        {t.clients.noReservations}
                       </p>
                     )}
                   </div>
@@ -609,10 +605,10 @@ export default function ClientsPage() {
                   <div className="rounded-lg border border-dashed p-6 text-center">
                     <History className="mx-auto mb-2 h-8 w-8 text-muted-foreground/50" />
                     <p className="text-sm text-muted-foreground">
-                      El historial de reservas esta disponible en el plan Premium
+                      {t.clients.premiumRequired}
                     </p>
                     <Button className="mt-3" size="sm">
-                      Actualizar a Premium
+                      {t.clients.upgradePremium}
                     </Button>
                   </div>
                 )}

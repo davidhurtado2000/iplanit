@@ -14,15 +14,7 @@ import {
   ArrowRight,
   Sparkles,
 } from 'lucide-react'
-
-interface OnboardingStep {
-  id: string
-  title: string
-  description: string
-  icon: React.ElementType
-  href: string
-  completed: boolean
-}
+import { useLanguage } from '@/context/language-context'
 
 interface OnboardingBannerProps {
   hasBusiness: boolean
@@ -38,36 +30,37 @@ export function OnboardingBanner({
   hasReservations,
 }: OnboardingBannerProps) {
   const [dismissed, setDismissed] = useState(false)
+  const { t } = useLanguage()
 
-  const steps: OnboardingStep[] = [
+  const steps = [
     {
       id: 'business',
-      title: 'Configura tu negocio',
-      description: 'Agrega el nombre y zona horaria de tu negocio',
+      title: t.onboarding.steps.business.title,
+      description: t.onboarding.steps.business.desc,
       icon: Building2,
       href: '/dashboard/settings',
       completed: hasBusiness,
     },
     {
       id: 'services',
-      title: 'Crea tus servicios',
-      description: 'Define los servicios que ofreces y sus precios',
+      title: t.onboarding.steps.services.title,
+      description: t.onboarding.steps.services.desc,
       icon: Briefcase,
       href: '/dashboard/services',
       completed: hasServices,
     },
     {
       id: 'clients',
-      title: 'Agrega clientes',
-      description: 'Registra a tus primeros clientes',
+      title: t.onboarding.steps.clients.title,
+      description: t.onboarding.steps.clients.desc,
       icon: Users,
       href: '/dashboard/clients',
       completed: hasClients,
     },
     {
       id: 'reservations',
-      title: 'Crea tu primera reserva',
-      description: 'Programa tu primera cita',
+      title: t.onboarding.steps.reservations.title,
+      description: t.onboarding.steps.reservations.desc,
       icon: Calendar,
       href: '/dashboard/calendar',
       completed: hasReservations,
@@ -93,10 +86,8 @@ export function OnboardingBanner({
               <Sparkles className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <CardTitle className="text-lg">Bienvenido a iPlannit</CardTitle>
-              <CardDescription>
-                Completa estos pasos para comenzar a recibir reservas
-              </CardDescription>
+              <CardTitle className="text-lg">{t.onboarding.title}</CardTitle>
+              <CardDescription>{t.onboarding.subtitle}</CardDescription>
             </div>
           </div>
           <Button
@@ -105,7 +96,7 @@ export function OnboardingBanner({
             className="text-muted-foreground"
             onClick={() => setDismissed(true)}
           >
-            Ocultar
+            {t.onboarding.hide}
           </Button>
         </div>
       </CardHeader>
@@ -113,8 +104,10 @@ export function OnboardingBanner({
         {/* Progress */}
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Progreso</span>
-            <span className="font-medium">{completedSteps} de {steps.length} completados</span>
+            <span className="text-muted-foreground">{t.onboarding.progress}</span>
+            <span className="font-medium">
+              {completedSteps} {t.onboarding.of} {steps.length} {t.onboarding.completed}
+            </span>
           </div>
           <Progress value={progress} className="h-2" />
         </div>
@@ -146,7 +139,7 @@ export function OnboardingBanner({
               <p className="text-xs text-muted-foreground">{step.description}</p>
               {step.id === nextStep?.id && !step.completed && (
                 <div className="mt-1 flex items-center gap-1 text-xs font-medium text-primary">
-                  Comenzar <ArrowRight className="h-3 w-3" />
+                  {t.onboarding.start} <ArrowRight className="h-3 w-3" />
                 </div>
               )}
             </Link>
