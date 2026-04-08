@@ -3,6 +3,7 @@
 import React, { useState } from 'react'
 import { Sidebar } from '@/components/dashboard/sidebar'
 import { MobileNav } from '@/components/dashboard/mobile-nav'
+import { BusinessProvider } from '@/context/business-context'
 import { cn } from '@/lib/utils'
 
 export default function DashboardLayout({
@@ -14,6 +15,7 @@ export default function DashboardLayout({
   const [isMobileOpen, setIsMobileOpen] = useState(false)
 
   return (
+    <BusinessProvider>
     <div className="min-h-screen bg-background">
       {/* Desktop Sidebar - hidden on mobile */}
       <div className="hidden lg:block">
@@ -33,5 +35,6 @@ export default function DashboardLayout({
         <div className="p-4 sm:p-6">{children}</div>
       </main>
     </div>
+    </BusinessProvider>
   )
 }
