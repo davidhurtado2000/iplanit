@@ -12,10 +12,10 @@ CREATE TABLE IF NOT EXISTS service_resources (
 
 ALTER TABLE service_resources ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Business members can manage service_resources"
+CREATE POLICY "Business owners can manage service_resources"
   ON service_resources FOR ALL
   USING (
     business_id IN (
-      SELECT business_id FROM business_members WHERE user_id = auth.uid()
+      SELECT id FROM public.businesses WHERE owner_id = auth.uid()
     )
   );
