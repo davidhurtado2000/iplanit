@@ -28,6 +28,8 @@ export interface Client {
   notes: string | null
   created_at: string
   is_active: boolean
+  dni: string | null
+  ruc: string | null
 }
 
 export interface Service {
@@ -37,6 +39,7 @@ export interface Service {
   description: string | null
   duration_minutes: number
   price: number | null
+  price_usd: number | null
   color: string
   is_active: boolean
 }
@@ -48,6 +51,13 @@ export interface Resource {
   description: string | null
   type: 'room' | 'person' | 'equipment'
   is_active: boolean
+}
+
+export interface ServiceResource {
+  id: string
+  service_id: string
+  resource_id: string
+  business_id: string
 }
 
 export interface BusinessHour {
@@ -64,6 +74,7 @@ type DashboardDataContextType = {
   clients: Client[]
   services: Service[]
   resources: Resource[]
+  serviceResources: ServiceResource[]
   businessHours: BusinessHour[]
   calendarStartHour: number
   calendarEndHour: number
@@ -72,6 +83,7 @@ type DashboardDataContextType = {
   refetchReservations: () => Promise<void>
   refetchClients: () => Promise<void>
   refetchServicesAndResources: () => Promise<void>
+  refetchServiceResources: () => Promise<void>
 }
 
 const DashboardDataContext = createContext<DashboardDataContextType | undefined>(undefined)
@@ -86,6 +98,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
   const [clients, setClients] = useState<Client[]>([])
   const [services, setServices] = useState<Service[]>([])
   const [resources, setResources] = useState<Resource[]>([])
+  const [serviceResources, setServiceResources] = useState<ServiceResource[]>([])
   const [businessHours, setBusinessHours] = useState<BusinessHour[]>([])
   const [calendarStartHour, setCalendarStartHour] = useState(7)
   const [calendarEndHour, setCalendarEndHour] = useState(21)
@@ -102,7 +115,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
     setLoading(true)
     const fetchAll = async () => {
       try {
-        const [reservationsRes, clientsRes, servicesRes, resourcesRes, hoursRes] = await Promise.all([
+        const [reservationsRes, clientsRes, servicesRes, resourcesRes, hoursRes, serviceResourcesRes] = await Promise.all([
           supabase
             .from('reservations')
             .select('*')
@@ -127,6 +140,10 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
             .from('business_hours')
             .select('day_of_week, open_time, close_time, is_closed')
             .eq('business_id', currentBusiness.id),
+          supabase
+            .from('service_resources')
+            .select('*')
+            .eq('business_id', currentBusiness.id),
         ])
 
         setReservations(reservationsRes.data || [])
@@ -134,6 +151,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         setServices(servicesRes.data || [])
         setResources(resourcesRes.data || [])
         setBusinessHours(hoursRes.data || [])
+        setServiceResources(serviceResourcesRes.data || [])
 
         // Compute calendar start/end hours from business hours
         const activeDays = (hoursRes.data || []).filter((h: BusinessHour) => !h.is_closed)
@@ -188,6 +206,15 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
     setResources(resourcesRes.data || [])
   }, [currentBusiness?.id])
 
+  const refetchServiceResources = useCallback(async () => {
+    if (!currentBusiness) return
+    const { data } = await supabase
+      .from('service_resources')
+      .select('*')
+      .eq('business_id', currentBusiness.id)
+    setServiceResources(data || [])
+  }, [currentBusiness?.id])
+
   return (
     <DashboardDataContext.Provider
       value={{
@@ -195,6 +222,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         clients,
         services,
         resources,
+        serviceResources,
         businessHours,
         calendarStartHour,
         calendarEndHour,
@@ -202,6 +230,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         refetchReservations,
         refetchClients,
         refetchServicesAndResources,
+        refetchServiceResources,
       }}
     >
       {children}

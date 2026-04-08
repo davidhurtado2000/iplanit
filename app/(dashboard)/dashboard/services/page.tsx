@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
-import { useDashboardData } from '@/context/dashboard-data-context'
+import { useDashboardData, type ServiceResource } from '@/context/dashboard-data-context'
 import { createClient } from '@/lib/supabase/client'
 import {
   Plus,
@@ -58,6 +58,7 @@ interface Service {
   description: string | null
   duration_minutes: number
   price: number | null
+  price_usd: number | null
   color: string
   is_active: boolean
 }
@@ -79,7 +80,7 @@ const SERVICE_COLORS = [
 export default function ServicesPage() {
   const { businesses } = useBusinesses()
   const { t } = useLanguage()
-  const { services, resources, loading, refetchServicesAndResources } = useDashboardData()
+  const { services, resources, serviceResources, loading, refetchServicesAndResources, refetchServiceResources } = useDashboardData()
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState<'services' | 'resources'>('services')
   const [isServiceModalOpen, setIsServiceModalOpen] = useState(false)
@@ -96,9 +97,11 @@ export default function ServicesPage() {
     description: '',
     duration: 30,
     price: 0,
+    priceUsd: '' as number | '',
     color: SERVICE_COLORS[0],
     isActive: true,
   })
+  const [selectedResourceIds, setSelectedResourceIds] = useState<string[]>([])
 
   const [resourceForm, setResourceForm] = useState({
     name: '',
@@ -124,9 +127,15 @@ export default function ServicesPage() {
         description: service.description || '',
         duration: service.duration_minutes,
         price: service.price || 0,
+        priceUsd: service.price_usd ?? '',
         color: service.color,
         isActive: service.is_active,
       })
+      setSelectedResourceIds(
+        serviceResources
+          .filter((sr) => sr.service_id === service.id)
+          .map((sr) => sr.resource_id)
+      )
     } else {
       setEditingService(null)
       setServiceForm({
@@ -134,9 +143,11 @@ export default function ServicesPage() {
         description: '',
         duration: 30,
         price: 0,
+        priceUsd: '',
         color: SERVICE_COLORS[0],
         isActive: true,
       })
+      setSelectedResourceIds([])
     }
     setIsServiceModalOpen(true)
   }
@@ -152,26 +163,49 @@ export default function ServicesPage() {
         description: serviceForm.description || null,
         duration_minutes: serviceForm.duration,
         price: serviceForm.price || 0,
+        price_usd: serviceForm.priceUsd !== '' ? serviceForm.priceUsd : null,
         color: serviceForm.color,
         is_active: serviceForm.isActive,
         business_id: currentBusiness.id,
       }
+
+      let serviceId: string
 
       if (editingService) {
         const { error } = await supabase
           .from('services')
           .update(serviceData)
           .eq('id', editingService.id)
-
         if (error) throw error
+        serviceId = editingService.id
       } else {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('services')
           .insert(serviceData)
-
+          .select('id')
+          .single()
         if (error) throw error
+        serviceId = data.id
       }
-      await refetchServicesAndResources()
+
+      // Sync service_resources links
+      await supabase
+        .from('service_resources')
+        .delete()
+        .eq('service_id', serviceId)
+        .eq('business_id', currentBusiness.id)
+
+      if (selectedResourceIds.length > 0) {
+        const links = selectedResourceIds.map((resource_id) => ({
+          service_id: serviceId,
+          resource_id,
+          business_id: currentBusiness.id,
+        }))
+        const { error: linkError } = await supabase.from('service_resources').insert(links)
+        if (linkError) throw linkError
+      }
+
+      await Promise.all([refetchServicesAndResources(), refetchServiceResources()])
       setIsServiceModalOpen(false)
     } catch (err) {
       console.error('[v0] Error saving service:', err)
@@ -188,7 +222,7 @@ export default function ServicesPage() {
         .eq('id', id)
 
       if (error) throw error
-      await refetchServicesAndResources()
+      await Promise.all([refetchServicesAndResources(), refetchServiceResources()])
     } catch (err) {
       console.error('[v0] Error deleting service:', err)
     }
@@ -406,10 +440,10 @@ export default function ServicesPage() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      {service.price ? (
-                        <div className="flex items-center gap-1 text-sm">
-                          <DollarSign className="h-3 w-3" />
-                          S/ {service.price}
+                      {service.price || service.price_usd ? (
+                        <div className="text-sm space-y-0.5">
+                          {service.price ? <div>S/ {service.price}</div> : null}
+                          {service.price_usd ? <div className="text-muted-foreground">$ {service.price_usd}</div> : null}
                         </div>
                       ) : (
                         <span className="text-muted-foreground">-</span>
@@ -503,9 +537,19 @@ export default function ServicesPage() {
                       {resource.description}
                     </p>
                   )}
-                  <Badge variant={resource.is_active ? 'default' : 'secondary'}>
-                    {resource.is_active ? t.services.active : t.services.inactive}
-                  </Badge>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant={resource.is_active ? 'default' : 'secondary'}>
+                      {resource.is_active ? t.services.active : t.services.inactive}
+                    </Badge>
+                    {(() => {
+                      const linkedCount = serviceResources.filter((sr) => sr.resource_id === resource.id).length
+                      return linkedCount > 0 ? (
+                        <Badge variant="outline" className="text-xs">
+                          {linkedCount} {linkedCount === 1 ? 'servicio' : 'servicios'}
+                        </Badge>
+                      ) : null
+                    })()}
+                  </div>
                 </CardContent>
               </Card>
             )
@@ -567,16 +611,57 @@ export default function ServicesPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="service-price">{t.services.priceLabel}</Label>
+                <Label htmlFor="service-price">{t.services.priceLabel} (S/.)</Label>
                 <Input
                   id="service-price"
                   type="number"
                   min={0}
+                  step={0.01}
                   value={serviceForm.price}
-                  onChange={(e) => setServiceForm({ ...serviceForm, price: parseFloat(e.target.value) })}
+                  onChange={(e) => setServiceForm({ ...serviceForm, price: parseFloat(e.target.value) || 0 })}
                 />
               </div>
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="service-price-usd">Precio (USD $)</Label>
+              <Input
+                id="service-price-usd"
+                type="number"
+                min={0}
+                step={0.01}
+                placeholder="Opcional"
+                value={serviceForm.priceUsd}
+                onChange={(e) => setServiceForm({ ...serviceForm, priceUsd: e.target.value !== '' ? parseFloat(e.target.value) : '' })}
+              />
+            </div>
+
+            {resources.length > 0 && (
+              <div className="space-y-2">
+                <Label>Sedes / Recursos asociados</Label>
+                <div className="max-h-32 overflow-y-auto rounded-md border p-2 space-y-1">
+                  {resources.map((resource) => (
+                    <label key={resource.id} className="flex items-center gap-2 cursor-pointer text-sm py-1">
+                      <input
+                        type="checkbox"
+                        className="rounded"
+                        checked={selectedResourceIds.includes(resource.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedResourceIds([...selectedResourceIds, resource.id])
+                          } else {
+                            setSelectedResourceIds(selectedResourceIds.filter((id) => id !== resource.id))
+                          }
+                        }}
+                      />
+                      {resource.name}
+                      <span className="text-muted-foreground text-xs">({getResourceTypeLabel(resource.type)})</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">Si no seleccionas ninguno, el servicio estará disponible en todas las sedes.</p>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label>{t.services.colorLabel}</Label>

@@ -2,7 +2,7 @@
 
 import React from "react"
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -62,6 +62,8 @@ interface Client {
   phone: string | null
   notes: string | null
   created_at: string
+  dni: string | null
+  ruc: string | null
 }
 
 export default function ClientsPage() {
@@ -75,7 +77,9 @@ export default function ClientsPage() {
   const [editingClient, setEditingClient] = useState<Client | null>(null)
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
   const supabase = createClient()
+  const PAGE_SIZE = 10
 
   const currentBusiness = businesses?.[0]
 
@@ -84,15 +88,30 @@ export default function ClientsPage() {
     email: '',
     phone: '',
     notes: '',
+    dni: '',
+    ruc: '',
   })
 
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchQuery])
+
   const filteredClients = useMemo(() => {
+    const q = searchQuery.toLowerCase()
     return clients.filter(
       (c) =>
-        c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.email.toLowerCase().includes(searchQuery.toLowerCase())
+        c.name.toLowerCase().includes(q) ||
+        c.email.toLowerCase().includes(q) ||
+        (c.dni && c.dni.toLowerCase().includes(q)) ||
+        (c.ruc && c.ruc.toLowerCase().includes(q))
     )
   }, [clients, searchQuery])
+
+  const totalPages = Math.max(1, Math.ceil(filteredClients.length / PAGE_SIZE))
+  const paginatedClients = filteredClients.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  )
 
   const getInitials = (name: string) => {
     return name
@@ -117,6 +136,8 @@ export default function ClientsPage() {
         email: client.email,
         phone: client.phone || '',
         notes: client.notes || '',
+        dni: client.dni || '',
+        ruc: client.ruc || '',
       })
     } else {
       setEditingClient(null)
@@ -125,6 +146,8 @@ export default function ClientsPage() {
         email: '',
         phone: '',
         notes: '',
+        dni: '',
+        ruc: '',
       })
     }
     setIsModalOpen(true)
@@ -141,6 +164,8 @@ export default function ClientsPage() {
         email: formData.email,
         phone: formData.phone || null,
         notes: formData.notes || null,
+        dni: formData.dni || null,
+        ruc: formData.ruc || null,
         business_id: currentBusiness.id,
       }
 
@@ -297,13 +322,14 @@ export default function ClientsPage() {
               <TableRow>
                 <TableHead>{t.clients.clientCol}</TableHead>
                 <TableHead>{t.clients.contactCol}</TableHead>
+                <TableHead>DNI / RUC</TableHead>
                 <TableHead>{t.clients.reservationsCol}</TableHead>
                 <TableHead>{t.clients.sinceCol}</TableHead>
                 <TableHead className="w-[50px]" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredClients.map((client) => {
+              {paginatedClients.map((client) => {
                 const clientReservations = getClientReservations(client.id)
                 return (
                   <TableRow key={client.id}>
@@ -335,6 +361,16 @@ export default function ClientsPage() {
                           </div>
                         )}
                       </div>
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {client.dni || client.ruc ? (
+                        <div className="space-y-0.5">
+                          {client.dni && <div>DNI: {client.dni}</div>}
+                          {client.ruc && <div className="text-muted-foreground">RUC: {client.ruc}</div>}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary">
@@ -379,7 +415,7 @@ export default function ClientsPage() {
               })}
               {filteredClients.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-8 text-center">
+                  <TableCell colSpan={6} className="py-8 text-center">
                     <Users className="mx-auto mb-2 h-8 w-8 text-muted-foreground/50" />
                     <p className="text-muted-foreground">{t.clients.notFound}</p>
                   </TableCell>
@@ -387,6 +423,33 @@ export default function ClientsPage() {
               )}
             </TableBody>
           </Table>
+
+          {/* Pagination */}
+          {filteredClients.length > PAGE_SIZE && (
+            <div className="flex items-center justify-between border-t px-4 py-3">
+              <p className="text-sm text-muted-foreground">
+                {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredClients.length)} de {filteredClients.length} clientes
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage((p) => p - 1)}
+                >
+                  Anterior
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage((p) => p + 1)}
+                >
+                  Siguiente
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -434,6 +497,29 @@ export default function ClientsPage() {
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                 placeholder={t.clients.phonePlaceholder}
               />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="dni">DNI</Label>
+                <Input
+                  id="dni"
+                  value={formData.dni}
+                  onChange={(e) => setFormData({ ...formData, dni: e.target.value })}
+                  placeholder="12345678"
+                  maxLength={20}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ruc">RUC</Label>
+                <Input
+                  id="ruc"
+                  value={formData.ruc}
+                  onChange={(e) => setFormData({ ...formData, ruc: e.target.value })}
+                  placeholder="20123456789"
+                  maxLength={20}
+                />
+              </div>
             </div>
 
             <div className="space-y-2">

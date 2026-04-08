@@ -29,6 +29,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
+import { useDashboardData } from '@/context/dashboard-data-context'
 
 interface Client {
   id: string
@@ -117,12 +118,8 @@ export function ReservationModal({
   const { profile } = useAuth()
   const { businesses } = useBusinesses()
   const { t, locale } = useLanguage()
+  const { clients, services, resources, serviceResources, businessHours } = useDashboardData()
   const [isLoading, setIsLoading] = useState(false)
-  const [clients, setClients] = useState<Client[]>([])
-  const [services, setServices] = useState<Service[]>([])
-  const [resources, setResources] = useState<Resource[]>([])
-  const [businessHours, setBusinessHours] = useState<BusinessHour[]>([])
-  const [loadingOptions, setLoadingOptions] = useState(false)
 
   const [formData, setFormData] = useState({
     client_id: '',
@@ -135,48 +132,22 @@ export function ReservationModal({
 
   const currentBusiness = businesses?.[0]
 
-  // Load clients and services when modal opens
+  // Filter resources based on selected service's allowed sedes
+  const allowedResourceIds = serviceResources
+    .filter((sr) => sr.service_id === formData.service_id)
+    .map((sr) => sr.resource_id)
+
+  const filteredResources = allowedResourceIds.length > 0
+    ? resources.filter((r) => allowedResourceIds.includes(r.id) && r.is_active)
+    : resources.filter((r) => r.is_active)
+
+  // Reset resource_id when service changes and selected resource is no longer available
   useEffect(() => {
-    if (!isOpen || !currentBusiness) return
-
-    const loadOptions = async () => {
-      setLoadingOptions(true)
-      try {
-        const [{ data: clientsData }, { data: servicesData }, { data: resourcesData }, { data: hoursData }] = await Promise.all([
-          supabase
-            .from('clients')
-            .select('id, name, email, phone')
-            .eq('business_id', currentBusiness.id)
-            .eq('is_active', true)
-            .order('name'),
-          supabase
-            .from('services')
-            .select('id, name, duration_minutes, price, color')
-            .eq('business_id', currentBusiness.id)
-            .eq('is_active', true)
-            .order('name'),
-          supabase
-            .from('resources')
-            .select('id, name, type, description')
-            .eq('business_id', currentBusiness.id)
-            .eq('is_active', true)
-            .order('name'),
-          supabase
-            .from('business_hours')
-            .select('day_of_week, open_time, close_time, is_closed')
-            .eq('business_id', currentBusiness.id),
-        ])
-        setClients(clientsData || [])
-        setServices(servicesData || [])
-        setResources(resourcesData || [])
-        setBusinessHours(hoursData || [])
-      } finally {
-        setLoadingOptions(false)
-      }
+    if (formData.resource_id && allowedResourceIds.length > 0 && !allowedResourceIds.includes(formData.resource_id)) {
+      setFormData((prev) => ({ ...prev, resource_id: '' }))
     }
-
-    loadOptions()
-  }, [isOpen, currentBusiness?.id])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.service_id])
 
   const tz = currentBusiness?.timezone || 'America/Lima'
 
@@ -429,18 +400,17 @@ export function ReservationModal({
               <Select
                 value={formData.client_id}
                 onValueChange={(val) => setFormData({ ...formData, client_id: val })}
-                disabled={loadingOptions}
               >
                 <SelectTrigger id="client">
-                  <SelectValue placeholder={loadingOptions ? t.reservation.loading : t.reservation.selectClient} />
+                  <SelectValue placeholder={t.reservation.selectClient} />
                 </SelectTrigger>
                 <SelectContent>
-                  {clients.length === 0 && !loadingOptions ? (
+                  {clients.length === 0 ? (
                     <SelectItem value="_empty" disabled>
                       {t.reservation.noClients}
                     </SelectItem>
                   ) : (
-                    clients.map((client) => (
+                    clients.filter((c) => c.is_active).map((client) => (
                       <SelectItem key={client.id} value={client.id}>
                         <span className="font-medium">{client.name}</span>
                         {client.email && (
@@ -458,19 +428,18 @@ export function ReservationModal({
               <Label htmlFor="service">{t.reservation.serviceSelect}</Label>
               <Select
                 value={formData.service_id}
-                onValueChange={(val) => setFormData({ ...formData, service_id: val })}
-                disabled={loadingOptions}
+                onValueChange={(val) => setFormData({ ...formData, service_id: val, resource_id: '' })}
               >
                 <SelectTrigger id="service">
-                  <SelectValue placeholder={loadingOptions ? t.reservation.loading : t.reservation.selectService} />
+                  <SelectValue placeholder={t.reservation.selectService} />
                 </SelectTrigger>
                 <SelectContent>
-                  {services.length === 0 && !loadingOptions ? (
+                  {services.length === 0 ? (
                     <SelectItem value="_empty" disabled>
                       {t.reservation.noServices}
                     </SelectItem>
                   ) : (
-                    services.map((service) => (
+                    services.filter((s) => s.is_active).map((service) => (
                       <SelectItem key={service.id} value={service.id}>
                         <span className="font-medium">{service.name}</span>
                         <span className="ml-2 text-xs text-muted-foreground">
@@ -503,14 +472,13 @@ export function ReservationModal({
               <Select
                 value={formData.resource_id || '_none'}
                 onValueChange={(val) => setFormData({ ...formData, resource_id: val === '_none' ? '' : val })}
-                disabled={loadingOptions}
               >
                 <SelectTrigger id="resource">
-                  <SelectValue placeholder={loadingOptions ? t.reservation.loading : t.reservation.noResource} />
+                  <SelectValue placeholder={t.reservation.noResource} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="_none">{t.reservation.noResource}</SelectItem>
-                  {resources.map((resource) => (
+                  {filteredResources.map((resource) => (
                     <SelectItem key={resource.id} value={resource.id}>
                       <span className="font-medium">{resource.name}</span>
                       <span className="ml-2 text-xs text-muted-foreground">
@@ -520,6 +488,11 @@ export function ReservationModal({
                   ))}
                 </SelectContent>
               </Select>
+              {allowedResourceIds.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Sedes disponibles para este servicio: {filteredResources.length}
+                </p>
+              )}
             </div>
 
             {/* Date & Time */}
