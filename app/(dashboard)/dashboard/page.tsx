@@ -36,16 +36,21 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      if (!businesses || businesses.length === 0) {
-        setLoading(false)
-        return
-      }
+  const currentBusiness = businesses?.[0]
 
+  useEffect(() => {
+    if (businessesLoading) return
+
+    if (!currentBusiness) {
+      setLoading(false)
+      return
+    }
+
+    setLoading(true)
+    const fetchDashboardData = async () => {
       try {
-        const businessId = businesses[0].id
-        const tz = businesses[0].timezone || 'America/Lima'
+        const businessId = currentBusiness.id
+        const tz = currentBusiness.timezone || 'America/Lima'
         const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date())
 
         // Build UTC range for today in the business timezone
@@ -91,7 +96,7 @@ export default function DashboardPage() {
     }
 
     fetchDashboardData()
-  }, [businesses])
+  }, [currentBusiness?.id, businessesLoading])
 
   if (authLoading || businessesLoading || loading) {
     return (

@@ -89,12 +89,15 @@ export default function ClientsPage() {
 
   // Fetch clients from Supabase
   useEffect(() => {
-    const fetchData = async () => {
-      if (!currentBusiness) {
-        setLoading(false)
-        return
-      }
+    if (businessLoading) return
 
+    if (!currentBusiness) {
+      setLoading(false)
+      return
+    }
+
+    setLoading(true)
+    const fetchData = async () => {
       try {
         const [clientsRes, reservationsRes] = await Promise.all([
           supabase
@@ -117,10 +120,8 @@ export default function ClientsPage() {
       }
     }
 
-    if (!businessLoading) {
-      fetchData()
-    }
-  }, [currentBusiness, businessLoading])
+    fetchData()
+  }, [currentBusiness?.id, businessLoading])
 
   const filteredClients = useMemo(() => {
     return clients.filter(

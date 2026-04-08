@@ -91,11 +91,14 @@ export default function CalendarPage() {
   }))
 
   useEffect(() => {
-    if (businessLoading || !currentBusiness) {
-      if (!businessLoading) setLoading(false)
+    if (businessLoading) return
+
+    if (!currentBusiness) {
+      setLoading(false)
       return
     }
 
+    setLoading(true)
     const fetchAll = async () => {
       try {
         const [

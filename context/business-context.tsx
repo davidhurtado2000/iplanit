@@ -26,12 +26,14 @@ type BusinessContextType = {
 
 const BusinessContext = createContext<BusinessContextType | undefined>(undefined)
 
+// Module-level singleton — safe because createClient() now returns a cached instance
+const supabase = createClient()
+
 export function BusinessProvider({ children }: { children: React.ReactNode }) {
   const { user, loading: authLoading } = useAuthContext()
   const [businesses, setBusinesses] = useState<Business[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const supabase = createClient()
 
   const fetchBusinesses = useCallback(async () => {
     if (!user) {

@@ -110,12 +110,15 @@ export default function ServicesPage() {
 
   // Fetch services and resources from Supabase
   useEffect(() => {
-    const fetchData = async () => {
-      if (!currentBusiness) {
-        setLoading(false)
-        return
-      }
+    if (businessLoading) return
 
+    if (!currentBusiness) {
+      setLoading(false)
+      return
+    }
+
+    setLoading(true)
+    const fetchData = async () => {
       try {
         const [servicesRes, resourcesRes] = await Promise.all([
           supabase
@@ -139,10 +142,8 @@ export default function ServicesPage() {
       }
     }
 
-    if (!businessLoading) {
-      fetchData()
-    }
-  }, [currentBusiness, businessLoading])
+    fetchData()
+  }, [currentBusiness?.id, businessLoading])
 
   const filteredServices = services.filter((s) =>
     s.name.toLowerCase().includes(searchQuery.toLowerCase())
