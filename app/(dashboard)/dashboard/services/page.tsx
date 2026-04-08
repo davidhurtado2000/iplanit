@@ -2,7 +2,7 @@
 
 import React from "react"
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
+import { useDashboardData } from '@/context/dashboard-data-context'
 import { createClient } from '@/lib/supabase/client'
 import {
   Plus,
@@ -76,11 +77,9 @@ const SERVICE_COLORS = [
 ]
 
 export default function ServicesPage() {
-  const { businesses, loading: businessLoading } = useBusinesses()
+  const { businesses } = useBusinesses()
   const { t } = useLanguage()
-  const [services, setServices] = useState<Service[]>([])
-  const [resources, setResources] = useState<Resource[]>([])
-  const [loading, setLoading] = useState(true)
+  const { services, resources, loading, refetchServicesAndResources } = useDashboardData()
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState<'services' | 'resources'>('services')
   const [isServiceModalOpen, setIsServiceModalOpen] = useState(false)
@@ -108,42 +107,6 @@ export default function ServicesPage() {
     isActive: true,
   })
 
-  // Fetch services and resources from Supabase
-  useEffect(() => {
-    if (businessLoading) return
-
-    if (!currentBusiness) {
-      setLoading(false)
-      return
-    }
-
-    setLoading(true)
-    const fetchData = async () => {
-      try {
-        const [servicesRes, resourcesRes] = await Promise.all([
-          supabase
-            .from('services')
-            .select('*')
-            .eq('business_id', currentBusiness.id)
-            .order('name'),
-          supabase
-            .from('resources')
-            .select('*')
-            .eq('business_id', currentBusiness.id)
-            .order('name'),
-        ])
-
-        if (servicesRes.data) setServices(servicesRes.data)
-        if (resourcesRes.data) setResources(resourcesRes.data)
-      } catch (err) {
-        console.error('[v0] Error fetching services:', err)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchData()
-  }, [currentBusiness?.id, businessLoading])
 
   const filteredServices = services.filter((s) =>
     s.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -195,25 +158,20 @@ export default function ServicesPage() {
       }
 
       if (editingService) {
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from('services')
           .update(serviceData)
           .eq('id', editingService.id)
-          .select()
-          .single()
 
         if (error) throw error
-        setServices(services.map((s) => s.id === editingService.id ? data : s))
       } else {
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from('services')
           .insert(serviceData)
-          .select()
-          .single()
 
         if (error) throw error
-        setServices([...services, data])
       }
+      await refetchServicesAndResources()
       setIsServiceModalOpen(false)
     } catch (err) {
       console.error('[v0] Error saving service:', err)
@@ -230,7 +188,7 @@ export default function ServicesPage() {
         .eq('id', id)
 
       if (error) throw error
-      setServices(services.filter((s) => s.id !== id))
+      await refetchServicesAndResources()
     } catch (err) {
       console.error('[v0] Error deleting service:', err)
     }
@@ -272,25 +230,20 @@ export default function ServicesPage() {
       }
 
       if (editingResource) {
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from('resources')
           .update(resourceData)
           .eq('id', editingResource.id)
-          .select()
-          .single()
 
         if (error) throw error
-        setResources(resources.map((r) => r.id === editingResource.id ? data : r))
       } else {
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from('resources')
           .insert(resourceData)
-          .select()
-          .single()
 
         if (error) throw error
-        setResources([...resources, data])
       }
+      await refetchServicesAndResources()
       setIsResourceModalOpen(false)
     } catch (err) {
       console.error('[v0] Error saving resource:', err)
@@ -307,7 +260,7 @@ export default function ServicesPage() {
         .eq('id', id)
 
       if (error) throw error
-      setResources(resources.filter((r) => r.id !== id))
+      await refetchServicesAndResources()
     } catch (err) {
       console.error('[v0] Error deleting resource:', err)
     }
@@ -330,7 +283,7 @@ export default function ServicesPage() {
     return t.services.equipmentType
   }
 
-  if (businessLoading || loading) {
+  if (loading) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-12 w-64" />

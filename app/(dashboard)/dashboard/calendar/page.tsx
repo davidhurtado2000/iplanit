@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -14,7 +14,7 @@ import { CalendarViewComponent } from '@/components/dashboard/calendar-view'
 import { ReservationModal } from '@/components/dashboard/reservation-modal'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
-import { createClient } from '@/lib/supabase/client'
+import { useDashboardData } from '@/context/dashboard-data-context'
 import type { CalendarView } from '@/lib/types'
 import { Plus, CalendarDays, CalendarRange, Calendar as CalendarIcon, Clock, ChevronDown, Building2 } from 'lucide-react'
 
@@ -66,20 +66,22 @@ const VIEW_CONFIG: { value: CalendarView; icon: React.ElementType }[] = [
 ]
 
 export default function CalendarPage() {
-  const { businesses, loading: businessLoading } = useBusinesses()
+  const { businesses } = useBusinesses()
   const { t, locale } = useLanguage()
+  const {
+    reservations,
+    clients,
+    services,
+    resources,
+    calendarStartHour,
+    calendarEndHour,
+    loading,
+    refetchReservations,
+  } = useDashboardData()
   const [view, setView] = useState<CalendarView>('day')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null)
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view'>('create')
-  const [reservations, setReservations] = useState<Reservation[]>([])
-  const [clients, setClients] = useState<Client[]>([])
-  const [services, setServices] = useState<Service[]>([])
-  const [resources, setResources] = useState<Resource[]>([])
-  const [calendarStartHour, setCalendarStartHour] = useState(7)
-  const [calendarEndHour, setCalendarEndHour] = useState(21)
-  const [loading, setLoading] = useState(true)
-  const supabase = createClient()
 
   const currentBusiness = businesses?.[0]
 
@@ -89,93 +91,6 @@ export default function CalendarPage() {
     icon,
     label: t.calendar[value as 'day' | 'week' | 'month'],
   }))
-
-  useEffect(() => {
-    if (businessLoading) return
-
-    if (!currentBusiness) {
-      setLoading(false)
-      return
-    }
-
-    setLoading(true)
-    const fetchAll = async () => {
-      try {
-        const [
-          { data: reservationsData },
-          { data: clientsData },
-          { data: servicesData },
-          { data: resourcesData },
-          { data: hoursData },
-        ] = await Promise.all([
-          supabase
-            .from('reservations')
-            .select('*')
-            .eq('business_id', currentBusiness.id)
-            .order('start_time', { ascending: true }),
-          supabase
-            .from('clients')
-            .select('id, name, email, phone')
-            .eq('business_id', currentBusiness.id)
-            .eq('is_active', true),
-          supabase
-            .from('services')
-            .select('id, name, duration_minutes, price, color')
-            .eq('business_id', currentBusiness.id)
-            .eq('is_active', true),
-          supabase
-            .from('resources')
-            .select('id, name, type')
-            .eq('business_id', currentBusiness.id)
-            .eq('is_active', true),
-          supabase
-            .from('business_hours')
-            .select('day_of_week, open_time, close_time, is_closed')
-            .eq('business_id', currentBusiness.id),
-        ])
-
-        setReservations(reservationsData || [])
-        setClients(clientsData || [])
-        setServices(servicesData || [])
-        setResources(resourcesData || [])
-
-        // Compute calendar range from business hours
-        const activeDays = (hoursData || []).filter((h: BusinessHour) => !h.is_closed)
-        if (activeDays.length > 0) {
-          const parseHour = (t: string) => parseInt(t.split(':')[0], 10)
-          const parseMins = (t: string) => parseInt(t.split(':')[1], 10)
-          const start = Math.min(...activeDays.map((h: BusinessHour) => parseHour(h.open_time)))
-          const rawEnd = Math.max(...activeDays.map((h: BusinessHour) => {
-            const h2 = parseHour(h.close_time)
-            return parseMins(h.close_time) > 0 ? h2 + 1 : h2
-          }))
-          setCalendarStartHour(start)
-          setCalendarEndHour(rawEnd)
-        }
-      } catch (err) {
-        console.error('[v0] Error fetching calendar data:', err)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchAll()
-  }, [currentBusiness?.id, businessLoading])
-
-  const refetchReservations = async () => {
-    if (!currentBusiness) return
-    try {
-      const { data, error } = await supabase
-        .from('reservations')
-        .select('*')
-        .eq('business_id', currentBusiness.id)
-        .order('start_time', { ascending: true })
-      if (error) throw error
-      setReservations(data || [])
-    } catch (err) {
-      console.error('[v0] Error refetching reservations:', err)
-    }
-  }
 
   const handleCreateReservation = () => {
     setSelectedReservation(null)
@@ -194,7 +109,7 @@ export default function CalendarPage() {
     setSelectedReservation(null)
   }
 
-  if (businessLoading || loading) {
+  if (loading) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-12 w-64" />

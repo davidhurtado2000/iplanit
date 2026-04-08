@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -23,82 +23,33 @@ import { OnboardingBanner } from '@/components/dashboard/onboarding-banner'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useAuth } from '@/hooks/use-auth'
 import { useLanguage } from '@/context/language-context'
-import { createClient } from '@/lib/supabase/client'
+import { useDashboardData } from '@/context/dashboard-data-context'
 
 export default function DashboardPage() {
   const { user, profile, loading: authLoading } = useAuth()
-  const { businesses, loading: businessesLoading } = useBusinesses()
+  const { businesses } = useBusinesses()
   const { t } = useLanguage()
+  const { reservations, services, clients, loading: dataLoading } = useDashboardData()
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
-  const [todayReservations, setTodayReservations] = useState<any[]>([])
-  const [servicesCount, setServicesCount] = useState(0)
-  const [clientsCount, setClientsCount] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const supabase = createClient()
 
   const currentBusiness = businesses?.[0]
+  const loading = authLoading || dataLoading
 
-  useEffect(() => {
-    if (businessesLoading) return
+  // Compute today's reservations client-side using business timezone
+  const todayReservations = useMemo(() => {
+    if (!currentBusiness) return []
+    const tz = currentBusiness.timezone || 'America/Lima'
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date())
+    return reservations.filter((r) => {
+      const localDate = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(r.start_time))
+      return localDate === today && r.status !== 'cancelled'
+    })
+  }, [reservations, currentBusiness?.id, currentBusiness?.timezone])
 
-    if (!currentBusiness) {
-      setLoading(false)
-      return
-    }
+  const servicesCount = services.length
+  const clientsCount = clients.length
 
-    setLoading(true)
-    const fetchDashboardData = async () => {
-      try {
-        const businessId = currentBusiness.id
-        const tz = currentBusiness.timezone || 'America/Lima'
-        const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date())
-
-        // Build UTC range for today in the business timezone
-        const startUtc = new Date(`${todayStr}T00:00:00`)
-        const offsetMs = startUtc.getTime() - new Date(startUtc.toLocaleString('en-US', { timeZone: tz })).getTime()
-        const startOfDay = new Date(startUtc.getTime() + offsetMs).toISOString()
-        const endOfDay = new Date(new Date(`${todayStr}T23:59:59`).getTime() + offsetMs).toISOString()
-
-        // Fetch today's reservations
-        const { data: reservationsData } = await supabase
-          .from('reservations')
-          .select('*')
-          .eq('business_id', businessId)
-          .gte('start_time', startOfDay)
-          .lte('start_time', endOfDay)
-          .neq('status', 'cancelled')
-          .order('start_time', { ascending: true })
-
-        if (reservationsData) {
-          setTodayReservations(reservationsData)
-        }
-
-        // Fetch services count
-        const { count: servicesTotal } = await supabase
-          .from('services')
-          .select('*', { count: 'exact', head: true })
-          .eq('business_id', businessId)
-
-        setServicesCount(servicesTotal || 0)
-
-        // Fetch clients count
-        const { count: clientsTotal } = await supabase
-          .from('clients')
-          .select('*', { count: 'exact', head: true })
-          .eq('business_id', businessId)
-
-        setClientsCount(clientsTotal || 0)
-      } catch (err) {
-        console.error('[v0] Error fetching dashboard data:', err)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchDashboardData()
-  }, [currentBusiness?.id, businessesLoading])
-
-  if (authLoading || businessesLoading || loading) {
+  if (loading) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-24 w-full" />

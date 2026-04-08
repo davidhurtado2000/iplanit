@@ -2,7 +2,7 @@
 
 import React from "react"
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -36,6 +36,7 @@ import {
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useAuth } from '@/hooks/use-auth'
 import { useLanguage } from '@/context/language-context'
+import { useDashboardData } from '@/context/dashboard-data-context'
 import { createClient } from '@/lib/supabase/client'
 import {
   Plus,
@@ -64,12 +65,10 @@ interface Client {
 }
 
 export default function ClientsPage() {
-  const { businesses, loading: businessLoading } = useBusinesses()
+  const { businesses } = useBusinesses()
   const { profile } = useAuth()
   const { t, locale } = useLanguage()
-  const [clients, setClients] = useState<Client[]>([])
-  const [reservations, setReservations] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
+  const { clients, reservations, loading, refetchClients } = useDashboardData()
   const [saving, setSaving] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
@@ -86,42 +85,6 @@ export default function ClientsPage() {
     phone: '',
     notes: '',
   })
-
-  // Fetch clients from Supabase
-  useEffect(() => {
-    if (businessLoading) return
-
-    if (!currentBusiness) {
-      setLoading(false)
-      return
-    }
-
-    setLoading(true)
-    const fetchData = async () => {
-      try {
-        const [clientsRes, reservationsRes] = await Promise.all([
-          supabase
-            .from('clients')
-            .select('*')
-            .eq('business_id', currentBusiness.id)
-            .order('name'),
-          supabase
-            .from('reservations')
-            .select('*')
-            .eq('business_id', currentBusiness.id)
-        ])
-
-        if (clientsRes.data) setClients(clientsRes.data)
-        if (reservationsRes.data) setReservations(reservationsRes.data)
-      } catch (err) {
-        console.error('[v0] Error fetching clients:', err)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchData()
-  }, [currentBusiness?.id, businessLoading])
 
   const filteredClients = useMemo(() => {
     return clients.filter(
@@ -182,25 +145,20 @@ export default function ClientsPage() {
       }
 
       if (editingClient) {
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from('clients')
           .update(clientData)
           .eq('id', editingClient.id)
-          .select()
-          .single()
 
         if (error) throw error
-        setClients(clients.map((c) => c.id === editingClient.id ? data : c))
       } else {
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from('clients')
           .insert(clientData)
-          .select()
-          .single()
 
         if (error) throw error
-        setClients([...clients, data])
       }
+      await refetchClients()
       setIsModalOpen(false)
     } catch (err) {
       console.error('[v0] Error saving client:', err)
@@ -217,7 +175,7 @@ export default function ClientsPage() {
         .eq('id', id)
 
       if (error) throw error
-      setClients(clients.filter((c) => c.id !== id))
+      await refetchClients()
     } catch (err) {
       console.error('[v0] Error deleting client:', err)
     }
@@ -230,7 +188,7 @@ export default function ClientsPage() {
 
   const isPremium = profile?.plan === 'premium'
 
-  if (businessLoading || loading) {
+  if (loading) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-12 w-48" />
