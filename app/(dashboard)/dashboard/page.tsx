@@ -118,7 +118,6 @@ export default function DashboardPage() {
   const isPremium = profile?.plan === 'premium'
   const displayName = profile?.full_name?.split(' ')[0] || user.email?.split('@')[0] || 'Usuario'
   const displayEmail = profile?.email || user.email || ''
-  const currentBusiness = businesses?.[0]
 
   return (
     <div className="space-y-4 pb-20 sm:space-y-6 lg:pb-6">
