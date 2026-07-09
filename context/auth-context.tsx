@@ -10,6 +10,7 @@ export interface Profile {
   full_name: string | null
   avatar_url: string | null
   plan: string
+  language: string
   created_at: string
 }
 
@@ -49,6 +50,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           full_name: null,
           avatar_url: null,
           plan: 'free',
+          language: 'es',
           created_at: new Date().toISOString(),
         })
       }
@@ -93,7 +95,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     )
 
-    return () => subscription?.unsubscribe()
+    // Browsers throttle/suspend timers in background tabs, which can stall
+    // supabase-js's own background token-refresh loop. Leaving a tab in the
+    // background long enough lets the session expire silently, so every
+    // action after switching back does nothing until a hard reload gets a
+    // fresh session. This is Supabase's documented fix: explicitly pause
+    // auto-refresh while hidden and force a check the moment the tab is
+    // visible again, instead of relying on the background timer.
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        supabase.auth.startAutoRefresh()
+      } else {
+        supabase.auth.stopAutoRefresh()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    handleVisibilityChange()
+
+    return () => {
+      subscription?.unsubscribe()
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [])
 
   const signOut = async () => {

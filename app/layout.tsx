@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'iReserve - Gestión de Reservas y Agendas',
+  title: 'iPlanit - Gestión de Reservas y Agendas',
   description:
     'Plataforma SaaS para la gestión de reservas, citas y agendas para negocios de servicios',
   generator: 'v0.app',

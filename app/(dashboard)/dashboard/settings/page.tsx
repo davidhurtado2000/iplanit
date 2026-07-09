@@ -84,7 +84,6 @@ export default function SettingsPage() {
   const [profileForm, setProfileForm] = useState({
     name: '',
     email: '',
-    language: language,
   })
 
   // Business State
@@ -113,13 +112,11 @@ export default function SettingsPage() {
       setProfileForm({
         name: authProfile.full_name || '',
         email: authProfile.email || '',
-        language,
       })
     } else if (user) {
       setProfileForm({
         name: user.user_metadata?.full_name || '',
         email: user.email || '',
-        language,
       })
     }
 
@@ -181,8 +178,6 @@ export default function SettingsPage() {
         if (bizError) throw bizError
       }
 
-      // Apply language change immediately
-      setLanguage(profileForm.language)
       await refreshProfile()
 
       setSaveStatus('success')
@@ -314,10 +309,7 @@ export default function SettingsPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="profile-language">{t.language.label}</Label>
-                <Select
-                  value={profileForm.language}
-                  onValueChange={(value) => setProfileForm({ ...profileForm, language: value as 'es' | 'en' })}
-                >
+                <Select value={language} onValueChange={(value) => setLanguage(value as 'es' | 'en')}>
                   <SelectTrigger className="w-full sm:w-[200px]">
                     <SelectValue />
                   </SelectTrigger>

@@ -1,6 +1,8 @@
 'use client'
 
-import React, { createContext, useContext, useState, useEffect } from 'react'
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react'
+import { useAuthContext } from '@/context/auth-context'
+import { supabase } from '@/lib/supabase/client'
 
 export type Language = 'es' | 'en'
 
@@ -204,6 +206,7 @@ const TRANSLATIONS = {
       businessClosed: 'El negocio no trabaja ese día',
       businessOpensAt: 'El negocio abre a las',
       reservationAfterClose: 'La reserva terminaría después del cierre',
+      timeConflict: 'Ese horario ya está reservado para el recurso seleccionado',
     },
 
     onboarding: {
@@ -307,6 +310,80 @@ const TRANSLATIONS = {
       premium: 'Plan Premium',
       signOut: 'Cerrar sesion',
       defaultUser: 'Usuario',
+    },
+
+    auth: {
+      languageToggle: { es: 'ES', en: 'EN' },
+      register: {
+        title: 'Crear cuenta',
+        stepPersonal: 'Ingresa tus datos personales',
+        stepBusiness: 'Configura tu negocio',
+        fullName: 'Nombre completo',
+        fullNamePlaceholder: 'Tu nombre',
+        email: 'Correo electronico',
+        emailPlaceholder: 'tu@email.com',
+        password: 'Contrasena',
+        passwordPlaceholderMin: 'Minimo 8 caracteres',
+        continueBtn: 'Continuar',
+        businessName: 'Nombre de tu negocio',
+        businessNamePlaceholder: 'Ej: Clinica Salud Plus',
+        businessType: 'Tipo de negocio',
+        businessTypePlaceholder: 'Selecciona un tipo',
+        timezone: 'Zona horaria',
+        timezonePlaceholder: 'Selecciona tu zona horaria',
+        back: 'Atras',
+        createBtn: 'Crear cuenta',
+        creating: 'Creando...',
+        haveAccount: 'Ya tienes una cuenta?',
+        signIn: 'Inicia sesion',
+        fillAllFields: 'Por favor completa todos los campos',
+        passwordRequirements: 'La contraseña debe cumplir los requisitos marcados abajo',
+        successTitle: '¡Cuenta creada exitosamente!',
+        successDesc: 'Revisa tu correo para confirmar tu cuenta. Te llevaremos al inicio de sesión...',
+        passwordStrength: { weak: 'Débil', medium: 'Media', strong: 'Fuerte' },
+        passwordReq: {
+          length: 'Al menos 8 caracteres',
+          uppercase: 'Una letra mayúscula',
+          lowercase: 'Una letra minúscula',
+          number: 'Un número',
+          special: 'Un símbolo (opcional)',
+        },
+        businessTypes: {
+          coworking: 'Coworking / Espacios de trabajo',
+          clinic: 'Clínica / Consultorio médico',
+          dental: 'Clínica dental',
+          veterinary: 'Veterinaria',
+          spa: 'Spa / Centro de belleza',
+          salon: 'Peluquería / Barbería',
+          gym: 'Gimnasio / Estudio fitness',
+          restaurant: 'Restaurante (reserva de mesas)',
+          education: 'Academia / Clases particulares',
+          photography: 'Estudio fotográfico',
+          events: 'Salón de eventos',
+          consulting: 'Consultoría / Asesoría profesional',
+          professional: 'Profesional independiente',
+          other: 'Otro',
+        },
+      },
+      login: {
+        title: 'Iniciar sesion',
+        subtitlePassword: 'Ingresa tus credenciales para acceder a tu cuenta',
+        subtitleMagic: 'Te enviaremos un link para acceder sin contraseña',
+        email: 'Correo electronico',
+        emailPlaceholder: 'tu@email.com',
+        password: 'Contrasena',
+        passwordPlaceholder: '********',
+        signInBtn: 'Iniciar sesion',
+        signingIn: 'Iniciando sesion...',
+        sendMagicBtn: 'Enviar link de acceso',
+        sendingMagic: 'Enviando link...',
+        useMagicLink: 'O usa un link de acceso sin contrasena',
+        usePassword: 'O usa contrasena',
+        noAccount: 'No tienes una cuenta?',
+        signUp: 'Registrate',
+        magicLinkSent: '¡Link de acceso enviado a tu email! Revisa tu bandeja de entrada.',
+        registeredWelcome: '¡Cuenta creada exitosamente! Revisa tu correo para confirmarla y luego inicia sesión.',
+      },
     },
   },
 
@@ -508,6 +585,7 @@ const TRANSLATIONS = {
       businessClosed: 'The business does not operate on that day',
       businessOpensAt: 'The business opens at',
       reservationAfterClose: 'The reservation would end after closing time',
+      timeConflict: 'That time slot is already booked for the selected resource',
     },
 
     onboarding: {
@@ -612,6 +690,80 @@ const TRANSLATIONS = {
       signOut: 'Sign out',
       defaultUser: 'User',
     },
+
+    auth: {
+      languageToggle: { es: 'ES', en: 'EN' },
+      register: {
+        title: 'Create account',
+        stepPersonal: 'Enter your personal details',
+        stepBusiness: 'Set up your business',
+        fullName: 'Full name',
+        fullNamePlaceholder: 'Your name',
+        email: 'Email',
+        emailPlaceholder: 'you@email.com',
+        password: 'Password',
+        passwordPlaceholderMin: 'At least 8 characters',
+        continueBtn: 'Continue',
+        businessName: 'Your business name',
+        businessNamePlaceholder: 'E.g. Salud Plus Clinic',
+        businessType: 'Business type',
+        businessTypePlaceholder: 'Select a type',
+        timezone: 'Timezone',
+        timezonePlaceholder: 'Select your timezone',
+        back: 'Back',
+        createBtn: 'Create account',
+        creating: 'Creating...',
+        haveAccount: 'Already have an account?',
+        signIn: 'Sign in',
+        fillAllFields: 'Please fill in all fields',
+        passwordRequirements: 'Password must meet the requirements listed below',
+        successTitle: 'Account created successfully!',
+        successDesc: "Check your email to confirm your account. We'll take you to the sign-in page...",
+        passwordStrength: { weak: 'Weak', medium: 'Medium', strong: 'Strong' },
+        passwordReq: {
+          length: 'At least 8 characters',
+          uppercase: 'One uppercase letter',
+          lowercase: 'One lowercase letter',
+          number: 'One number',
+          special: 'One symbol (optional)',
+        },
+        businessTypes: {
+          coworking: 'Coworking / Workspaces',
+          clinic: 'Clinic / Medical office',
+          dental: 'Dental clinic',
+          veterinary: 'Veterinary clinic',
+          spa: 'Spa / Beauty center',
+          salon: 'Hair salon / Barbershop',
+          gym: 'Gym / Fitness studio',
+          restaurant: 'Restaurant (table reservations)',
+          education: 'Academy / Private lessons',
+          photography: 'Photography studio',
+          events: 'Event venue',
+          consulting: 'Consulting / Professional advisory',
+          professional: 'Independent professional',
+          other: 'Other',
+        },
+      },
+      login: {
+        title: 'Sign in',
+        subtitlePassword: 'Enter your credentials to access your account',
+        subtitleMagic: "We'll send you a link to sign in without a password",
+        email: 'Email',
+        emailPlaceholder: 'you@email.com',
+        password: 'Password',
+        passwordPlaceholder: '********',
+        signInBtn: 'Sign in',
+        signingIn: 'Signing in...',
+        sendMagicBtn: 'Send sign-in link',
+        sendingMagic: 'Sending link...',
+        useMagicLink: 'Or use a passwordless link',
+        usePassword: 'Or use a password',
+        noAccount: "Don't have an account?",
+        signUp: 'Sign up',
+        magicLinkSent: 'Sign-in link sent to your email! Check your inbox.',
+        registeredWelcome: 'Account created successfully! Check your email to confirm it, then sign in.',
+      },
+    },
   },
 }
 
@@ -628,7 +780,13 @@ const LanguageContext = createContext<LanguageContextType | undefined>(undefined
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguageState] = useState<Language>('es')
+  const { user, profile } = useAuthContext()
+  // Tracks which profile.id we've already pulled a language from, so that an
+  // unrelated profile refresh (e.g. after saving your name) doesn't clobber
+  // a language you just picked manually in this session.
+  const syncedProfileId = useRef<string | null>(null)
 
+  // Pre-auth / fast-paint default: whatever this browser last used.
   useEffect(() => {
     const saved = localStorage.getItem('app-language') as Language | null
     if (saved === 'es' || saved === 'en') {
@@ -636,9 +794,34 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  // Once logged in, the account's saved language (set at signup or in
+  // Settings) is the source of truth - it should follow the user across
+  // devices/browsers, not just live in this browser's localStorage.
+  useEffect(() => {
+    if (!profile) {
+      syncedProfileId.current = null
+      return
+    }
+    if (profile.id === syncedProfileId.current) return
+    syncedProfileId.current = profile.id
+    if (profile.language === 'es' || profile.language === 'en') {
+      setLanguageState(profile.language)
+      localStorage.setItem('app-language', profile.language)
+    }
+  }, [profile])
+
   const setLanguage = (lang: Language) => {
     setLanguageState(lang)
     localStorage.setItem('app-language', lang)
+    if (user) {
+      supabase
+        .from('profiles')
+        .update({ language: lang })
+        .eq('id', user.id)
+        .then(({ error }) => {
+          if (error) console.error('[v0] Error saving language preference:', error)
+        })
+    }
   }
 
   return (

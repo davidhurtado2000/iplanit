@@ -120,6 +120,7 @@ export function ReservationModal({
   const { t, locale } = useLanguage()
   const { clients, services, resources, serviceResources, businessHours } = useDashboardData()
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState('')
 
   const [formData, setFormData] = useState({
     client_id: '',
@@ -171,6 +172,7 @@ export function ReservationModal({
       })
       setIsEditing(true)
     }
+    setError('')
   }, [reservation, selectedDate, mode, tz])
 
   const selectedService = services.find((s) => s.id === formData.service_id)
@@ -225,6 +227,7 @@ export function ReservationModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setError('')
     if (!profile || !currentBusiness) {
       console.error('[v0] Error: No hay datos de autenticación o negocio')
       return
@@ -250,6 +253,35 @@ export function ReservationModal({
         notes: formData.notes || null,
       }
 
+      // Pre-flight overlap check for a fast, friendly error message. Strict
+      // < / > bounds so a reservation ending at 10:00 doesn't block one
+      // starting at 10:00. This is only a UX nicety — the actual guarantee
+      // against race conditions is the DB exclusion constraint (see
+      // scripts/012-reservations-overlap-constraint.sql), since two
+      // near-simultaneous submits could both pass this check before either
+      // insert commits.
+      if (formData.resource_id) {
+        let conflictQuery = supabase
+          .from('reservations')
+          .select('id')
+          .eq('resource_id', formData.resource_id)
+          .neq('status', 'cancelled')
+          .lt('start_time', reservationData.end_time)
+          .gt('end_time', reservationData.start_time)
+
+        if (effectiveMode === 'edit' && reservation?.id) {
+          conflictQuery = conflictQuery.neq('id', reservation.id)
+        }
+
+        const { data: conflicts, error: conflictError } = await conflictQuery
+        if (conflictError) throw conflictError
+        if (conflicts && conflicts.length > 0) {
+          setError(t.reservation.timeConflict)
+          setIsLoading(false)
+          return
+        }
+      }
+
       if (effectiveMode === 'create') {
         const { error } = await supabase
           .from('reservations')
@@ -269,8 +301,15 @@ export function ReservationModal({
 
       onSave?.()
       onClose()
-    } catch (error) {
+    } catch (error: any) {
       console.error('[v0] Error saving reservation:', error)
+      // 23P01 = exclusion_violation, raised by reservations_no_overlap when
+      // two near-simultaneous submits both pass the pre-flight check above.
+      if (error?.code === '23P01') {
+        setError(t.reservation.timeConflict)
+      } else {
+        setError(error?.message || 'Ocurrió un error al guardar la reserva. Intenta de nuevo.')
+      }
     } finally {
       setIsLoading(false)
     }
@@ -394,6 +433,12 @@ export function ReservationModal({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
+            {error && (
+              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                {error}
+              </div>
+            )}
+
             {/* Client */}
             <div className="space-y-2">
               <Label htmlFor="client">{t.reservation.clientSelect}</Label>

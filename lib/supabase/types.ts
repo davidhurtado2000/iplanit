@@ -60,6 +60,7 @@ export interface Database {
           country: string | null
           logo_url: string | null
           plan: 'free' | 'premium'
+          type: string | null
           created_at: string
           updated_at: string
         }
@@ -78,6 +79,7 @@ export interface Database {
           country?: string | null
           logo_url?: string | null
           plan?: 'free' | 'premium'
+          type?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -96,6 +98,7 @@ export interface Database {
           country?: string | null
           logo_url?: string | null
           plan?: 'free' | 'premium'
+          type?: string | null
           created_at?: string
           updated_at?: string
         }
