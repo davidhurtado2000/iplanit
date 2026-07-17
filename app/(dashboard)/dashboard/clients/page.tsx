@@ -97,7 +97,7 @@ interface Client {
   id: string
   business_id: string
   name: string
-  email: string
+  email: string | null
   phone: string | null
   notes: string | null
   created_at: string
@@ -121,6 +121,10 @@ export default function ClientsPage() {
   const PAGE_SIZE = 10
 
   const currentBusiness = businesses?.[0]
+  // US businesses don't collect a personal ID (DNI) from clients the way
+  // Peru businesses commonly do - only an optional business tax ID (EIN).
+  const isUSBusiness = currentBusiness?.country === 'US'
+  const idColumnLabel = isUSBusiness ? 'EIN' : 'DNI / RUC'
 
   const [formData, setFormData] = useState({
     name: '',
@@ -211,7 +215,7 @@ export default function ClientsPage() {
     return clients.filter(
       (c) =>
         c.name.toLowerCase().includes(q) ||
-        c.email.toLowerCase().includes(q) ||
+        (c.email && c.email.toLowerCase().includes(q)) ||
         (c.dni && c.dni.toLowerCase().includes(q)) ||
         (c.ruc && c.ruc.toLowerCase().includes(q))
     )
@@ -270,7 +274,7 @@ export default function ClientsPage() {
       setEditingClient(client)
       setFormData({
         name: client.name,
-        email: client.email,
+        email: client.email || '',
         phone: client.phone || '',
         notes: client.notes || '',
         dni: client.dni || '',
@@ -463,7 +467,7 @@ export default function ClientsPage() {
                   </button>
                 </TableHead>
                 <TableHead>{t.clients.contactCol}</TableHead>
-                <TableHead>DNI / RUC</TableHead>
+                <TableHead>{idColumnLabel}</TableHead>
                 <TableHead>
                   <button
                     type="button"
@@ -541,7 +545,13 @@ export default function ClientsPage() {
                       </div>
                     </TableCell>
                     <TableCell className="text-sm">
-                      {client.dni || client.ruc ? (
+                      {isUSBusiness ? (
+                        client.ruc ? (
+                          <div>EIN: {client.ruc}</div>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )
+                      ) : client.dni || client.ruc ? (
                         <div className="space-y-0.5">
                           {client.dni && <div>DNI: {client.dni}</div>}
                           {client.ruc && <div className="text-muted-foreground">RUC: {client.ruc}</div>}
@@ -683,28 +693,41 @@ export default function ClientsPage() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            {isUSBusiness ? (
               <div className="space-y-2">
-                <Label htmlFor="dni">DNI</Label>
-                <Input
-                  id="dni"
-                  value={formData.dni}
-                  onChange={(e) => setFormData({ ...formData, dni: e.target.value })}
-                  placeholder="12345678"
-                  maxLength={20}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="ruc">RUC</Label>
+                <Label htmlFor="ruc">{t.clients.einLabel}</Label>
                 <Input
                   id="ruc"
                   value={formData.ruc}
                   onChange={(e) => setFormData({ ...formData, ruc: e.target.value })}
-                  placeholder="20123456789"
+                  placeholder="12-3456789"
                   maxLength={20}
                 />
               </div>
-            </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="dni">DNI</Label>
+                  <Input
+                    id="dni"
+                    value={formData.dni}
+                    onChange={(e) => setFormData({ ...formData, dni: e.target.value })}
+                    placeholder="12345678"
+                    maxLength={20}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ruc">RUC</Label>
+                  <Input
+                    id="ruc"
+                    value={formData.ruc}
+                    onChange={(e) => setFormData({ ...formData, ruc: e.target.value })}
+                    placeholder="20123456789"
+                    maxLength={20}
+                  />
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="notes">{t.clients.notesLabel}</Label>

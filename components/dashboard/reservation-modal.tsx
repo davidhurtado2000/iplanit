@@ -403,7 +403,7 @@ export function ReservationModal({
         resource_id: formData.resource_id || null,
         start_time: startDate.toISOString(),
         end_time: endDate.toISOString(),
-        status: 'pending',
+        status: 'pending' as const,
         notes: formData.notes || null,
       }
 

@@ -129,6 +129,8 @@ export default function SettingsPage() {
     address: '',
     phone: '',
     email: '',
+    country: 'PE' as 'PE' | 'US',
+    tax_id: '',
   })
 
   // Business Hours State
@@ -163,6 +165,8 @@ export default function SettingsPage() {
         address: currentBusiness.address || '',
         phone: currentBusiness.phone || '',
         email: currentBusiness.email || '',
+        country: currentBusiness.country || 'PE',
+        tax_id: currentBusiness.tax_id || '',
       })
     }
   }, [authProfile, user, currentBusiness])
@@ -231,6 +235,8 @@ export default function SettingsPage() {
           address: business.address || null,
           phone: business.phone || null,
           email: business.email || null,
+          country: business.country,
+          tax_id: business.tax_id || null,
         })
       }
 
@@ -580,6 +586,37 @@ export default function SettingsPage() {
                       />
                     </div>
                     <div className="space-y-2">
+                      <Label htmlFor="business-country">{t.settings.businessCountry}</Label>
+                      <Select
+                        value={business.country}
+                        onValueChange={(value: 'PE' | 'US') => setBusiness({ ...business, country: value })}
+                      >
+                        <SelectTrigger id="business-country">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="PE">{t.settings.countryPE}</SelectItem>
+                          <SelectItem value="US">{t.settings.countryUS}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="business-tax-id">
+                      {business.country === 'US' ? t.settings.einLabel : t.settings.rucLabel}
+                    </Label>
+                    <Input
+                      id="business-tax-id"
+                      value={business.tax_id}
+                      onChange={(e) => setBusiness({ ...business, tax_id: e.target.value })}
+                      placeholder={business.country === 'US' ? '12-3456789' : '20123456789'}
+                      maxLength={20}
+                    />
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
                       <Label htmlFor="business-timezone">{t.settings.timezone}</Label>
                       <Select
                         value={business.timezone}
@@ -597,16 +634,15 @@ export default function SettingsPage() {
                         </SelectContent>
                       </Select>
                     </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="business-address">{t.settings.address}</Label>
-                    <Input
-                      id="business-address"
-                      value={business.address}
-                      onChange={(e) => setBusiness({ ...business, address: e.target.value })}
-                      placeholder={t.settings.addressPlaceholder}
-                    />
+                    <div className="space-y-2">
+                      <Label htmlFor="business-address">{t.settings.address}</Label>
+                      <Input
+                        id="business-address"
+                        value={business.address}
+                        onChange={(e) => setBusiness({ ...business, address: e.target.value })}
+                        placeholder={t.settings.addressPlaceholder}
+                      />
+                    </div>
                   </div>
 
                   <div className="grid gap-4 sm:grid-cols-2">

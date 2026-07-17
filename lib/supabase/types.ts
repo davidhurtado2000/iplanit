@@ -7,6 +7,9 @@ export type Json =
   | Json[]
 
 export interface Database {
+  __InternalSupabase: {
+    PostgrestVersion: '12'
+  }
   public: {
     Tables: {
       profiles: {
@@ -43,6 +46,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       businesses: {
         Row: {
@@ -57,7 +61,8 @@ export interface Database {
           website: string | null
           address: string | null
           city: string | null
-          country: string | null
+          country: 'PE' | 'US'
+          tax_id: string | null
           logo_url: string | null
           plan: 'free' | 'premium'
           type: string | null
@@ -76,7 +81,8 @@ export interface Database {
           website?: string | null
           address?: string | null
           city?: string | null
-          country?: string | null
+          country?: 'PE' | 'US'
+          tax_id?: string | null
           logo_url?: string | null
           plan?: 'free' | 'premium'
           type?: string | null
@@ -95,13 +101,15 @@ export interface Database {
           website?: string | null
           address?: string | null
           city?: string | null
-          country?: string | null
+          country?: 'PE' | 'US'
+          tax_id?: string | null
           logo_url?: string | null
           plan?: 'free' | 'premium'
           type?: string | null
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       services: {
         Row: {
@@ -111,6 +119,7 @@ export interface Database {
           description: string | null
           duration_minutes: number
           price: number
+          price_usd: number | null
           color: string
           is_active: boolean
           created_at: string
@@ -123,6 +132,7 @@ export interface Database {
           description?: string | null
           duration_minutes?: number
           price?: number
+          price_usd?: number | null
           color?: string
           is_active?: boolean
           created_at?: string
@@ -135,11 +145,13 @@ export interface Database {
           description?: string | null
           duration_minutes?: number
           price?: number
+          price_usd?: number | null
           color?: string
           is_active?: boolean
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       resources: {
         Row: {
@@ -175,6 +187,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       clients: {
         Row: {
@@ -184,6 +197,8 @@ export interface Database {
           email: string | null
           phone: string | null
           notes: string | null
+          dni: string | null
+          ruc: string | null
           is_active: boolean
           created_at: string
           updated_at: string
@@ -195,6 +210,8 @@ export interface Database {
           email?: string | null
           phone?: string | null
           notes?: string | null
+          dni?: string | null
+          ruc?: string | null
           is_active?: boolean
           created_at?: string
           updated_at?: string
@@ -206,10 +223,13 @@ export interface Database {
           email?: string | null
           phone?: string | null
           notes?: string | null
+          dni?: string | null
+          ruc?: string | null
           is_active?: boolean
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       reservations: {
         Row: {
@@ -254,6 +274,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       reservation_series: {
         Row: {
@@ -292,6 +313,7 @@ export interface Database {
           status?: 'active' | 'cancelled'
           created_at?: string
         }
+        Relationships: []
       }
       business_hours: {
         Row: {
@@ -324,9 +346,45 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
+      }
+      service_resources: {
+        Row: {
+          id: string
+          service_id: string
+          resource_id: string
+          business_id: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          service_id: string
+          resource_id: string
+          business_id: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          service_id?: string
+          resource_id?: string
+          business_id?: string
+          created_at?: string
+        }
+        Relationships: []
       }
     }
-    Views: Record<string, never>
+    Views: {
+      client_reservation_counts: {
+        Row: {
+          client_id: string
+          business_id: string
+          reservation_count: number
+          confirmed_count: number
+          last_reservation_at: string | null
+        }
+        Relationships: []
+      }
+    }
     Functions: Record<string, never>
     Enums: Record<string, never>
   }

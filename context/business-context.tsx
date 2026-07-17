@@ -8,11 +8,13 @@ interface Business {
   id: string
   owner_id: string
   name: string
-  slug: string
+  slug: string | null
   timezone: string
   address: string | null
   phone: string | null
   email: string | null
+  country: 'PE' | 'US'
+  tax_id: string | null
   created_at: string
   updated_at: string
 }
