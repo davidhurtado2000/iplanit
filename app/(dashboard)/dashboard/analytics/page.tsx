@@ -22,13 +22,12 @@ import {
 } from '@/lib/analytics'
 
 export default function AnalyticsPage() {
-  const { businesses, loading: businessLoading } = useBusinesses()
+  const { currentBusiness, loading: businessLoading } = useBusinesses()
   const { reservations, services, businessHours, loading: dataLoading } = useDashboardData()
   const { t, locale } = useLanguage()
   const tr = t.analytics
   const [range, setRange] = useState<DateRangeOption>('30d')
 
-  const currentBusiness = businesses?.[0]
   const timezone = currentBusiness?.timezone || 'America/Lima'
   const loading = businessLoading || dataLoading
 

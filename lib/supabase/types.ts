@@ -315,6 +315,36 @@ export interface Database {
         }
         Relationships: []
       }
+      business_members: {
+        Row: {
+          id: string
+          business_id: string
+          user_id: string
+          email: string
+          full_name: string | null
+          role: 'staff'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          business_id: string
+          user_id: string
+          email: string
+          full_name?: string | null
+          role?: 'staff'
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          business_id?: string
+          user_id?: string
+          email?: string
+          full_name?: string | null
+          role?: 'staff'
+          created_at?: string
+        }
+        Relationships: []
+      }
       business_hours: {
         Row: {
           id: string
@@ -385,7 +415,16 @@ export interface Database {
         Relationships: []
       }
     }
-    Functions: Record<string, never>
+    Functions: {
+      add_business_staff: {
+        Args: { p_business_id: string; p_email: string }
+        Returns: Json
+      }
+      is_business_accessible: {
+        Args: { target_business_id: string }
+        Returns: boolean
+      }
+    }
     Enums: Record<string, never>
   }
 }

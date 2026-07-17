@@ -116,8 +116,7 @@ function getDefaultReservationWindow() {
 }
 
 export function DashboardDataProvider({ children }: { children: React.ReactNode }) {
-  const { businesses, loading: businessLoading } = useBusinessContext()
-  const currentBusiness = businesses[0]
+  const { currentBusiness, loading: businessLoading } = useBusinessContext()
 
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [clients, setClients] = useState<Client[]>([])

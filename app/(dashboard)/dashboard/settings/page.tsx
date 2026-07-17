@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/dialog'
 import { PasswordStrength } from '@/components/password-strength'
 import { UpgradeModal } from '@/components/upgrade-modal'
+import { PremiumFeature } from '@/components/premium-feature'
 import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
@@ -35,6 +36,7 @@ import { useDashboardData } from '@/context/dashboard-data-context'
 import { createClient } from '@/lib/supabase/client'
 import { translateAuthError, withAuthLockRetry, withTimeout, AuthTimeoutError } from '@/lib/supabase/auth-errors'
 import { getPasswordChecks, isPasswordStrongEnough } from '@/lib/password'
+import { cn } from '@/lib/utils'
 import {
   User,
   Building2,
@@ -51,6 +53,8 @@ import {
   KeyRound,
   Eye,
   EyeOff,
+  Users,
+  Trash2,
 } from 'lucide-react'
 
 type DayOfWeek = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday'
@@ -82,7 +86,7 @@ const DAY_KEY_TO_NUMBER: Record<DayOfWeek, number> = {
 
 export default function SettingsPage() {
   const { user, profile: authProfile, loading: authLoading, refreshProfile } = useAuth()
-  const { businesses, loading: businessLoading, updateBusiness } = useBusinesses()
+  const { currentBusiness, loading: businessLoading, updateBusiness } = useBusinesses()
   const { businessHours: realBusinessHours, refetchBusinessHours } = useDashboardData()
   const { language, setLanguage, t } = useLanguage()
   const [isSaving, setIsSaving] = useState(false)
@@ -103,7 +107,21 @@ export default function SettingsPage() {
   const photoInputRef = useRef<HTMLInputElement>(null)
   const supabase = createClient()
 
-  const currentBusiness = businesses?.[0]
+  // Staff (Premium team members) can't see/edit Configuracion or manage the
+  // team themselves - only the owner can. Defaults to owner when there's no
+  // business yet (the "create your business" flow).
+  const isOwner = currentBusiness ? currentBusiness.role === 'owner' : true
+
+  // Team State
+  const [teamMembers, setTeamMembers] = useState<
+    { id: string; email: string; full_name: string | null; created_at: string }[]
+  >([])
+  const [loadingTeam, setLoadingTeam] = useState(false)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteError, setInviteError] = useState('')
+  const [inviteSuccess, setInviteSuccess] = useState('')
+  const [isInviting, setIsInviting] = useState(false)
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null)
 
   // DAYS computed from translations so they update when language changes
   const DAYS: { value: DayOfWeek; label: string }[] = [
@@ -170,6 +188,82 @@ export default function SettingsPage() {
       })
     }
   }, [authProfile, user, currentBusiness])
+
+  // Team roster - only the owner can see the full list (RLS), so staff
+  // never triggers this fetch since they never see the Team tab.
+  useEffect(() => {
+    if (!currentBusiness || !isOwner) {
+      setTeamMembers([])
+      return
+    }
+    const loadTeam = async () => {
+      setLoadingTeam(true)
+      const { data } = await supabase
+        .from('business_members')
+        .select('id, email, full_name, created_at')
+        .eq('business_id', currentBusiness.id)
+        .order('created_at', { ascending: true })
+      setTeamMembers(data || [])
+      setLoadingTeam(false)
+    }
+    loadTeam()
+  }, [currentBusiness?.id, isOwner])
+
+  const handleInvite = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!currentBusiness || !inviteEmail.trim()) return
+
+    setIsInviting(true)
+    setInviteError('')
+    setInviteSuccess('')
+    try {
+      const { data, error } = await supabase.rpc('add_business_staff', {
+        p_business_id: currentBusiness.id,
+        p_email: inviteEmail.trim(),
+      })
+      if (error) throw error
+
+      const result = data as { success?: boolean; error?: string; name?: string; email?: string }
+      if (result.error) {
+        const key = (
+          {
+            user_not_found: 'errorNotFound',
+            not_premium: 'errorNotPremium',
+            is_owner: 'errorIsOwner',
+          } as const
+        )[result.error] ?? 'errorGeneric'
+        setInviteError(t.settings.team[key])
+        return
+      }
+
+      setInviteSuccess(t.settings.team.added.replace('{name}', result.name || result.email || ''))
+      setInviteEmail('')
+      const { data: refreshed } = await supabase
+        .from('business_members')
+        .select('id, email, full_name, created_at')
+        .eq('business_id', currentBusiness.id)
+        .order('created_at', { ascending: true })
+      setTeamMembers(refreshed || [])
+    } catch (err) {
+      console.error('[v0] Error inviting team member:', err)
+      setInviteError(t.settings.team.errorGeneric)
+    } finally {
+      setIsInviting(false)
+    }
+  }
+
+  const handleRemoveMember = async (memberId: string) => {
+    setRemovingMemberId(memberId)
+    try {
+      const { error } = await supabase.from('business_members').delete().eq('id', memberId)
+      if (error) throw error
+      setTeamMembers((prev) => prev.filter((m) => m.id !== memberId))
+    } catch (err) {
+      console.error('[v0] Error removing team member:', err)
+    } finally {
+      setRemovingMemberId(null)
+    }
+  }
 
   // Business hours already come from DashboardDataProvider (fetched once for
   // the calendar/reservation validation) - derive the editable local form
@@ -412,7 +506,12 @@ export default function SettingsPage() {
       </div>
 
       <Tabs defaultValue="profile" className="space-y-6">
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-2 bg-muted/50 p-2 sm:grid-cols-4 lg:w-auto">
+        <TabsList
+          className={cn(
+            'grid h-auto w-full grid-cols-2 gap-2 bg-muted/50 p-2 lg:w-auto',
+            isOwner ? 'sm:grid-cols-5' : 'sm:grid-cols-3'
+          )}
+        >
           <TabsTrigger
             value="profile"
             className="flex-col gap-1 py-3 data-[state=active]:bg-card data-[state=active]:shadow-sm sm:flex-row sm:gap-2 sm:py-2"
@@ -420,13 +519,15 @@ export default function SettingsPage() {
             <User className="h-5 w-5 sm:h-4 sm:w-4" />
             <span className="text-xs sm:text-sm">{t.settings.profileTab}</span>
           </TabsTrigger>
-          <TabsTrigger
-            value="business"
-            className="flex-col gap-1 py-3 data-[state=active]:bg-card data-[state=active]:shadow-sm sm:flex-row sm:gap-2 sm:py-2"
-          >
-            <Building2 className="h-5 w-5 sm:h-4 sm:w-4" />
-            <span className="text-xs sm:text-sm">{t.settings.businessTab}</span>
-          </TabsTrigger>
+          {isOwner && (
+            <TabsTrigger
+              value="business"
+              className="flex-col gap-1 py-3 data-[state=active]:bg-card data-[state=active]:shadow-sm sm:flex-row sm:gap-2 sm:py-2"
+            >
+              <Building2 className="h-5 w-5 sm:h-4 sm:w-4" />
+              <span className="text-xs sm:text-sm">{t.settings.businessTab}</span>
+            </TabsTrigger>
+          )}
           <TabsTrigger
             value="notifications"
             className="flex-col gap-1 py-3 data-[state=active]:bg-card data-[state=active]:shadow-sm sm:flex-row sm:gap-2 sm:py-2"
@@ -441,6 +542,15 @@ export default function SettingsPage() {
             <CreditCard className="h-5 w-5 sm:h-4 sm:w-4" />
             <span className="text-xs sm:text-sm">{t.settings.planTab}</span>
           </TabsTrigger>
+          {isOwner && (
+            <TabsTrigger
+              value="team"
+              className="flex-col gap-1 py-3 data-[state=active]:bg-card data-[state=active]:shadow-sm sm:flex-row sm:gap-2 sm:py-2"
+            >
+              <Users className="h-5 w-5 sm:h-4 sm:w-4" />
+              <span className="text-xs sm:text-sm">{t.settings.teamTab}</span>
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* Profile Tab */}
@@ -566,7 +676,8 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
-        {/* Business Tab */}
+        {/* Business Tab - owner only, staff never sees the trigger either */}
+        {isOwner && (
         <TabsContent value="business" className="space-y-6">
           {currentBusiness ? (
             <>
@@ -804,6 +915,7 @@ export default function SettingsPage() {
             </Card>
           )}
         </TabsContent>
+        )}
 
         {/* Notifications Tab */}
         <TabsContent value="notifications" className="space-y-6">
@@ -948,6 +1060,97 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Team Tab - owner only, Premium-gated */}
+        {isOwner && (
+        <TabsContent value="team" className="space-y-6">
+          <PremiumFeature featureName={t.settings.team.featureName}>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  {t.settings.team.title}
+                </CardTitle>
+                <CardDescription>{t.settings.team.desc}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <form onSubmit={handleInvite} className="flex flex-col gap-2 sm:flex-row">
+                  <div className="flex-1 space-y-2">
+                    <Label htmlFor="invite-email" className="sr-only">
+                      {t.settings.team.emailLabel}
+                    </Label>
+                    <Input
+                      id="invite-email"
+                      type="email"
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                      placeholder={t.settings.team.emailPlaceholder}
+                      disabled={isInviting}
+                    />
+                  </div>
+                  <Button type="submit" disabled={isInviting || !inviteEmail.trim()} className="gap-2">
+                    {isInviting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                    {t.settings.team.addBtn}
+                  </Button>
+                </form>
+                {inviteError && <p className="text-sm text-destructive">{inviteError}</p>}
+                {inviteSuccess && <p className="text-sm text-green-600">{inviteSuccess}</p>}
+
+                <Separator />
+
+                {loadingTeam ? (
+                  <div className="flex justify-center py-6">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : teamMembers.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
+                    <Users className="h-8 w-8 text-muted-foreground/40" />
+                    <p className="text-sm text-muted-foreground">{t.settings.team.empty}</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {teamMembers.map((member) => (
+                      <div
+                        key={member.id}
+                        className="flex items-center justify-between gap-3 rounded-lg border p-3"
+                      >
+                        <div className="flex items-center gap-3 overflow-hidden">
+                          <Avatar className="h-9 w-9">
+                            <AvatarFallback>
+                              {(member.full_name || member.email)[0]?.toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="overflow-hidden">
+                            <p className="truncate text-sm font-medium">
+                              {member.full_name || member.email}
+                            </p>
+                            <p className="truncate text-xs text-muted-foreground">{member.email}</p>
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleRemoveMember(member.id)}
+                          disabled={removingMemberId === member.id}
+                          className="shrink-0 text-muted-foreground hover:text-destructive"
+                        >
+                          {removingMemberId === member.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <p className="text-xs text-muted-foreground">{t.settings.team.hint}</p>
+              </CardContent>
+            </Card>
+          </PremiumFeature>
+        </TabsContent>
+        )}
       </Tabs>
         </>
       )}

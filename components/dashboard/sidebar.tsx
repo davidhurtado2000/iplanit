@@ -15,6 +15,8 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  ChevronsUpDown,
+  Check,
   Crown,
   Building2,
   Loader2,
@@ -29,6 +31,12 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { UpgradeModal } from '@/components/upgrade-modal'
 import { useLanguage } from '@/context/language-context'
 
@@ -51,10 +59,8 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [now, setNow] = useState<Date | null>(null)
   const { user, profile, loading: authLoading, signOut } = useAuth()
-  const { businesses, loading: businessLoading } = useBusinesses()
+  const { businesses, currentBusiness, switchBusiness, loading: businessLoading } = useBusinesses()
   const { t } = useLanguage()
-
-  const currentBusiness = businesses?.[0]
 
   useEffect(() => {
     setNow(new Date())
@@ -127,19 +133,59 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
                 <Loader2 className="h-5 w-5 animate-spin text-sidebar-foreground/50" />
               </div>
             ) : currentBusiness ? (
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sidebar-accent">
-                  <Building2 className="h-5 w-5 text-sidebar-accent-foreground" />
+              businesses.length > 1 ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="-m-1 flex w-[calc(100%+0.5rem)] items-center gap-3 rounded-lg p-1 text-left transition-colors hover:bg-sidebar-accent/50"
+                    >
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sidebar-accent">
+                        <Building2 className="h-5 w-5 text-sidebar-accent-foreground" />
+                      </div>
+                      <div className="flex-1 overflow-hidden">
+                        <p className="truncate text-sm font-medium text-sidebar-foreground">
+                          {currentBusiness.name}
+                        </p>
+                        <p className="truncate text-xs text-sidebar-foreground/60">
+                          {currentBusiness.role === 'owner' ? t.sidebar.roleOwner : t.sidebar.roleStaff}
+                        </p>
+                      </div>
+                      <ChevronsUpDown className="h-4 w-4 shrink-0 text-sidebar-foreground/50" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-60">
+                    {businesses.map((b) => (
+                      <DropdownMenuItem key={b.id} onClick={() => switchBusiness(b.id)} className="gap-2">
+                        <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <div className="flex-1 overflow-hidden">
+                          <p className="truncate text-sm">{b.name}</p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {b.role === 'owner' ? t.sidebar.roleOwner : t.sidebar.roleStaff}
+                          </p>
+                        </div>
+                        {b.id === currentBusiness.id && (
+                          <Check className="h-4 w-4 shrink-0 text-primary" />
+                        )}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sidebar-accent">
+                    <Building2 className="h-5 w-5 text-sidebar-accent-foreground" />
+                  </div>
+                  <div className="flex-1 overflow-hidden">
+                    <p className="truncate text-sm font-medium text-sidebar-foreground">
+                      {currentBusiness.name}
+                    </p>
+                    <p className="truncate text-xs text-sidebar-foreground/60">
+                      {currentBusiness.timezone}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex-1 overflow-hidden">
-                  <p className="truncate text-sm font-medium text-sidebar-foreground">
-                    {currentBusiness.name}
-                  </p>
-                  <p className="truncate text-xs text-sidebar-foreground/60">
-                    {currentBusiness.timezone}
-                  </p>
-                </div>
-              </div>
+              )
             ) : (
               <Link 
                 href="/dashboard/settings" 

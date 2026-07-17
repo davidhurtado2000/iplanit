@@ -121,7 +121,7 @@ export function ReservationModal({
 }: ReservationModalProps) {
   const supabase = createClient()
   const { profile } = useAuth()
-  const { businesses } = useBusinesses()
+  const { currentBusiness } = useBusinesses()
   const { t, locale } = useLanguage()
   const { clients, services, resources, serviceResources, businessHours } = useDashboardData()
   const [isLoading, setIsLoading] = useState(false)
@@ -157,8 +157,6 @@ export function ReservationModal({
     const label = new Intl.DateTimeFormat(locale, { weekday: 'narrow', timeZone: 'UTC' }).format(d)
     return label === 'X' ? 'Mi' : label
   })
-
-  const currentBusiness = businesses?.[0]
 
   // Filter resources based on the selected service's allowed resources
   const allowedResourceIds = serviceResources

@@ -47,10 +47,9 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
   const pathname = usePathname()
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const { user, profile, signOut } = useAuth()
-  const { businesses, loading: businessLoading } = useBusinesses()
+  const { currentBusiness, loading: businessLoading } = useBusinesses()
   const { t } = useLanguage()
 
-  const currentBusiness = businesses?.[0]
   const userPlan = profile?.plan || 'free'
   const userName = profile?.full_name || user?.email?.split('@')[0] || t.mobileNav.defaultUser
   const userEmail = profile?.email || user?.email || ''

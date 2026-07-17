@@ -106,7 +106,7 @@ interface Client {
 }
 
 export default function ClientsPage() {
-  const { businesses } = useBusinesses()
+  const { currentBusiness } = useBusinesses()
   const { profile } = useAuth()
   const { t, locale } = useLanguage()
   const { clients, services, loading, refetchClients } = useDashboardData()
@@ -120,7 +120,6 @@ export default function ClientsPage() {
   const supabase = createClient()
   const PAGE_SIZE = 10
 
-  const currentBusiness = businesses?.[0]
   // US businesses don't collect a personal ID (DNI) from clients the way
   // Peru businesses commonly do - only an optional business tax ID (EIN).
   const isUSBusiness = currentBusiness?.country === 'US'

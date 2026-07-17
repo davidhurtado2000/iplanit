@@ -63,6 +63,7 @@ export default function RegisterPage() {
     password: '',
     businessName: '',
     businessType: '',
+    country: '',
     timezone: '',
   })
   const [error, setError] = useState('')
@@ -103,35 +104,34 @@ export default function RegisterPage() {
     setStep(2)
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  // Shared by both paths: creating your own business now, or skipping it to
+  // join an existing one later as staff. handle_new_user() only creates a
+  // business when business_name metadata is present - omitting it (skip
+  // path) leaves just the profile, which is exactly what a future team
+  // member needs before an owner can add them in Settings -> Equipo.
+  const submitSignUp = async (withBusiness: boolean) => {
     setError('')
-
-    if (!formData.businessName || !formData.businessType || !formData.timezone) {
-      setError(tr.fillAllFields)
-      return
-    }
-
     setIsLoading(true)
 
     try {
-      // Sign up with Supabase Auth. business_name/business_type/timezone/language
-      // ride along as user metadata and get picked up by the handle_new_user()
-      // trigger, which creates the profile and the business in the same
-      // transaction as the auth.users row - no separate client-callable
-      // endpoint needed, and it works even when email confirmation is required.
       const { data: authData, error: signUpError } = await withAuthLockRetry(() =>
         supabase.auth.signUp({
           email: formData.email,
           password: formData.password,
           options: {
-            data: {
-              full_name: formData.name,
-              business_name: formData.businessName,
-              business_type: formData.businessType,
-              timezone: formData.timezone,
-              language,
-            },
+            data: withBusiness
+              ? {
+                  full_name: formData.name,
+                  business_name: formData.businessName,
+                  business_type: formData.businessType,
+                  business_country: formData.country,
+                  timezone: formData.timezone,
+                  language,
+                }
+              : {
+                  full_name: formData.name,
+                  language,
+                },
           },
         })
       )
@@ -159,6 +159,22 @@ export default function RegisterPage() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+
+    if (!formData.businessName || !formData.businessType || !formData.country || !formData.timezone) {
+      setError(tr.fillAllFields)
+      return
+    }
+
+    await submitSignUp(true)
+  }
+
+  const handleSkipBusiness = async () => {
+    await submitSignUp(false)
   }
 
   if (step === 'success') {
@@ -307,6 +323,23 @@ export default function RegisterPage() {
                 </div>
 
                 <div className="space-y-2">
+                  <Label htmlFor="country">{tr.businessCountry}</Label>
+                  <Select
+                    value={formData.country}
+                    onValueChange={(value) => setFormData({ ...formData, country: value })}
+                    disabled={isLoading}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={tr.businessCountryPlaceholder} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="PE">{tr.countryPE}</SelectItem>
+                      <SelectItem value="US">{tr.countryUS}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="timezone">{tr.timezone}</Label>
                   <Select
                     value={formData.timezone}
@@ -347,6 +380,15 @@ export default function RegisterPage() {
                     )}
                   </Button>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={handleSkipBusiness}
+                  disabled={isLoading || !formData.name || !formData.email || !formData.password}
+                  className="w-full text-center text-sm text-muted-foreground hover:text-foreground hover:underline disabled:opacity-50 disabled:hover:no-underline"
+                >
+                  {tr.skipBusiness}
+                </button>
               </>
             )}
           </form>

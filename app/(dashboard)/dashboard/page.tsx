@@ -29,14 +29,13 @@ import { capitalizeFirst } from '@/lib/utils'
 
 export default function DashboardPage() {
   const { user, profile, loading: authLoading } = useAuth()
-  const { businesses } = useBusinesses()
+  const { currentBusiness } = useBusinesses()
   const { t, locale } = useLanguage()
   const { reservations, services, clients, loading: dataLoading, refetchReservations } = useDashboardData()
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null)
 
-  const currentBusiness = businesses?.[0]
   const loading = authLoading || dataLoading
 
   const tz = currentBusiness?.timezone || 'America/Lima'

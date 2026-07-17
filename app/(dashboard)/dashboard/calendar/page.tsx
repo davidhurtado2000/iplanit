@@ -71,7 +71,7 @@ const VIEW_CONFIG: { value: CalendarView; icon: React.ElementType }[] = [
 ]
 
 export default function CalendarPage() {
-  const { businesses } = useBusinesses()
+  const { currentBusiness } = useBusinesses()
   const { t, locale } = useLanguage()
   const {
     reservations,
@@ -89,8 +89,6 @@ export default function CalendarPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null)
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view'>('create')
-
-  const currentBusiness = businesses?.[0]
 
   // Build view options with translated labels
   const VIEW_OPTIONS = VIEW_CONFIG.map(({ value, icon }) => ({

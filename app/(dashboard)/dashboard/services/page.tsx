@@ -90,7 +90,7 @@ const SERVICE_COLORS = [
 ]
 
 export default function ServicesPage() {
-  const { businesses } = useBusinesses()
+  const { currentBusiness } = useBusinesses()
   const { t } = useLanguage()
   const { services, resources, serviceResources, loading, refetchServicesAndResources, refetchServiceResources } = useDashboardData()
   const [saving, setSaving] = useState(false)
@@ -104,8 +104,6 @@ export default function ServicesPage() {
   const [deletingResource, setDeletingResource] = useState<Resource | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const supabase = createClient()
-
-  const currentBusiness = businesses?.[0]
 
   const [serviceForm, setServiceForm] = useState({
     name: '',
