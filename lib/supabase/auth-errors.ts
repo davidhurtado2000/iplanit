@@ -59,6 +59,61 @@ export function translateAuthError(rawMessage: string | undefined | null, langua
 }
 
 /**
+ * supabase-js serializes auth calls (signIn, signUp, updateUser, ...) behind
+ * a browser NavigatorLock so concurrent requests don't corrupt the stored
+ * session. This lock is shared by every tab open on the same site, not just
+ * the current one - if the user has iPlanit open in another tab that's
+ * mid-refresh, this call can lose the race and throw instead of just
+ * waiting, surfacing as "NavigatorLockAcquireTimeoutError" / "Lock ... was
+ * released because another request stole it". A single retry isn't always
+ * enough if the other tab keeps re-acquiring it, so this retries a few
+ * times with backoff before giving up.
+ */
+export function isAuthLockError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err)
+  return /navigatorlock|lock.*stolen|acquire.*lock/i.test(message)
+}
+
+export async function withAuthLockRetry<T>(fn: () => Promise<T>, maxAttempts = 4): Promise<T> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      if (!isAuthLockError(err) || attempt === maxAttempts) throw err
+      await new Promise((resolve) => setTimeout(resolve, attempt * 400))
+    }
+  }
+  // Unreachable - the loop always returns or throws - but keeps TypeScript happy.
+  throw new Error('withAuthLockRetry: exhausted attempts')
+}
+
+/**
+ * Seen in the wild: updateUser() successfully changes the password server
+ * side (confirmed directly in Supabase), but the client-side promise never
+ * settles - so the UI sits on a spinner forever even though the work is
+ * already done. Racing the call against a timeout turns an infinite hang
+ * into an actionable message instead of leaving the user stuck.
+ */
+export class AuthTimeoutError extends Error {
+  constructor() {
+    super('Auth request timed out')
+    this.name = 'AuthTimeoutError'
+  }
+}
+
+export async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new AuthTimeoutError()), ms)
+  })
+  try {
+    return await Promise.race([promise, timeout])
+  } finally {
+    clearTimeout(timer!)
+  }
+}
+
+/**
  * Detects Supabase's anti-enumeration signal for signUp(): when an email is
  * already registered, it returns a `user` object with an empty `identities`
  * array instead of a clear error, so this has to be checked separately from

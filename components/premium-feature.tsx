@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { Crown, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { UpgradeModal } from '@/components/upgrade-modal'
-import { currentUser } from '@/lib/mock-data'
+import { useAuth } from '@/hooks/use-auth'
 import { cn } from '@/lib/utils'
 
 interface PremiumFeatureProps {
@@ -23,7 +23,8 @@ export function PremiumFeature({
   showOverlay = true,
 }: PremiumFeatureProps) {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
-  const isPremium = currentUser.plan === 'premium'
+  const { profile } = useAuth()
+  const isPremium = profile?.plan === 'premium'
 
   if (isPremium) {
     return <>{children}</>
@@ -84,7 +85,8 @@ export function PremiumButton({
   size = 'default',
 }: PremiumButtonProps) {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
-  const isPremium = currentUser.plan === 'premium'
+  const { profile } = useAuth()
+  const isPremium = profile?.plan === 'premium'
 
   const handleClick = () => {
     if (isPremium) {
@@ -125,8 +127,9 @@ interface PremiumBadgeProps {
 }
 
 export function PremiumBadge({ className }: PremiumBadgeProps) {
-  const isPremium = currentUser.plan === 'premium'
-  
+  const { profile } = useAuth()
+  const isPremium = profile?.plan === 'premium'
+
   if (isPremium) return null
   
   return (

@@ -12,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Calendar, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import { useLanguage } from '@/context/language-context'
-import { translateAuthError } from '@/lib/supabase/auth-errors'
+import { translateAuthError, withAuthLockRetry } from '@/lib/supabase/auth-errors'
 
 function LoginForm() {
   const router = useRouter()
@@ -43,12 +43,12 @@ function LoginForm() {
     setIsLoading(true)
 
     try {
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
+      const { data, error: signInError } = await withAuthLockRetry(() =>
+        supabase.auth.signInWithPassword({ email, password })
+      )
 
       if (signInError) {
+        console.error('[iplanit] auth error:', signInError.message)
         setError(translateAuthError(signInError.message, language))
         return
       }
@@ -57,6 +57,7 @@ function LoginForm() {
         router.push('/dashboard')
       }
     } catch (err) {
+      console.error('[iplanit] unexpected auth error:', err)
       setError(translateAuthError(null, language))
     } finally {
       setIsLoading(false)
@@ -70,14 +71,17 @@ function LoginForm() {
     setIsLoading(true)
 
     try {
-      const { error: signInError } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
-      })
+      const { error: signInError } = await withAuthLockRetry(() =>
+        supabase.auth.signInWithOtp({
+          email,
+          options: {
+            emailRedirectTo: `${window.location.origin}/auth/callback`,
+          },
+        })
+      )
 
       if (signInError) {
+        console.error('[iplanit] auth error:', signInError.message)
         setError(translateAuthError(signInError.message, language))
         return
       }
@@ -85,6 +89,7 @@ function LoginForm() {
       setMessage(tr.magicLinkSent)
       setEmail('')
     } catch (err) {
+      console.error('[iplanit] unexpected auth error:', err)
       setError(translateAuthError(null, language))
     } finally {
       setIsLoading(false)
@@ -153,7 +158,12 @@ function LoginForm() {
 
             {usePassword && (
               <div className="space-y-2">
-                <Label htmlFor="password">{tr.password}</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">{tr.password}</Label>
+                  <Link href="/forgot-password" className="text-xs text-primary hover:underline">
+                    {tr.forgotPassword}
+                  </Link>
+                </div>
                 <div className="relative">
                   <Input
                     id="password"

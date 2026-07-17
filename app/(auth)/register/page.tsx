@@ -16,11 +16,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Calendar, Eye, EyeOff, Loader2, Check, X, PartyPopper } from 'lucide-react'
+import { Calendar, Eye, EyeOff, Loader2, PartyPopper } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import { Confetti } from '@/components/confetti'
+import { PasswordStrength } from '@/components/password-strength'
 import { useLanguage } from '@/context/language-context'
-import { translateAuthError, isDuplicateSignupUser } from '@/lib/supabase/auth-errors'
+import { translateAuthError, isDuplicateSignupUser, withAuthLockRetry } from '@/lib/supabase/auth-errors'
+import { getPasswordChecks, isPasswordStrongEnough } from '@/lib/password'
 
 const TIMEZONES = [
   { value: 'America/Lima', label: 'Lima, Peru (GMT-5)' },
@@ -48,37 +50,6 @@ const BUSINESS_TYPE_VALUES = [
   'other',
 ] as const
 
-type PasswordChecks = {
-  length: boolean
-  uppercase: boolean
-  lowercase: boolean
-  number: boolean
-  special: boolean
-}
-
-function getPasswordChecks(password: string): PasswordChecks {
-  return {
-    length: password.length >= 8,
-    uppercase: /[A-Z]/.test(password),
-    lowercase: /[a-z]/.test(password),
-    number: /[0-9]/.test(password),
-    special: /[^A-Za-z0-9]/.test(password),
-  }
-}
-
-const PASSWORD_REQUIREMENT_KEYS: (keyof PasswordChecks)[] = ['length', 'uppercase', 'lowercase', 'number', 'special']
-
-function getPasswordStrength(checks: PasswordChecks): 'weak' | 'medium' | 'strong' {
-  const coreCount = [checks.length, checks.uppercase, checks.lowercase, checks.number].filter(Boolean).length
-  if (coreCount <= 1) return 'weak'
-  if (coreCount <= 3) return 'medium'
-  return checks.special ? 'strong' : 'medium'
-}
-
-function isPasswordStrongEnough(checks: PasswordChecks) {
-  return checks.length && checks.uppercase && checks.lowercase && checks.number
-}
-
 export default function RegisterPage() {
   const router = useRouter()
   const { language, setLanguage, t } = useLanguage()
@@ -97,7 +68,6 @@ export default function RegisterPage() {
   const [error, setError] = useState('')
 
   const passwordChecks = getPasswordChecks(formData.password)
-  const passwordStrength = getPasswordStrength(passwordChecks)
 
   const LanguageToggle = (
     <div className="mb-4 flex w-full max-w-md justify-end">
@@ -150,21 +120,24 @@ export default function RegisterPage() {
       // trigger, which creates the profile and the business in the same
       // transaction as the auth.users row - no separate client-callable
       // endpoint needed, and it works even when email confirmation is required.
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
-        options: {
-          data: {
-            full_name: formData.name,
-            business_name: formData.businessName,
-            business_type: formData.businessType,
-            timezone: formData.timezone,
-            language,
+      const { data: authData, error: signUpError } = await withAuthLockRetry(() =>
+        supabase.auth.signUp({
+          email: formData.email,
+          password: formData.password,
+          options: {
+            data: {
+              full_name: formData.name,
+              business_name: formData.businessName,
+              business_type: formData.businessType,
+              timezone: formData.timezone,
+              language,
+            },
           },
-        },
-      })
+        })
+      )
 
       if (signUpError) {
+        console.error('[iplanit] signUp error:', signUpError.message)
         setError(translateAuthError(signUpError.message, language))
         return
       }
@@ -286,40 +259,10 @@ export default function RegisterPage() {
                     </button>
                   </div>
 
-                  {formData.password.length > 0 && (
-                    <div className="space-y-1.5 rounded-md border bg-muted/40 p-3">
-                      <div className="flex items-center gap-2">
-                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-                          <div
-                            className={`h-full transition-all ${
-                              passwordStrength === 'strong'
-                                ? 'w-full bg-green-500'
-                                : passwordStrength === 'medium'
-                                  ? 'w-2/3 bg-yellow-500'
-                                  : 'w-1/3 bg-destructive'
-                            }`}
-                          />
-                        </div>
-                        <span className="text-xs font-medium text-muted-foreground">
-                          {tr.passwordStrength[passwordStrength]}
-                        </span>
-                      </div>
-                      <ul className="grid grid-cols-1 gap-1 pt-1 sm:grid-cols-2">
-                        {PASSWORD_REQUIREMENT_KEYS.map((key) => (
-                          <li key={key} className="flex items-center gap-1.5 text-xs">
-                            {passwordChecks[key] ? (
-                              <Check className="h-3.5 w-3.5 shrink-0 text-green-600" />
-                            ) : (
-                              <X className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                            )}
-                            <span className={passwordChecks[key] ? 'text-foreground' : 'text-muted-foreground'}>
-                              {tr.passwordReq[key]}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                  <PasswordStrength
+                    password={formData.password}
+                    labels={{ ...tr.passwordStrength, ...tr.passwordReq }}
+                  />
                 </div>
 
                 <Button type="button" className="w-full" onClick={handleNext}>

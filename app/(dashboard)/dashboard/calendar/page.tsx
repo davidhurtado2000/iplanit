@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -15,6 +16,8 @@ import { ReservationModal } from '@/components/dashboard/reservation-modal'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
 import { useDashboardData } from '@/context/dashboard-data-context'
+import { getStatusBadgeVariant, getStatusLabel } from '@/lib/reservation-status'
+import { capitalizeFirst } from '@/lib/utils'
 import type { CalendarView } from '@/lib/types'
 import { Plus, CalendarDays, CalendarRange, Calendar as CalendarIcon, Clock, ChevronDown, Building2 } from 'lucide-react'
 
@@ -24,6 +27,7 @@ interface Reservation {
   client_id: string
   service_id: string
   resource_id: string | null
+  series_id: string | null
   start_time: string
   end_time: string
   status: 'confirmed' | 'pending' | 'cancelled' | 'completed'
@@ -49,7 +53,8 @@ interface Service {
 interface Resource {
   id: string
   name: string
-  type: 'room' | 'person' | 'equipment'
+  type: 'room' | 'person' | 'equipment' | 'virtual'
+  color: string
 }
 
 interface BusinessHour {
@@ -76,7 +81,9 @@ export default function CalendarPage() {
     calendarStartHour,
     calendarEndHour,
     loading,
+    loadingMoreReservations,
     refetchReservations,
+    ensureReservationsInRange,
   } = useDashboardData()
   const [view, setView] = useState<CalendarView>('day')
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -108,6 +115,13 @@ export default function CalendarPage() {
     setIsModalOpen(false)
     setSelectedReservation(null)
   }
+
+  const handleVisibleRangeChange = useCallback(
+    (from: Date, to: Date) => {
+      ensureReservationsInRange(from, to)
+    },
+    [ensureReservationsInRange]
+  )
 
   if (loading) {
     return (
@@ -183,19 +197,27 @@ export default function CalendarPage() {
 
       <div className="grid gap-4 lg:grid-cols-[1fr_280px] lg:gap-6">
         {/* Calendar */}
-        <CalendarViewComponent
-          view={view}
-          onSelectReservation={handleSelectReservation}
-          onViewChange={setView}
-          reservations={reservations}
-          resources={resources}
-          clientsMap={clientsMap}
-          servicesMap={servicesMap}
-          resourcesMap={resourcesMap}
-          startHour={calendarStartHour}
-          endHour={calendarEndHour}
-          timezone={tz}
-        />
+        <div className="relative">
+          {loadingMoreReservations && (
+            <div className="absolute right-2 top-2 z-10 rounded-full bg-background/90 px-2.5 py-1 text-xs text-muted-foreground shadow-sm">
+              {t.calendar.loadingMore}
+            </div>
+          )}
+          <CalendarViewComponent
+            view={view}
+            onSelectReservation={handleSelectReservation}
+            onViewChange={setView}
+            reservations={reservations}
+            resources={resources}
+            clientsMap={clientsMap}
+            servicesMap={servicesMap}
+            resourcesMap={resourcesMap}
+            startHour={calendarStartHour}
+            endHour={calendarEndHour}
+            timezone={tz}
+            onVisibleRangeChange={handleVisibleRangeChange}
+          />
+        </div>
 
         {/* Sidebar - Today's Schedule */}
         <div className="order-first space-y-4 lg:order-last">
@@ -203,12 +225,14 @@ export default function CalendarPage() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">{t.calendar.today}</CardTitle>
               <p className="text-xs text-muted-foreground">
-                {new Date().toLocaleDateString(locale, {
-                  timeZone: tz,
-                  weekday: 'long',
-                  day: 'numeric',
-                  month: 'long',
-                })}
+                {capitalizeFirst(
+                  new Date().toLocaleDateString(locale, {
+                    timeZone: tz,
+                    weekday: 'long',
+                    day: 'numeric',
+                    month: 'long',
+                  })
+                )}
               </p>
             </CardHeader>
             <CardContent className="pb-3">
@@ -235,9 +259,14 @@ export default function CalendarPage() {
                             style={{ backgroundColor: service?.color ?? 'hsl(var(--primary))' }}
                           />
                           <div className="flex-1 min-w-0 space-y-0.5">
-                            <p className="text-sm font-medium truncate">
-                              {client?.name ?? t.calendar.unknownClient}
-                            </p>
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm font-medium truncate">
+                                {client?.name ?? t.calendar.unknownClient}
+                              </p>
+                              <Badge variant={getStatusBadgeVariant(reservation.status)} className="h-4 shrink-0 px-1.5 text-[9px]">
+                                {getStatusLabel(reservation.status, t.reservation)}
+                              </Badge>
+                            </div>
                             <p className="text-xs text-muted-foreground truncate">
                               {service?.name ?? t.calendar.unknownService}
                             </p>

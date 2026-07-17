@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, type FormEvent, type ChangeEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Select,
@@ -18,10 +18,23 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { PasswordStrength } from '@/components/password-strength'
+import { UpgradeModal } from '@/components/upgrade-modal'
 import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
+import { useDashboardData } from '@/context/dashboard-data-context'
 import { createClient } from '@/lib/supabase/client'
+import { translateAuthError, withAuthLockRetry, withTimeout, AuthTimeoutError } from '@/lib/supabase/auth-errors'
+import { getPasswordChecks, isPasswordStrongEnough } from '@/lib/password'
 import {
   User,
   Building2,
@@ -35,6 +48,9 @@ import {
   Check,
   Loader2,
   Plus,
+  KeyRound,
+  Eye,
+  EyeOff,
 } from 'lucide-react'
 
 type DayOfWeek = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday'
@@ -48,7 +64,7 @@ const TIMEZONES = [
   { value: 'America/Bogota', label: 'Bogota, Colombia (GMT-5)' },
 ]
 
-const DEFAULT_BUSINESS_HOURS = [
+const DEFAULT_BUSINESS_HOURS: { dayOfWeek: DayOfWeek; startTime: string; endTime: string; isOpen: boolean }[] = [
   { dayOfWeek: 'monday', startTime: '09:00', endTime: '18:00', isOpen: true },
   { dayOfWeek: 'tuesday', startTime: '09:00', endTime: '18:00', isOpen: true },
   { dayOfWeek: 'wednesday', startTime: '09:00', endTime: '18:00', isOpen: true },
@@ -58,13 +74,33 @@ const DEFAULT_BUSINESS_HOURS = [
   { dayOfWeek: 'sunday', startTime: '09:00', endTime: '14:00', isOpen: false },
 ]
 
+// business_hours.day_of_week is 0-6 (0=Sunday), matching the convention
+// already used for reservation validation elsewhere in the app.
+const DAY_KEY_TO_NUMBER: Record<DayOfWeek, number> = {
+  sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6,
+}
+
 export default function SettingsPage() {
   const { user, profile: authProfile, loading: authLoading, refreshProfile } = useAuth()
-  const { businesses, loading: businessLoading } = useBusinesses()
+  const { businesses, loading: businessLoading, updateBusiness } = useBusinesses()
+  const { businessHours: realBusinessHours, refetchBusinessHours } = useDashboardData()
   const { language, setLanguage, t } = useLanguage()
   const [isSaving, setIsSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [isCreatingBusiness, setIsCreatingBusiness] = useState(false)
+  const [isSavingHours, setIsSavingHours] = useState(false)
+  const [hoursSaveStatus, setHoursSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showNewPassword, setShowNewPassword] = useState(false)
+  const [isSavingPassword, setIsSavingPassword] = useState(false)
+  const [passwordError, setPasswordError] = useState('')
+  const [passwordSuccess, setPasswordSuccess] = useState(false)
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
+  const [photoError, setPhotoError] = useState('')
+  const photoInputRef = useRef<HTMLInputElement>(null)
   const supabase = createClient()
 
   const currentBusiness = businesses?.[0]
@@ -124,12 +160,33 @@ export default function SettingsPage() {
       setBusiness({
         name: currentBusiness.name,
         timezone: currentBusiness.timezone,
-        address: '',
-        phone: '',
-        email: '',
+        address: currentBusiness.address || '',
+        phone: currentBusiness.phone || '',
+        email: currentBusiness.email || '',
       })
     }
   }, [authProfile, user, currentBusiness])
+
+  // Business hours already come from DashboardDataProvider (fetched once for
+  // the calendar/reservation validation) - derive the editable local form
+  // from that instead of fetching the same table again here. Falls back to
+  // DEFAULT_BUSINESS_HOURS when nothing's been saved yet (new business).
+  useEffect(() => {
+    if (realBusinessHours.length === 0) return
+    setBusinessHours(
+      DEFAULT_BUSINESS_HOURS.map((def) => {
+        const dayNum = DAY_KEY_TO_NUMBER[def.dayOfWeek]
+        const row = realBusinessHours.find((h) => h.day_of_week === dayNum)
+        if (!row) return def
+        return {
+          dayOfWeek: def.dayOfWeek,
+          startTime: row.open_time.slice(0, 5),
+          endTime: row.close_time.slice(0, 5),
+          isOpen: !row.is_closed,
+        }
+      })
+    )
+  }, [realBusinessHours])
 
   const handleCreateBusiness = async () => {
     if (!user || !business.name) return
@@ -168,14 +225,13 @@ export default function SettingsPage() {
       }
 
       if (currentBusiness) {
-        const { error: bizError } = await supabase
-          .from('businesses')
-          .update({
-            name: business.name,
-            timezone: business.timezone,
-          })
-          .eq('id', currentBusiness.id)
-        if (bizError) throw bizError
+        await updateBusiness(currentBusiness.id, {
+          name: business.name,
+          timezone: business.timezone,
+          address: business.address || null,
+          phone: business.phone || null,
+          email: business.email || null,
+        })
       }
 
       await refreshProfile()
@@ -188,6 +244,128 @@ export default function SettingsPage() {
       setTimeout(() => setSaveStatus('idle'), 4000)
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const handleSaveBusinessHours = async () => {
+    if (!currentBusiness) return
+    setIsSavingHours(true)
+    setHoursSaveStatus('idle')
+    try {
+      const rows = businessHours.map((h) => ({
+        business_id: currentBusiness.id,
+        day_of_week: DAY_KEY_TO_NUMBER[h.dayOfWeek],
+        open_time: h.startTime,
+        close_time: h.endTime,
+        is_closed: !h.isOpen,
+      }))
+      const { error } = await supabase
+        .from('business_hours')
+        .upsert(rows, { onConflict: 'business_id,day_of_week' })
+      if (error) throw error
+
+      // Refresh the shared copy so the calendar/reservation validation picks
+      // up the new hours immediately, without a page reload.
+      await refetchBusinessHours()
+
+      setHoursSaveStatus('success')
+      setTimeout(() => setHoursSaveStatus('idle'), 3000)
+    } catch (err) {
+      console.error('[iplanit] Error saving business hours:', err)
+      setHoursSaveStatus('error')
+      setTimeout(() => setHoursSaveStatus('idle'), 4000)
+    } finally {
+      setIsSavingHours(false)
+    }
+  }
+
+  const newPasswordChecks = getPasswordChecks(newPassword)
+
+  const handleChangePassword = async (e: FormEvent) => {
+    e.preventDefault()
+    setPasswordError('')
+
+    if (!isPasswordStrongEnough(newPasswordChecks)) {
+      setPasswordError(t.auth.resetPassword.passwordRequirements)
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError(t.auth.resetPassword.passwordsDontMatch)
+      return
+    }
+
+    setIsSavingPassword(true)
+    try {
+      const { error } = await withTimeout(
+        withAuthLockRetry(() => supabase.auth.updateUser({ password: newPassword })),
+        8000
+      )
+      if (error) {
+        setPasswordError(translateAuthError(error.message, language))
+        return
+      }
+      setPasswordSuccess(true)
+      setNewPassword('')
+      setConfirmPassword('')
+      setTimeout(() => {
+        setShowPasswordDialog(false)
+        setPasswordSuccess(false)
+      }, 1500)
+    } catch (err) {
+      if (err instanceof AuthTimeoutError) {
+        setPasswordError(t.auth.resetPassword.timeoutDesc)
+      } else {
+        console.error('[iplanit] Error changing password:', err)
+        setPasswordError(translateAuthError(null, language))
+      }
+    } finally {
+      setIsSavingPassword(false)
+    }
+  }
+
+  const handlePhotoChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-selecting the same file next time
+    if (!file || !user) return
+
+    setPhotoError('')
+
+    if (!file.type.startsWith('image/')) {
+      setPhotoError(t.settings.photoInvalidType)
+      return
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setPhotoError(t.settings.photoTooLarge)
+      return
+    }
+
+    setIsUploadingPhoto(true)
+    try {
+      const ext = file.name.split('.').pop() || 'jpg'
+      const path = `${user.id}/avatar.${ext}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(path, file, { upsert: true, cacheControl: '3600' })
+      if (uploadError) throw uploadError
+
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
+      // Cache-bust so the browser doesn't keep showing the previous photo
+      // after an overwrite at the same path.
+      const avatarUrl = `${urlData.publicUrl}?t=${Date.now()}`
+
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: avatarUrl })
+        .eq('id', user.id)
+      if (updateError) throw updateError
+
+      await refreshProfile()
+    } catch (err) {
+      console.error('[iplanit] Error uploading avatar:', err)
+      setPhotoError(t.settings.photoUploadError)
+    } finally {
+      setIsUploadingPhoto(false)
     }
   }
 
@@ -268,18 +446,41 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="flex items-center gap-4">
-                <Avatar className="h-20 w-20">
-                  <AvatarFallback className="text-xl">
-                    {getInitials(profileForm.name)}
-                  </AvatarFallback>
-                </Avatar>
+                <div className="relative">
+                  <Avatar className="h-20 w-20">
+                    <AvatarImage src={authProfile?.avatar_url || undefined} alt={profileForm.name} />
+                    <AvatarFallback className="text-xl">
+                      {getInitials(profileForm.name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  {isUploadingPhoto && (
+                    <div className="absolute inset-0 flex items-center justify-center rounded-full bg-background/70">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  )}
+                </div>
                 <div>
-                  <Button variant="outline" size="sm">
-                    {t.settings.changePhoto}
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handlePhotoChange}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isUploadingPhoto}
+                    onClick={() => photoInputRef.current?.click()}
+                  >
+                    {isUploadingPhoto ? t.settings.photoUploading : t.settings.changePhoto}
                   </Button>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {t.settings.photoHint}
                   </p>
+                  {photoError && (
+                    <p className="mt-1 text-xs text-destructive">{photoError}</p>
+                  )}
                 </div>
               </div>
 
@@ -328,7 +529,9 @@ export default function SettingsPage() {
                   {t.settings.securityTitle}
                 </h4>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <Button variant="outline">{t.settings.changePassword}</Button>
+                  <Button variant="outline" onClick={() => setShowPasswordDialog(true)}>
+                    {t.settings.changePassword}
+                  </Button>
                   <p className="text-sm text-muted-foreground">
                     {t.settings.lastUpdated}
                   </p>
@@ -493,6 +696,25 @@ export default function SettingsPage() {
                         </div>
                       )
                     })}
+                  </div>
+
+                  <Separator className="my-6" />
+
+                  <div className="flex items-center gap-3">
+                    <Button onClick={handleSaveBusinessHours} disabled={isSavingHours} className="gap-2">
+                      {isSavingHours
+                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                        : hoursSaveStatus === 'success'
+                          ? <Check className="h-4 w-4" />
+                          : <Save className="h-4 w-4" />}
+                      {t.saveChanges}
+                    </Button>
+                    {hoursSaveStatus === 'success' && (
+                      <p className="text-sm text-green-600">{t.changesSaved}</p>
+                    )}
+                    {hoursSaveStatus === 'error' && (
+                      <p className="text-sm text-destructive">{t.saveError}</p>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -663,7 +885,7 @@ export default function SettingsPage() {
                     {t.settings.activeStatus}
                   </Badge>
                 ) : (
-                  <Button>{t.settings.upgradePremium}</Button>
+                  <Button onClick={() => setShowUpgradeModal(true)}>{t.settings.upgradePremium}</Button>
                 )}
               </div>
 
@@ -693,6 +915,100 @@ export default function SettingsPage() {
       </Tabs>
         </>
       )}
+
+      <UpgradeModal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} />
+
+      <Dialog
+        open={showPasswordDialog}
+        onOpenChange={(open) => {
+          setShowPasswordDialog(open)
+          if (!open) {
+            setNewPassword('')
+            setConfirmPassword('')
+            setPasswordError('')
+            setPasswordSuccess(false)
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5" />
+              {t.settings.changePassword}
+            </DialogTitle>
+            <DialogDescription>{t.auth.resetPassword.subtitle}</DialogDescription>
+          </DialogHeader>
+
+          {passwordSuccess ? (
+            <div className="flex flex-col items-center gap-2 py-6 text-center">
+              <Check className="h-8 w-8 text-green-600" />
+              <p className="font-medium">{t.auth.resetPassword.successTitle}</p>
+            </div>
+          ) : (
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              {passwordError && (
+                <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                  {passwordError}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="new-password">{t.auth.resetPassword.newPassword}</Label>
+                <div className="relative">
+                  <Input
+                    id="new-password"
+                    type={showNewPassword ? 'text' : 'password'}
+                    placeholder={t.auth.resetPassword.passwordPlaceholderMin}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    disabled={isSavingPassword}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                  >
+                    {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                <PasswordStrength
+                  password={newPassword}
+                  labels={{ ...t.auth.register.passwordStrength, ...t.auth.register.passwordReq }}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="confirm-new-password">{t.auth.resetPassword.confirmPassword}</Label>
+                <Input
+                  id="confirm-new-password"
+                  type={showNewPassword ? 'text' : 'password'}
+                  placeholder={t.auth.resetPassword.passwordPlaceholderMin}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  disabled={isSavingPassword}
+                  required
+                />
+              </div>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowPasswordDialog(false)}
+                  disabled={isSavingPassword}
+                >
+                  {t.services.cancelBtn}
+                </Button>
+                <Button type="submit" disabled={isSavingPassword} className="gap-2">
+                  {isSavingPassword && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {isSavingPassword ? t.auth.resetPassword.updating : t.auth.resetPassword.updateBtn}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

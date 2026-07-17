@@ -19,9 +19,10 @@ import {
   Crown,
   Building2,
   Loader2,
+  BarChart3,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet'
 import { UpgradeModal } from '@/components/upgrade-modal'
 
@@ -30,12 +31,16 @@ interface MobileNavProps {
   onToggle: () => void
 }
 
+// Order matters: the bottom tab bar only shows the first 5 (see
+// NAV_ITEMS.slice(0, 5) below), so analytics goes last to keep the existing
+// 5 quick-access items unchanged - it's still reachable from the full menu.
 const NAV_ITEMS = [
   { key: 'dashboard' as const, href: '/dashboard', icon: LayoutDashboard },
   { key: 'calendar' as const, href: '/dashboard/calendar', icon: Calendar },
   { key: 'services' as const, href: '/dashboard/services', icon: Briefcase },
   { key: 'clients' as const, href: '/dashboard/clients', icon: Users },
   { key: 'settings' as const, href: '/dashboard/settings', icon: Settings },
+  { key: 'analytics' as const, href: '/dashboard/analytics', icon: BarChart3 },
 ]
 
 export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
@@ -67,7 +72,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
             <Calendar className="h-5 w-5 text-primary-foreground" />
           </div>
-          <span className="text-lg font-bold">iPlannit</span>
+          <span className="text-lg font-bold">iPlanit</span>
         </Link>
 
         <Sheet open={isOpen} onOpenChange={onToggle}>
@@ -92,6 +97,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
               <div className="border-b p-4">
                 <div className="flex items-center gap-3">
                   <Avatar className="h-10 w-10">
+                    <AvatarImage src={profile?.avatar_url || undefined} alt={userName} />
                     <AvatarFallback className="bg-primary/10 text-primary">
                       {getInitials(userName)}
                     </AvatarFallback>

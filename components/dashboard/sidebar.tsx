@@ -19,9 +19,10 @@ import {
   Building2,
   Loader2,
   Clock,
+  BarChart3,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import {
   Tooltip,
   TooltipContent,
@@ -41,6 +42,7 @@ const NAV_ITEMS = [
   { key: 'calendar' as const, href: '/dashboard/calendar', icon: Calendar },
   { key: 'services' as const, href: '/dashboard/services', icon: Briefcase },
   { key: 'clients' as const, href: '/dashboard/clients', icon: Users },
+  { key: 'analytics' as const, href: '/dashboard/analytics', icon: BarChart3 },
   { key: 'settings' as const, href: '/dashboard/settings', icon: Settings },
 ]
 
@@ -89,28 +91,32 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
           isCollapsed ? 'w-16' : 'w-64'
         )}
       >
+        {/* Collapse toggle — floats on the sidebar's edge instead of sharing
+            the header row, so it never has to squeeze next to the logo in
+            the 64px collapsed width. */}
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label={isCollapsed ? t.expandSidebar : t.collapseSidebar}
+          className="absolute -right-3 top-5 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-sidebar-border bg-sidebar text-sidebar-foreground shadow-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        >
+          {isCollapsed ? (
+            <ChevronRight className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronLeft className="h-3.5 w-3.5" />
+          )}
+        </button>
+
         {/* Header */}
-        <div className="flex h-16 items-center justify-between border-b border-sidebar-border px-4">
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary">
+        <div className="flex h-16 items-center border-b border-sidebar-border px-4">
+          <Link href="/dashboard" className="flex items-center gap-2 overflow-hidden">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary">
               <Calendar className="h-5 w-5 text-sidebar-primary-foreground" />
             </div>
             {!isCollapsed && (
-              <span className="text-lg font-bold text-sidebar-foreground">iPlannit</span>
+              <span className="text-lg font-bold text-sidebar-foreground">iPlanit</span>
             )}
           </Link>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-sidebar-foreground hover:bg-sidebar-accent"
-            onClick={onToggle}
-          >
-            {isCollapsed ? (
-              <ChevronRight className="h-4 w-4" />
-            ) : (
-              <ChevronLeft className="h-4 w-4" />
-            )}
-          </Button>
         </div>
 
         {/* Business Info */}
@@ -242,6 +248,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
             )}
           >
             <Avatar className="h-9 w-9">
+              <AvatarImage src={profile?.avatar_url || undefined} alt={userName} />
               <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground">
                 {getInitials(userName)}
               </AvatarFallback>

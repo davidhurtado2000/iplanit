@@ -36,8 +36,9 @@ import {
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useAuth } from '@/hooks/use-auth'
 import { useLanguage } from '@/context/language-context'
-import { useDashboardData } from '@/context/dashboard-data-context'
+import { useDashboardData, type Reservation } from '@/context/dashboard-data-context'
 import { createClient } from '@/lib/supabase/client'
+import { getStatusBadgeVariant, getStatusLabel } from '@/lib/reservation-status'
 import {
   Plus,
   MoreHorizontal,
@@ -48,11 +49,49 @@ import {
   Phone,
   Calendar,
   Users,
+  UserX,
   FileText,
   History,
   Loader2,
   Building2,
+  MessageCircle,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from 'lucide-react'
+
+const AVATAR_COLORS = [
+  '#3B82F6',
+  '#10B981',
+  '#F59E0B',
+  '#8B5CF6',
+  '#EF4444',
+  '#EC4899',
+  '#06B6D4',
+  '#84CC16',
+]
+
+function getAvatarColor(id: string) {
+  let hash = 0
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length]
+}
+
+function getWhatsappLink(phone: string) {
+  const digits = phone.replace(/\D/g, '')
+  const withCountry = digits.length <= 9 ? `51${digits}` : digits
+  return `https://wa.me/${withCountry}`
+}
+
+const INACTIVE_DAYS_THRESHOLD = 60
+
+type SortKey = 'name' | 'reservations' | 'last_visit'
+type SortDir = 'asc' | 'desc'
+
+function SortIndicator({ active, dir }: { active: boolean; dir: SortDir }) {
+  if (!active) return <ArrowUpDown className="ml-1 h-3 w-3 text-muted-foreground/50" />
+  return dir === 'asc' ? <ArrowUp className="ml-1 h-3 w-3" /> : <ArrowDown className="ml-1 h-3 w-3" />
+}
 
 interface Client {
   id: string
@@ -70,7 +109,7 @@ export default function ClientsPage() {
   const { businesses } = useBusinesses()
   const { profile } = useAuth()
   const { t, locale } = useLanguage()
-  const { clients, reservations, loading, refetchClients } = useDashboardData()
+  const { clients, services, loading, refetchClients } = useDashboardData()
   const [saving, setSaving] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
@@ -92,6 +131,77 @@ export default function ClientsPage() {
     ruc: '',
   })
 
+  // Reservation counts per client (all-time) come from a small aggregate
+  // query against the client_reservation_counts view, not by filtering the
+  // shared reservations array - that array only holds a ±90 day window (see
+  // dashboard-data-context.tsx), which would silently under-count a
+  // long-time client's real history.
+  const [reservationCounts, setReservationCounts] = useState<
+    Map<string, { reservation_count: number; confirmed_count: number; last_reservation_at: string | null }>
+  >(new Map())
+
+  useEffect(() => {
+    if (!currentBusiness) return
+    const loadCounts = async () => {
+      const { data } = await supabase
+        .from('client_reservation_counts')
+        .select('client_id, reservation_count, confirmed_count, last_reservation_at')
+        .eq('business_id', currentBusiness.id)
+      setReservationCounts(
+        new Map(
+          (data || []).map((row: any) => [
+            row.client_id,
+            {
+              reservation_count: row.reservation_count,
+              confirmed_count: row.confirmed_count,
+              last_reservation_at: row.last_reservation_at,
+            },
+          ])
+        )
+      )
+    }
+    loadCounts()
+  }, [currentBusiness?.id])
+
+  const [sortKey, setSortKey] = useState<SortKey>('last_visit')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir(key === 'name' ? 'asc' : 'desc')
+    }
+  }
+
+  // Selected client's recent reservations, fetched on demand when the
+  // detail modal opens rather than derived from the shared (bounded) array.
+  const [clientHistory, setClientHistory] = useState<Reservation[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+
+  useEffect(() => {
+    if (!selectedClient || !isDetailOpen) {
+      setClientHistory([])
+      return
+    }
+    const loadHistory = async () => {
+      setLoadingHistory(true)
+      try {
+        const { data } = await supabase
+          .from('reservations')
+          .select('*')
+          .eq('client_id', selectedClient.id)
+          .order('start_time', { ascending: false })
+          .limit(5)
+        setClientHistory(data || [])
+      } finally {
+        setLoadingHistory(false)
+      }
+    }
+    loadHistory()
+  }, [selectedClient?.id, isDetailOpen])
+
   useEffect(() => {
     setCurrentPage(1)
   }, [searchQuery])
@@ -107,11 +217,44 @@ export default function ClientsPage() {
     )
   }, [clients, searchQuery])
 
-  const totalPages = Math.max(1, Math.ceil(filteredClients.length / PAGE_SIZE))
-  const paginatedClients = filteredClients.slice(
+  const sortedClients = useMemo(() => {
+    const arr = [...filteredClients]
+    arr.sort((a, b) => {
+      let cmp = 0
+      if (sortKey === 'name') {
+        cmp = a.name.localeCompare(b.name)
+      } else if (sortKey === 'reservations') {
+        const ac = reservationCounts.get(a.id)?.reservation_count ?? 0
+        const bc = reservationCounts.get(b.id)?.reservation_count ?? 0
+        cmp = ac - bc
+      } else {
+        const at = reservationCounts.get(a.id)?.last_reservation_at
+        const bt = reservationCounts.get(b.id)?.last_reservation_at
+        const an = at ? new Date(at).getTime() : -Infinity
+        const bn = bt ? new Date(bt).getTime() : -Infinity
+        cmp = an - bn
+      }
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+    return arr
+  }, [filteredClients, reservationCounts, sortKey, sortDir])
+
+  const totalPages = Math.max(1, Math.ceil(sortedClients.length / PAGE_SIZE))
+  const paginatedClients = sortedClients.slice(
     (currentPage - 1) * PAGE_SIZE,
     currentPage * PAGE_SIZE
   )
+
+  const inactiveClientsCount = useMemo(() => {
+    const now = Date.now()
+    return clients.filter((c) => {
+      const info = reservationCounts.get(c.id)
+      if (!info || !info.last_reservation_at) return true
+      const daysSince = (now - new Date(info.last_reservation_at).getTime()) / 86400000
+      return daysSince > INACTIVE_DAYS_THRESHOLD
+    }).length
+  }, [clients, reservationCounts])
+
 
   const getInitials = (name: string) => {
     return name
@@ -120,12 +263,6 @@ export default function ClientsPage() {
       .join('')
       .toUpperCase()
       .slice(0, 2)
-  }
-
-  const getClientReservations = (clientId: string) => {
-    return reservations
-      .filter((r) => r.client_id === clientId)
-      .sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime())
   }
 
   const handleOpenModal = (client?: Client) => {
@@ -287,18 +424,13 @@ export default function ClientsPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              {t.clients.withActiveReservations}
+              {t.clients.inactiveClients}
             </CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <UserX className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {new Set(
-                reservations
-                  .filter((r) => r.status === 'confirmed')
-                  .map((r) => r.client_id)
-              ).size}
-            </div>
+            <div className="text-2xl font-bold">{inactiveClientsCount}</div>
+            <p className="mt-1 text-xs text-muted-foreground">{t.clients.inactiveClientsHint}</p>
           </CardContent>
         </Card>
       </div>
@@ -320,23 +452,59 @@ export default function ClientsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>{t.clients.clientCol}</TableHead>
+                <TableHead>
+                  <button
+                    type="button"
+                    className="flex items-center hover:text-foreground"
+                    onClick={() => handleSort('name')}
+                  >
+                    {t.clients.clientCol}
+                    <SortIndicator active={sortKey === 'name'} dir={sortDir} />
+                  </button>
+                </TableHead>
                 <TableHead>{t.clients.contactCol}</TableHead>
                 <TableHead>DNI / RUC</TableHead>
-                <TableHead>{t.clients.reservationsCol}</TableHead>
-                <TableHead>{t.clients.sinceCol}</TableHead>
+                <TableHead>
+                  <button
+                    type="button"
+                    className="flex items-center hover:text-foreground"
+                    onClick={() => handleSort('reservations')}
+                  >
+                    {t.clients.reservationsCol}
+                    <SortIndicator active={sortKey === 'reservations'} dir={sortDir} />
+                  </button>
+                </TableHead>
+                <TableHead>
+                  <button
+                    type="button"
+                    className="flex items-center hover:text-foreground"
+                    onClick={() => handleSort('last_visit')}
+                  >
+                    {t.clients.lastVisitCol}
+                    <SortIndicator active={sortKey === 'last_visit'} dir={sortDir} />
+                  </button>
+                </TableHead>
                 <TableHead className="w-[50px]" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {paginatedClients.map((client) => {
-                const clientReservations = getClientReservations(client.id)
+                const info = reservationCounts.get(client.id)
+                const clientReservationCount = info?.reservation_count ?? 0
+                const isInactive =
+                  !info?.last_reservation_at ||
+                  (Date.now() - new Date(info.last_reservation_at).getTime()) / 86400000 >
+                    INACTIVE_DAYS_THRESHOLD
                 return (
                   <TableRow key={client.id}>
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <Avatar>
-                          <AvatarFallback>{getInitials(client.name)}</AvatarFallback>
+                          <AvatarFallback
+                            style={{ backgroundColor: getAvatarColor(client.id), color: '#fff' }}
+                          >
+                            {getInitials(client.name)}
+                          </AvatarFallback>
                         </Avatar>
                         <div>
                           <p className="font-medium">{client.name}</p>
@@ -358,6 +526,16 @@ export default function ClientsPage() {
                           <div className="flex items-center gap-1 text-sm">
                             <Phone className="h-3 w-3 text-muted-foreground" />
                             {client.phone}
+                            <a
+                              href={getWhatsappLink(client.phone)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title={t.clients.sendWhatsapp}
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-muted-foreground transition-colors hover:text-[#25D366]"
+                            >
+                              <MessageCircle className="h-3.5 w-3.5" />
+                            </a>
                           </div>
                         )}
                       </div>
@@ -374,15 +552,21 @@ export default function ClientsPage() {
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary">
-                        {clientReservations.length} {t.clients.reservationsWord}
+                        {clientReservationCount} {t.clients.reservationsWord}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {new Date(client.created_at).toLocaleDateString(locale, {
-                        day: 'numeric',
-                        month: 'short',
-                        year: 'numeric',
-                      })}
+                    <TableCell className="text-sm">
+                      {info?.last_reservation_at ? (
+                        <span className={isInactive ? 'text-amber-600 dark:text-amber-500' : 'text-muted-foreground'}>
+                          {new Date(info.last_reservation_at).toLocaleDateString(locale, {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                          })}
+                        </span>
+                      ) : (
+                        <span className="text-amber-600 dark:text-amber-500">{t.clients.neverVisited}</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <DropdownMenu>
@@ -557,7 +741,10 @@ export default function ClientsPage() {
               {/* Client Info */}
               <div className="flex items-start gap-4">
                 <Avatar className="h-16 w-16">
-                  <AvatarFallback className="text-lg">
+                  <AvatarFallback
+                    className="text-lg"
+                    style={{ backgroundColor: getAvatarColor(selectedClient.id), color: '#fff' }}
+                  >
                     {getInitials(selectedClient.name)}
                   </AvatarFallback>
                 </Avatar>
@@ -572,6 +759,15 @@ export default function ClientsPage() {
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Phone className="h-4 w-4" />
                         {selectedClient.phone}
+                        <a
+                          href={getWhatsappLink(selectedClient.phone)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={t.clients.sendWhatsapp}
+                          className="text-muted-foreground transition-colors hover:text-[#25D366]"
+                        >
+                          <MessageCircle className="h-3.5 w-3.5" />
+                        </a>
                       </div>
                     )}
                   </div>
@@ -603,47 +799,53 @@ export default function ClientsPage() {
 
                 {isPremium ? (
                   <div className="space-y-2">
-                    {getClientReservations(selectedClient.id).slice(0, 5).map((reservation) => {
-                      const service = getServiceById(reservation.serviceId)
-                      return (
-                        <div
-                          key={reservation.id}
-                          className="flex items-center gap-3 rounded-lg border p-3"
-                        >
-                          <div
-                            className="h-8 w-1 rounded-full"
-                            style={{ backgroundColor: service?.color || '#3B82F6' }}
-                          />
-                          <div className="flex-1">
-                            <p className="text-sm font-medium">{service?.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {new Date(reservation.date).toLocaleDateString(locale, {
-                                day: 'numeric',
-                                month: 'short',
-                                year: 'numeric',
-                              })} - {reservation.startTime}
-                            </p>
-                          </div>
-                          <Badge
-                            variant={
-                              reservation.status === 'confirmed'
-                                ? 'default'
-                                : reservation.status === 'cancelled'
-                                  ? 'destructive'
-                                  : 'secondary'
-                            }
-                          >
-                            {reservation.status === 'confirmed' && t.clients.confirmed}
-                            {reservation.status === 'cancelled' && t.clients.cancelled}
-                            {reservation.status === 'rescheduled' && t.clients.rescheduled}
-                          </Badge>
-                        </div>
-                      )
-                    })}
-                    {getClientReservations(selectedClient.id).length === 0 && (
-                      <p className="py-4 text-center text-sm text-muted-foreground">
-                        {t.clients.noReservations}
-                      </p>
+                    {loadingHistory ? (
+                      <div className="flex justify-center py-4">
+                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : (
+                      <>
+                        {clientHistory.map((reservation) => {
+                          const service = services.find((s) => s.id === reservation.service_id)
+                          return (
+                            <div
+                              key={reservation.id}
+                              className="flex items-center gap-3 rounded-lg border p-3"
+                            >
+                              <div
+                                className="h-8 w-1 rounded-full"
+                                style={{ backgroundColor: service?.color || '#3B82F6' }}
+                              />
+                              <div className="flex-1">
+                                <p className="text-sm font-medium">{service?.name ?? t.calendar.unknownService}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {new Date(reservation.start_time).toLocaleDateString(locale, {
+                                    day: 'numeric',
+                                    month: 'short',
+                                    year: 'numeric',
+                                  })} - {new Date(reservation.start_time).toLocaleTimeString(locale, {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                                </p>
+                              </div>
+                              <Badge variant={getStatusBadgeVariant(reservation.status)}>
+                                {getStatusLabel(reservation.status, {
+                                  confirmed: t.clients.confirmed,
+                                  cancelled: t.clients.cancelled,
+                                  pending: t.clients.pending,
+                                  completed: t.clients.completed,
+                                })}
+                              </Badge>
+                            </div>
+                          )
+                        })}
+                        {clientHistory.length === 0 && (
+                          <p className="py-4 text-center text-sm text-muted-foreground">
+                            {t.clients.noReservations}
+                          </p>
+                        )}
+                      </>
                     )}
                   </div>
                 ) : (

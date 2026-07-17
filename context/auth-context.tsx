@@ -83,15 +83,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     init()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      (_event, session) => {
         setSession(session)
         setUser(session?.user ?? null)
+        setLoading(false)
         if (session?.user) {
-          await fetchProfile(session.user.id, session.user.email)
+          // Supabase's own docs warn against awaiting Supabase calls
+          // directly inside this callback: it runs synchronously as part
+          // of the client's internal auth state dispatch, and blocking it
+          // here can stall/hang later auth calls made from anywhere else
+          // in the app. This was the actual cause of updateUser() hanging
+          // forever on /reset-password even though the password had
+          // already been changed server-side - the USER_UPDATED event fired
+          // this callback, which awaited a DB query before returning, which
+          // held up updateUser()'s own promise. Deferring with setTimeout
+          // lets this callback return immediately, unblocking the client.
+          const userId = session.user.id
+          const userEmail = session.user.email
+          setTimeout(() => {
+            fetchProfile(userId, userEmail)
+          }, 0)
         } else {
           setProfile(null)
         }
-        setLoading(false)
       }
     )
 
@@ -100,8 +114,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // background long enough lets the session expire silently, so every
     // action after switching back does nothing until a hard reload gets a
     // fresh session. This is Supabase's documented fix: explicitly pause
-    // auto-refresh while hidden and force a check the moment the tab is
-    // visible again, instead of relying on the background timer.
+    // auto-refresh while hidden and resume it the moment the tab is visible
+    // again, instead of relying on the background timer.
+    //
+    // Deliberately NOT calling this once synchronously on mount: doing so
+    // raced the auth-token NavigatorLock against the getSession() call just
+    // above (both fire practically simultaneously on every mount), and
+    // supabase-js's lock gets "stolen" from whichever call loses, surfacing
+    // as NavigatorLockAcquireTimeoutError on the next auth call (e.g.
+    // updateUser on /reset-password). autoRefreshToken is already on by
+    // default from client construction, so the initial call added nothing.
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         supabase.auth.startAutoRefresh()
@@ -110,7 +132,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
-    handleVisibilityChange()
 
     return () => {
       subscription?.unsubscribe()

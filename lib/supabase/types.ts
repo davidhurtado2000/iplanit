@@ -146,7 +146,8 @@ export interface Database {
           id: string
           business_id: string
           name: string
-          type: 'room' | 'person' | 'equipment'
+          type: 'room' | 'person' | 'equipment' | 'virtual'
+          color: string
           description: string | null
           is_active: boolean
           created_at: string
@@ -156,7 +157,8 @@ export interface Database {
           id?: string
           business_id: string
           name: string
-          type: 'room' | 'person' | 'equipment'
+          type: 'room' | 'person' | 'equipment' | 'virtual'
+          color?: string
           description?: string | null
           is_active?: boolean
           created_at?: string
@@ -166,7 +168,8 @@ export interface Database {
           id?: string
           business_id?: string
           name?: string
-          type?: 'room' | 'person' | 'equipment'
+          type?: 'room' | 'person' | 'equipment' | 'virtual'
+          color?: string
           description?: string | null
           is_active?: boolean
           created_at?: string
@@ -215,6 +218,7 @@ export interface Database {
           service_id: string
           client_id: string
           resource_id: string | null
+          series_id: string | null
           start_time: string
           end_time: string
           status: 'confirmed' | 'pending' | 'cancelled' | 'completed'
@@ -228,6 +232,7 @@ export interface Database {
           service_id: string
           client_id: string
           resource_id?: string | null
+          series_id?: string | null
           start_time: string
           end_time: string
           status?: 'confirmed' | 'pending' | 'cancelled' | 'completed'
@@ -241,12 +246,51 @@ export interface Database {
           service_id?: string
           client_id?: string
           resource_id?: string | null
+          series_id?: string | null
           start_time?: string
           end_time?: string
           status?: 'confirmed' | 'pending' | 'cancelled' | 'completed'
           notes?: string | null
           created_at?: string
           updated_at?: string
+        }
+      }
+      reservation_series: {
+        Row: {
+          id: string
+          business_id: string
+          client_id: string
+          service_id: string
+          resource_id: string | null
+          days_of_week: number[]
+          session_count: number
+          notes: string | null
+          status: 'active' | 'cancelled'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          business_id: string
+          client_id: string
+          service_id: string
+          resource_id?: string | null
+          days_of_week: number[]
+          session_count: number
+          notes?: string | null
+          status?: 'active' | 'cancelled'
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          business_id?: string
+          client_id?: string
+          service_id?: string
+          resource_id?: string | null
+          days_of_week?: number[]
+          session_count?: number
+          notes?: string | null
+          status?: 'active' | 'cancelled'
+          created_at?: string
         }
       }
       business_hours: {

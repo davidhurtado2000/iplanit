@@ -77,10 +77,10 @@
 ### 7. Dashboard (Premium)
 - ✅ KPIs básicos (reservas hoy, semana, cliente activos)
 - ✅ Visualización bloqueada en Free con CTA
-- ✅ Gráficos de demanda (Premium bloqueado)
-- ✅ Servicios más usados (Premium bloqueado)
-- ❌ **FALTA**: Datos dinámicos (conectar con BD)
-- ❌ **FALTA**: Filtros por fecha y servicio
+- ✅ Datos dinámicos (100% Supabase real, sin mock data)
+- ✅ Página de Analytics (`/dashboard/analytics`): demanda por día, horas pico, servicios más usados, ingresos por servicio, ocupación
+- ✅ Filtro por rango de fecha (7/30/90 días)
+- ❌ **FALTA**: Filtro por servicio específico
 
 ### 8. Planes y Pagos
 - ✅ Visualización del plan actual (Free)
@@ -164,11 +164,11 @@
 - ❌ Validación de datos
 
 ### 8. Análisis y Reportes (Premium)
-- ❌ Cálculo de ocupación
-- ❌ Demanda por servicio
-- ❌ Horas pico
-- ❌ Ingresos estimados
-- ❌ Rentabilidad por servicio
+- ✅ Cálculo de ocupación
+- ✅ Demanda por día
+- ✅ Horas pico
+- ✅ Ingresos estimados
+- ✅ Rentabilidad por servicio (ingresos por servicio)
 
 ### 9. Pagos
 - ❌ Integración Stripe

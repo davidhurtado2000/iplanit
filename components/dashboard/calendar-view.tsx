@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -10,9 +10,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CalendarDays, Clock, Check } from 'lucide-react'
 import type { CalendarView } from '@/lib/types'
-import { cn } from '@/lib/utils'
+import { cn, capitalizeFirst } from '@/lib/utils'
 
 // ─── Time grid constants ───────────────────────────────────────────────────
 const HOUR_HEIGHT    = 64  // px per hour
@@ -49,7 +49,7 @@ function blockHeight(startStr: string, endStr: string) {
 }
 
 // ─── Interfaces ────────────────────────────────────────────────────────────
-interface Resource { id: string; name: string; type: 'room' | 'person' | 'equipment' }
+interface Resource { id: string; name: string; type: 'room' | 'person' | 'equipment' | 'virtual'; color: string }
 interface Client   { id: string; name: string }
 interface Service  { id: string; name: string; duration_minutes: number; color: string }
 
@@ -65,6 +65,8 @@ interface CalendarViewProps {
   startHour?: number
   endHour?: number
   timezone?: string
+  /** Fires whenever the visible date range changes (navigation or view switch). */
+  onVisibleRangeChange?: (from: Date, to: Date) => void
 }
 
 // ─── Main component ────────────────────────────────────────────────────────
@@ -80,9 +82,38 @@ export function CalendarViewComponent({
   startHour = DEFAULT_START,
   endHour   = DEFAULT_END,
   timezone  = DEFAULT_TZ,
+  onVisibleRangeChange,
 }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedResourceId, setSelectedResourceId] = useState<string>('all')
+
+  // Let the parent know what range is on screen so it can make sure that
+  // data is actually loaded (see ensureReservationsInRange in
+  // dashboard-data-context) - the default fetch only covers ±90 days.
+  useEffect(() => {
+    if (!onVisibleRangeChange) return
+    let from: Date
+    let to: Date
+    if (view === 'day') {
+      from = new Date(currentDate)
+      to = new Date(currentDate)
+    } else if (view === 'week') {
+      const start = new Date(currentDate)
+      const diff = start.getDate() - start.getDay() + (start.getDay() === 0 ? -6 : 1)
+      start.setDate(diff)
+      from = start
+      to = new Date(start)
+      to.setDate(to.getDate() + 6)
+    } else {
+      // Month grid can show a few leading/trailing days from adjacent
+      // months - pad a week on each side rather than replicating the
+      // exact grid math here.
+      from = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1 - 7)
+      to = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0 + 7)
+    }
+    onVisibleRangeChange(from, to)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentDate, view])
 
   const navigate = (dir: -1 | 1) => {
     const d = new Date(currentDate)
@@ -126,7 +157,7 @@ export function CalendarViewComponent({
           </Button>
           <Button variant="ghost" size="sm" onClick={goToToday}>Hoy</Button>
         </div>
-        <h2 className="text-base font-semibold capitalize sm:text-lg">{formatHeader()}</h2>
+        <h2 className="text-base font-semibold sm:text-lg">{capitalizeFirst(formatHeader())}</h2>
         {view === 'day' && resources.length > 0 && (
           <Select value={selectedResourceId} onValueChange={setSelectedResourceId}>
             <SelectTrigger className="w-full bg-transparent sm:w-[200px]">
@@ -135,7 +166,15 @@ export function CalendarViewComponent({
             <SelectContent>
               <SelectItem value="all">Todos los recursos</SelectItem>
               {resources.map(r => (
-                <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                <SelectItem key={r.id} value={r.id}>
+                  <span className="flex items-center gap-2">
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: r.color || '#3B82F6' }}
+                    />
+                    {r.name}
+                  </span>
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -167,7 +206,6 @@ function DayView({
   endHour: number
   timezone: string
 }) {
-  const HOURS   = Array.from({ length: endHour - startHour }, (_, i) => startHour + i)
   // Use business timezone so "dateStr" matches the day the user sees, not UTC midnight
   const dateStr = toDateStr(date, timezone)
 
@@ -175,17 +213,31 @@ function DayView({
     r => toDateStr(r.start_time, timezone) === dateStr && r.status !== 'cancelled'
   )
 
+  // Business hours define the default range, but a reservation that falls
+  // outside them (manual edge-case booking, holiday exception, legacy data)
+  // must still render in full instead of being clipped off the top of the
+  // grid - so the rendered range always grows to fit what's actually
+  // scheduled that day, on top of the business-hours default.
+  const resHours = dayRes.flatMap(r => {
+    const start = getTzHourMin(r.start_time, timezone)
+    const end = getTzHourMin(r.end_time, timezone)
+    return [start.h, end.m > 0 ? end.h + 1 : end.h]
+  })
+  const effStartHour = Math.min(startHour, ...resHours)
+  const effEndHour = Math.max(endHour, ...resHours)
+  const HOURS = Array.from({ length: effEndHour - effStartHour }, (_, i) => effStartHour + i)
+
   // Build columns
   const columns = useMemo(() => {
-    let cols: Array<{ id: string | null; label: string }> = []
+    let cols: Array<{ id: string | null; label: string; color?: string }> = []
 
     if (selectedResourceId !== 'all') {
       const res = resourcesMap[selectedResourceId]
-      return [{ id: selectedResourceId, label: res?.name ?? selectedResourceId }]
+      return [{ id: selectedResourceId, label: res?.name ?? selectedResourceId, color: res?.color }]
     }
 
     if (resources.length > 0) {
-      cols = resources.map(r => ({ id: r.id, label: r.name }))
+      cols = resources.map(r => ({ id: r.id, label: r.name, color: r.color }))
       if (dayRes.some(r => !r.resource_id)) {
         cols.push({ id: null, label: 'Sin recurso' })
       }
@@ -216,15 +268,29 @@ function DayView({
             {columns.map(col => (
               <div
                 key={String(col.id)}
-                className="flex-shrink-0 border-r last:border-r-0 px-3 py-2.5 text-center text-xs font-semibold text-muted-foreground bg-muted/40"
-                style={{ width: COL_WIDTH }}
+                className="flex flex-shrink-0 items-center justify-center gap-1.5 border-r last:border-r-0 px-3 py-2.5 text-center text-xs font-semibold bg-muted/40"
+                style={{ width: COL_WIDTH, color: col.color || undefined }}
               >
-                {col.label}
+                {col.color && (
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: col.color }}
+                  />
+                )}
+                <span className={col.color ? '' : 'text-muted-foreground'}>{col.label}</span>
               </div>
             ))}
           </div>
 
-          {/* Time grid */}
+          {/* Time grid — skipped entirely when the day is empty so the
+              "no reservations" message shows right under the header instead
+              of being pushed below a tall, empty scrollable grid. */}
+          {dayRes.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+              <CalendarDays className="h-7 w-7 text-muted-foreground/30" />
+              <p className="text-sm text-muted-foreground">No hay reservas para este día</p>
+            </div>
+          ) : (
           <div className="relative flex" style={{ height: gridHeight }}>
 
             {/* Hour gutter (sticky left) */}
@@ -236,7 +302,7 @@ function DayView({
                 <div
                   key={h}
                   className="absolute flex w-full items-start justify-end pr-2"
-                  style={{ top: (h - startHour) * HOUR_HEIGHT - 8 }}
+                  style={{ top: (h - effStartHour) * HOUR_HEIGHT - 8 }}
                 >
                   <span className="text-[10px] leading-none text-muted-foreground">
                     {String(h).padStart(2, '0')}:00
@@ -255,10 +321,10 @@ function DayView({
                   style={{ width: COL_WIDTH, height: gridHeight }}
                 >
                   {HOURS.map(h => (
-                    <div key={h} className="absolute w-full border-t border-border/40" style={{ top: (h - startHour) * HOUR_HEIGHT }} />
+                    <div key={h} className="absolute w-full border-t border-border/40" style={{ top: (h - effStartHour) * HOUR_HEIGHT }} />
                   ))}
                   {HOURS.map(h => (
-                    <div key={`${h}h`} className="absolute w-full border-t border-border/20" style={{ top: (h - startHour) * HOUR_HEIGHT + HOUR_HEIGHT / 2 }} />
+                    <div key={`${h}h`} className="absolute w-full border-t border-border/20" style={{ top: (h - effStartHour) * HOUR_HEIGHT + HOUR_HEIGHT / 2 }} />
                   ))}
 
                   {colRes.length === 0 && (
@@ -271,7 +337,7 @@ function DayView({
                     const client  = clientsMap[r.client_id]
                     const service = servicesMap[r.service_id]
                     const color   = service?.color ?? '#3B82F6'
-                    const top     = topOffset(r.start_time, startHour, timezone)
+                    const top     = topOffset(r.start_time, effStartHour, timezone)
                     const height  = blockHeight(r.start_time, r.end_time)
                     const isShort = height < 44
                     const { h, m } = getTzHourMin(r.start_time, timezone)
@@ -287,13 +353,19 @@ function DayView({
                         className="absolute left-1 right-1 overflow-hidden rounded-md px-2 py-1 text-left text-white shadow-sm transition-all hover:brightness-110 hover:shadow-md"
                         style={{ top: top + 1, height: height - 2, backgroundColor: color }}
                       >
+                        {!isShort && r.status !== 'confirmed' && (
+                          <span className="absolute right-1 top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white/90 text-foreground shadow-sm">
+                            {r.status === 'pending' && <Clock className="h-2 w-2" />}
+                            {r.status === 'completed' && <Check className="h-2 w-2" />}
+                          </span>
+                        )}
                         {isShort ? (
                           <p className="text-[10px] font-semibold leading-tight truncate">
                             {client?.name ?? '—'}
                           </p>
                         ) : (
                           <>
-                            <p className="text-xs font-semibold leading-tight truncate">{client?.name ?? '—'}</p>
+                            <p className="pr-4 text-xs font-semibold leading-tight truncate">{client?.name ?? '—'}</p>
                             <p className="text-[10px] leading-tight truncate opacity-90">{service?.name ?? '—'}</p>
                             <p className="mt-0.5 text-[10px] leading-tight opacity-75">
                               {fmt(h, m)} – {fmt(endHM.h, endHM.m)}
@@ -307,12 +379,6 @@ function DayView({
               )
             })}
           </div>
-
-          {dayRes.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-10 text-center">
-              <CalendarDays className="mb-2 h-7 w-7 text-muted-foreground/30" />
-              <p className="text-sm text-muted-foreground">No hay reservas para este día</p>
-            </div>
           )}
         </div>
       </div>
@@ -389,11 +455,13 @@ function WeekView({
                   return (
                     <div
                       key={r.id}
-                      className="w-full truncate rounded px-1.5 py-0.5 text-[10px] font-medium text-white"
+                      className="flex w-full items-center gap-1 truncate rounded px-1.5 py-0.5 text-[10px] font-medium text-white"
                       style={{ backgroundColor: service?.color ?? '#3B82F6' }}
                       onClick={e => { e.stopPropagation(); onSelectReservation(r) }}
                     >
-                      {fmt} {client?.name ?? '—'}
+                      {r.status === 'pending' && <Clock className="h-2.5 w-2.5 shrink-0" />}
+                      {r.status === 'completed' && <Check className="h-2.5 w-2.5 shrink-0" />}
+                      <span className="truncate">{fmt} {client?.name ?? '—'}</span>
                     </div>
                   )
                 })}
@@ -484,11 +552,13 @@ function MonthView({
                   return (
                     <div
                       key={r.id}
-                      className="w-full truncate rounded px-1 py-0.5 text-[9px] sm:text-[10px] text-white"
+                      className="flex w-full items-center gap-0.5 truncate rounded px-1 py-0.5 text-[9px] sm:text-[10px] text-white"
                       style={{ backgroundColor: service?.color ?? '#3B82F6' }}
                       onClick={e => { e.stopPropagation(); onSelectReservation(r) }}
                     >
-                      {fmt}
+                      {r.status === 'pending' && <Clock className="h-2 w-2 shrink-0" />}
+                      {r.status === 'completed' && <Check className="h-2 w-2 shrink-0" />}
+                      <span className="truncate">{fmt}</span>
                     </div>
                   )
                 })}

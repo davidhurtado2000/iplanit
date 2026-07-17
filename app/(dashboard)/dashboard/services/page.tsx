@@ -20,6 +20,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
   Table,
   TableBody,
   TableCell,
@@ -47,6 +57,7 @@ import {
   Briefcase,
   Building,
   User,
+  Video,
   Search,
   Loader2,
 } from 'lucide-react'
@@ -68,7 +79,8 @@ interface Resource {
   business_id: string
   name: string
   description: string | null
-  type: 'room' | 'person' | 'equipment'
+  type: 'room' | 'person' | 'equipment' | 'virtual'
+  color: string
   is_active: boolean
 }
 
@@ -88,6 +100,9 @@ export default function ServicesPage() {
   const [editingService, setEditingService] = useState<Service | null>(null)
   const [editingResource, setEditingResource] = useState<Resource | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [deletingService, setDeletingService] = useState<Service | null>(null)
+  const [deletingResource, setDeletingResource] = useState<Resource | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
   const supabase = createClient()
 
   const currentBusiness = businesses?.[0]
@@ -106,7 +121,8 @@ export default function ServicesPage() {
   const [resourceForm, setResourceForm] = useState({
     name: '',
     description: '',
-    type: 'room' as 'room' | 'person' | 'equipment',
+    type: 'room' as 'room' | 'person' | 'equipment' | 'virtual',
+    color: SERVICE_COLORS[0],
     isActive: true,
   })
 
@@ -214,17 +230,22 @@ export default function ServicesPage() {
     }
   }
 
-  const handleDeleteService = async (id: string) => {
+  const handleConfirmDeleteService = async () => {
+    if (!deletingService) return
+    setIsDeleting(true)
     try {
       const { error } = await supabase
         .from('services')
         .delete()
-        .eq('id', id)
+        .eq('id', deletingService.id)
 
       if (error) throw error
       await Promise.all([refetchServicesAndResources(), refetchServiceResources()])
     } catch (err) {
       console.error('[v0] Error deleting service:', err)
+    } finally {
+      setIsDeleting(false)
+      setDeletingService(null)
     }
   }
 
@@ -235,6 +256,7 @@ export default function ServicesPage() {
         name: resource.name,
         description: resource.description || '',
         type: resource.type,
+        color: resource.color || SERVICE_COLORS[0],
         isActive: resource.is_active,
       })
     } else {
@@ -243,6 +265,7 @@ export default function ServicesPage() {
         name: '',
         description: '',
         type: 'room',
+        color: SERVICE_COLORS[0],
         isActive: true,
       })
     }
@@ -259,6 +282,7 @@ export default function ServicesPage() {
         name: resourceForm.name,
         description: resourceForm.description || null,
         type: resourceForm.type,
+        color: resourceForm.color,
         is_active: resourceForm.isActive,
         business_id: currentBusiness.id,
       }
@@ -286,17 +310,22 @@ export default function ServicesPage() {
     }
   }
 
-  const handleDeleteResource = async (id: string) => {
+  const handleConfirmDeleteResource = async () => {
+    if (!deletingResource) return
+    setIsDeleting(true)
     try {
       const { error } = await supabase
         .from('resources')
         .delete()
-        .eq('id', id)
+        .eq('id', deletingResource.id)
 
       if (error) throw error
       await refetchServicesAndResources()
     } catch (err) {
       console.error('[v0] Error deleting resource:', err)
+    } finally {
+      setIsDeleting(false)
+      setDeletingResource(null)
     }
   }
 
@@ -306,6 +335,8 @@ export default function ServicesPage() {
         return Building
       case 'person':
         return User
+      case 'virtual':
+        return Video
       default:
         return Briefcase
     }
@@ -314,6 +345,7 @@ export default function ServicesPage() {
   const getResourceTypeLabel = (type: string) => {
     if (type === 'room') return t.services.roomTypeLabel
     if (type === 'person') return t.services.personType
+    if (type === 'virtual') return t.services.virtualType
     return t.services.equipmentType
   }
 
@@ -375,6 +407,10 @@ export default function ServicesPage() {
           {t.services.resourcesTab} ({resources.length})
         </button>
       </div>
+
+      {activeTab === 'resources' && (
+        <p className="text-sm text-muted-foreground">{t.services.resourcesExplainer}</p>
+      )}
 
       {/* Search and Actions */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -467,7 +503,7 @@ export default function ServicesPage() {
                             {t.services.edit}
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            onClick={() => handleDeleteService(service.id)}
+                            onClick={() => setDeletingService(service)}
                             className="text-destructive"
                           >
                             <Trash2 className="mr-2 h-4 w-4" />
@@ -500,8 +536,11 @@ export default function ServicesPage() {
               <Card key={resource.id}>
                 <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
                   <div className="flex items-center gap-3">
-                    <div className="rounded-lg bg-muted p-2">
-                      <Icon className="h-5 w-5 text-muted-foreground" />
+                    <div
+                      className="rounded-lg p-2"
+                      style={{ backgroundColor: `${resource.color || '#3B82F6'}20` }}
+                    >
+                      <Icon className="h-5 w-5" style={{ color: resource.color || '#3B82F6' }} />
                     </div>
                     <div>
                       <CardTitle className="text-base">{resource.name}</CardTitle>
@@ -522,7 +561,7 @@ export default function ServicesPage() {
                         {t.services.edit}
                       </DropdownMenuItem>
                       <DropdownMenuItem
-                        onClick={() => handleDeleteResource(resource.id)}
+                        onClick={() => setDeletingResource(resource)}
                         className="text-destructive"
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
@@ -606,7 +645,7 @@ export default function ServicesPage() {
                   min={5}
                   step={5}
                   value={serviceForm.duration}
-                  onChange={(e) => setServiceForm({ ...serviceForm, duration: parseInt(e.target.value) })}
+                  onChange={(e) => setServiceForm({ ...serviceForm, duration: parseInt(e.target.value) || 0 })}
                   required
                 />
               </div>
@@ -619,7 +658,9 @@ export default function ServicesPage() {
                   step={0.01}
                   value={serviceForm.price}
                   onChange={(e) => setServiceForm({ ...serviceForm, price: parseFloat(e.target.value) || 0 })}
+                  required
                 />
+                <p className="text-xs text-muted-foreground">Usado en Analytics e ingresos</p>
               </div>
             </div>
 
@@ -634,11 +675,12 @@ export default function ServicesPage() {
                 value={serviceForm.priceUsd}
                 onChange={(e) => setServiceForm({ ...serviceForm, priceUsd: e.target.value !== '' ? parseFloat(e.target.value) : '' })}
               />
+              <p className="text-xs text-muted-foreground">Solo referencia — no se usa en reportes ni ingresos</p>
             </div>
 
             {resources.length > 0 && (
               <div className="space-y-2">
-                <Label>Sedes / Recursos asociados</Label>
+                <Label>Recursos asociados</Label>
                 <div className="max-h-32 overflow-y-auto rounded-md border p-2 space-y-1">
                   {resources.map((resource) => (
                     <label key={resource.id} className="flex items-center gap-2 cursor-pointer text-sm py-1">
@@ -659,7 +701,7 @@ export default function ServicesPage() {
                     </label>
                   ))}
                 </div>
-                <p className="text-xs text-muted-foreground">Si no seleccionas ninguno, el servicio estará disponible en todas las sedes.</p>
+                <p className="text-xs text-muted-foreground">Si no seleccionas ninguno, el servicio estará disponible con cualquier recurso.</p>
               </div>
             )}
 
@@ -740,11 +782,12 @@ export default function ServicesPage() {
 
             <div className="space-y-2">
               <Label>{t.services.resourceTypeLabel}</Label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {[
                   { value: 'room', label: t.services.roomType, icon: Building },
                   { value: 'person', label: t.services.personType, icon: User },
                   { value: 'equipment', label: t.services.equipmentType, icon: Briefcase },
+                  { value: 'virtual', label: t.services.virtualType, icon: Video },
                 ].map((option) => (
                   <button
                     key={option.value}
@@ -754,11 +797,30 @@ export default function ServicesPage() {
                         ? 'border-primary bg-primary/10'
                         : 'hover:bg-muted'
                     }`}
-                    onClick={() => setResourceForm({ ...resourceForm, type: option.value as 'room' | 'person' | 'equipment' })}
+                    onClick={() => setResourceForm({ ...resourceForm, type: option.value as 'room' | 'person' | 'equipment' | 'virtual' })}
                   >
                     <option.icon className="h-5 w-5" />
                     <span className="text-xs">{option.label}</span>
                   </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>{t.services.colorLabel}</Label>
+              <div className="flex gap-2">
+                {SERVICE_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    className={`h-8 w-8 rounded-full border-2 transition-transform ${
+                      resourceForm.color === color
+                        ? 'scale-110 border-foreground'
+                        : 'border-transparent hover:scale-105'
+                    }`}
+                    style={{ backgroundColor: color }}
+                    onClick={() => setResourceForm({ ...resourceForm, color })}
+                  />
                 ))}
               </div>
             </div>
@@ -784,6 +846,54 @@ export default function ServicesPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Service Confirmation */}
+      <AlertDialog open={!!deletingService} onOpenChange={(open) => !open && setDeletingService(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t.services.deleteServiceTitle}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deletingService && `"${deletingService.name}" — `}
+              {t.services.deleteServiceDesc}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>{t.services.cancelBtn}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDeleteService}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {isDeleting ? t.services.deleting : t.services.confirmDelete}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Resource Confirmation */}
+      <AlertDialog open={!!deletingResource} onOpenChange={(open) => !open && setDeletingResource(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t.services.deleteResourceTitle}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deletingResource && `"${deletingResource.name}" — `}
+              {t.services.deleteResourceDesc}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>{t.services.cancelBtn}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDeleteResource}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {isDeleting ? t.services.deleting : t.services.confirmDelete}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

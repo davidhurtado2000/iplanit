@@ -54,7 +54,8 @@ export interface Resource {
   id: string
   businessId: string
   name: string
-  type: 'room' | 'person' | 'equipment'
+  type: 'room' | 'person' | 'equipment' | 'virtual'
+  color: string
   description?: string
   isActive: boolean
 }

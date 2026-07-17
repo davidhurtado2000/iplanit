@@ -23,13 +23,17 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import { Switch } from '@/components/ui/switch'
 import { Loader2 } from 'lucide-react'
-import { Calendar, Clock, User, Briefcase, Trash2, MapPin } from 'lucide-react'
+import { Calendar, Clock, User, Briefcase, Trash2, MapPin, Repeat } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
 import { useDashboardData } from '@/context/dashboard-data-context'
+import { getStatusBadgeVariant, getStatusLabel } from '@/lib/reservation-status'
+import { capitalizeFirst, cn } from '@/lib/utils'
+import { UpgradeModal } from '@/components/upgrade-modal'
 
 interface Client {
   id: string
@@ -49,7 +53,8 @@ interface Service {
 interface Resource {
   id: string
   name: string
-  type: 'room' | 'person' | 'equipment'
+  type: 'room' | 'person' | 'equipment' | 'virtual'
+  color: string
   description: string | null
 }
 
@@ -131,9 +136,31 @@ export function ReservationModal({
   })
   const [isEditing, setIsEditing] = useState(mode === 'create')
 
+  const isPremium = profile?.plan === 'premium'
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [repeatEnabled, setRepeatEnabled] = useState(false)
+  const [repeatDays, setRepeatDays] = useState<number[]>([])
+  const [sessionCount, setSessionCount] = useState(4)
+  const [seriesResult, setSeriesResult] = useState<{ created: number; total: number; skipped: string[] } | null>(null)
+  const [seriesRemaining, setSeriesRemaining] = useState<number | null>(null)
+
+  const toggleRepeatDay = (day: number) => {
+    setRepeatDays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day].sort()))
+  }
+
+  // Narrow weekday labels (D, L, M, ...) in the app's own locale, ordered to
+  // match JS Date#getDay() (0 = Sunday .. 6 = Saturday). Spanish's narrow
+  // form abbreviates Wednesday as "X" (to avoid clashing with Martes's "M"),
+  // which reads as a typo rather than a day - spelled out as "Mi" instead.
+  const dayLabels = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(Date.UTC(1970, 0, 4 + i)) // 1970-01-04 was a Sunday
+    const label = new Intl.DateTimeFormat(locale, { weekday: 'narrow', timeZone: 'UTC' }).format(d)
+    return label === 'X' ? 'Mi' : label
+  })
+
   const currentBusiness = businesses?.[0]
 
-  // Filter resources based on selected service's allowed sedes
+  // Filter resources based on the selected service's allowed resources
   const allowedResourceIds = serviceResources
     .filter((sr) => sr.service_id === formData.service_id)
     .map((sr) => sr.resource_id)
@@ -173,7 +200,34 @@ export function ReservationModal({
       setIsEditing(true)
     }
     setError('')
+    setRepeatEnabled(false)
+    setRepeatDays([])
+    setSessionCount(4)
+    setSeriesResult(null)
   }, [reservation, selectedDate, mode, tz])
+
+  // Fetch how many future sessions remain in this reservation's series (if
+  // any), so the view can show "quedan N sesiones" and offer to cancel them.
+  useEffect(() => {
+    if (!reservation?.series_id || !isOpen) {
+      setSeriesRemaining(null)
+      return
+    }
+    let cancelled = false
+    const loadRemaining = async () => {
+      const { count } = await supabase
+        .from('reservations')
+        .select('id', { count: 'exact', head: true })
+        .eq('series_id', reservation.series_id)
+        .in('status', ['pending', 'confirmed'])
+        .gte('start_time', new Date().toISOString())
+      if (!cancelled) setSeriesRemaining(count ?? 0)
+    }
+    loadRemaining()
+    return () => {
+      cancelled = true
+    }
+  }, [reservation?.series_id, isOpen])
 
   const selectedService = services.find((s) => s.id === formData.service_id)
   const selectedClient = clients.find((c) => c.id === formData.client_id)
@@ -183,6 +237,7 @@ export function ReservationModal({
     room: t.reservation.roomType,
     person: t.reservation.personType,
     equipment: t.reservation.equipmentType,
+    virtual: t.reservation.virtualType,
   }
 
   // When user clicks "Edit" from view mode, isEditing becomes true but mode stays 'view'.
@@ -225,11 +280,95 @@ export function ReservationModal({
     return null
   })()
 
+  // Creates a reservation_series row and materializes its occurrences as
+  // normal reservations (one per matching weekday, starting from the form's
+  // date) rather than computing them on the fly — every existing feature
+  // (status workflow, overlap constraint, client history, analytics) then
+  // keeps working unmodified, since a series occurrence is just a regular
+  // reservation tagged with series_id.
+  const createSeriesOccurrences = async (firstStart: Date, durationMinutes: number) => {
+    const occurrences: Date[] = []
+    const cursor = new Date(firstStart)
+    while (occurrences.length < sessionCount) {
+      if (repeatDays.includes(cursor.getDay())) {
+        occurrences.push(new Date(cursor))
+      }
+      cursor.setDate(cursor.getDate() + 1)
+    }
+
+    const { data: series, error: seriesError } = await supabase
+      .from('reservation_series')
+      .insert({
+        business_id: currentBusiness!.id,
+        client_id: formData.client_id,
+        service_id: formData.service_id,
+        resource_id: formData.resource_id || null,
+        days_of_week: repeatDays,
+        session_count: sessionCount,
+        notes: formData.notes || null,
+      })
+      .select('id')
+      .single()
+
+    if (seriesError || !series) throw seriesError || new Error('No se pudo crear la serie')
+
+    let created = 0
+    const skipped: string[] = []
+
+    for (const occStart of occurrences) {
+      const occEnd = new Date(occStart.getTime() + durationMinutes * 60 * 1000)
+
+      if (formData.resource_id) {
+        const { data: conflicts } = await supabase
+          .from('reservations')
+          .select('id')
+          .eq('resource_id', formData.resource_id)
+          .neq('status', 'cancelled')
+          .lt('start_time', occEnd.toISOString())
+          .gt('end_time', occStart.toISOString())
+
+        if (conflicts && conflicts.length > 0) {
+          skipped.push(occStart.toLocaleDateString(locale, { day: 'numeric', month: 'short' }))
+          continue
+        }
+      }
+
+      const { error: insertError } = await supabase.from('reservations').insert({
+        business_id: currentBusiness!.id,
+        client_id: formData.client_id,
+        service_id: formData.service_id,
+        resource_id: formData.resource_id || null,
+        series_id: series.id,
+        start_time: occStart.toISOString(),
+        end_time: occEnd.toISOString(),
+        status: 'pending',
+        notes: formData.notes || null,
+      })
+
+      if (insertError) {
+        skipped.push(occStart.toLocaleDateString(locale, { day: 'numeric', month: 'short' }))
+      } else {
+        created++
+      }
+    }
+
+    // Nothing could be scheduled — don't leave an empty series behind.
+    if (created === 0) {
+      await supabase.from('reservation_series').delete().eq('id', series.id)
+    }
+
+    return { created, total: occurrences.length, skipped }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     if (!profile || !currentBusiness) {
       console.error('[v0] Error: No hay datos de autenticación o negocio')
+      return
+    }
+    if (effectiveMode === 'create' && repeatEnabled && repeatDays.length === 0) {
+      setError(t.reservation.repeatDaysRequired)
       return
     }
 
@@ -241,6 +380,21 @@ export function ReservationModal({
       // business timezone time, not browser timezone — prevents off-by-one-day bugs.
       const startDate = parseInTimezone(formData.start_time, currentBusiness.timezone || 'America/Lima')
       const endDate = new Date(startDate.getTime() + durationMinutes * 60 * 1000)
+
+      if (effectiveMode === 'create' && repeatEnabled) {
+        const result = await createSeriesOccurrences(startDate, durationMinutes)
+        if (result.created === 0) {
+          setError(t.reservation.seriesAllConflicted)
+          return
+        }
+        onSave?.()
+        if (result.skipped.length === 0) {
+          onClose()
+        } else {
+          setSeriesResult(result)
+        }
+        return
+      }
 
       const reservationData = {
         business_id: currentBusiness.id,
@@ -336,6 +490,60 @@ export function ReservationModal({
     }
   }
 
+  const handleUpdateStatus = async (newStatus: 'confirmed' | 'completed') => {
+    if (!reservation?.id) return
+
+    try {
+      setIsLoading(true)
+      const { error } = await supabase
+        .from('reservations')
+        .update({ status: newStatus })
+        .eq('id', reservation.id)
+
+      if (error) throw error
+      onSave?.()
+      onClose()
+    } catch (error) {
+      console.error('[v0] Error updating reservation status:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Cancels every future, still-pending/confirmed occurrence of this
+  // reservation's series (including this one) and marks the series itself
+  // cancelled so it's no longer treated as active.
+  const handleCancelSeries = async () => {
+    if (!reservation?.series_id) return
+
+    try {
+      setIsLoading(true)
+      const nowIso = new Date().toISOString()
+      const { error: resError } = await supabase
+        .from('reservations')
+        .update({ status: 'cancelled' })
+        .eq('series_id', reservation.series_id)
+        .in('status', ['pending', 'confirmed'])
+        .gte('start_time', nowIso)
+
+      if (resError) throw resError
+
+      const { error: seriesError } = await supabase
+        .from('reservation_series')
+        .update({ status: 'cancelled' })
+        .eq('id', reservation.series_id)
+
+      if (seriesError) throw seriesError
+
+      onSave?.()
+      onClose()
+    } catch (error) {
+      console.error('[v0] Error cancelling series:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const getTitle = () => {
     if (mode === 'create') return t.reservation.newTitle
     if (mode === 'view') return t.reservation.viewTitle
@@ -354,6 +562,7 @@ export function ReservationModal({
   const viewResource = resources.find((r) => r.id === reservation?.resource_id)
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
@@ -361,7 +570,26 @@ export function ReservationModal({
           <DialogDescription>{getDesc()}</DialogDescription>
         </DialogHeader>
 
-        {mode === 'view' && reservation && !isEditing ? (
+        {seriesResult ? (
+          <div className="space-y-4">
+            <div className="rounded-md bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+              <p className="font-medium">
+                {t.reservation.seriesPartialTitle
+                  .replace('{created}', String(seriesResult.created))
+                  .replace('{total}', String(seriesResult.total))}
+              </p>
+              <p className="mt-1 text-xs">{t.reservation.seriesPartialDesc}</p>
+              <ul className="mt-2 list-disc space-y-0.5 pl-4 text-xs">
+                {seriesResult.skipped.map((d, i) => (
+                  <li key={i}>{d}</li>
+                ))}
+              </ul>
+            </div>
+            <DialogFooter>
+              <Button onClick={onClose}>{t.reservation.understood}</Button>
+            </DialogFooter>
+          </div>
+        ) : mode === 'view' && reservation && !isEditing ? (
           <div className="space-y-4">
             <div className="grid gap-3">
               <div className="flex items-center gap-3 text-sm">
@@ -380,7 +608,7 @@ export function ReservationModal({
               </div>
               {viewResource && (
                 <div className="flex items-center gap-3 text-sm">
-                  <MapPin className="h-4 w-4 text-muted-foreground" />
+                  <MapPin className="h-4 w-4" style={{ color: viewResource.color || undefined }} />
                   <span className="font-medium">{t.reservation.resourceLabel}</span>
                   <span>
                     {viewResource.name}
@@ -394,22 +622,35 @@ export function ReservationModal({
                 <Clock className="h-4 w-4 text-muted-foreground" />
                 <span className="font-medium">{t.reservation.datetimeLabel}</span>
                 <span>
-                  {new Date(reservation.start_time).toLocaleDateString(locale, {
-                    weekday: 'short',
-                    day: 'numeric',
-                    month: 'short',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
+                  {capitalizeFirst(
+                    new Date(reservation.start_time).toLocaleDateString(locale, {
+                      weekday: 'short',
+                      day: 'numeric',
+                      month: 'short',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
+                  )}
                 </span>
               </div>
               <div className="flex items-center gap-3 text-sm">
-                <Badge
-                  variant={reservation.status === 'confirmed' ? 'default' : 'secondary'}
-                >
-                  {reservation.status === 'confirmed' ? t.reservation.confirmed : t.reservation.pending}
+                <Badge variant={getStatusBadgeVariant(reservation.status)}>
+                  {getStatusLabel(reservation.status, t.reservation)}
                 </Badge>
               </div>
+              {reservation.series_id && (
+                <div className="flex items-center gap-3 rounded-md bg-muted/50 p-3 text-sm">
+                  <Repeat className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div className="flex-1">
+                    <p className="font-medium">{t.reservation.partOfSeries}</p>
+                    {seriesRemaining !== null && (
+                      <p className="text-xs text-muted-foreground">
+                        {t.reservation.seriesRemaining.replace('{count}', String(seriesRemaining))}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
               {reservation.notes && (
                 <div className="mt-2 rounded-md bg-muted p-3">
                   <p className="text-xs font-medium text-muted-foreground mb-1">{t.reservation.notesLabel}</p>
@@ -418,16 +659,34 @@ export function ReservationModal({
               )}
             </div>
 
-            <DialogFooter className="gap-2">
-              <Button
-                variant="destructive"
-                onClick={handleDelete}
-                disabled={isLoading}
-                className="gap-2"
-              >
-                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                {t.reservation.cancelReservation}
-              </Button>
+            <DialogFooter className="flex-wrap gap-2">
+              {(reservation.status === 'pending' || reservation.status === 'confirmed') && (
+                <Button
+                  variant="destructive"
+                  onClick={handleDelete}
+                  disabled={isLoading}
+                  className="gap-2"
+                >
+                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  {t.reservation.cancelReservation}
+                </Button>
+              )}
+              {reservation.status === 'pending' && (
+                <Button variant="outline" onClick={() => handleUpdateStatus('confirmed')} disabled={isLoading}>
+                  {t.reservation.markConfirmed}
+                </Button>
+              )}
+              {reservation.status === 'confirmed' && (
+                <Button variant="outline" onClick={() => handleUpdateStatus('completed')} disabled={isLoading}>
+                  {t.reservation.markCompleted}
+                </Button>
+              )}
+              {reservation.series_id && seriesRemaining !== null && seriesRemaining > 0 && (
+                <Button variant="destructive" onClick={handleCancelSeries} disabled={isLoading} className="gap-2">
+                  <Repeat className="h-4 w-4" />
+                  {t.reservation.cancelSeriesRemaining}
+                </Button>
+              )}
               <Button onClick={() => setIsEditing(true)} disabled={isLoading}>{t.reservation.editBtn}</Button>
             </DialogFooter>
           </div>
@@ -525,9 +784,15 @@ export function ReservationModal({
                   <SelectItem value="_none">{t.reservation.noResource}</SelectItem>
                   {filteredResources.map((resource) => (
                     <SelectItem key={resource.id} value={resource.id}>
-                      <span className="font-medium">{resource.name}</span>
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        {resourceTypeLabel[resource.type]}
+                      <span className="flex items-center gap-2">
+                        <span
+                          className="h-2 w-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: resource.color || '#3B82F6' }}
+                        />
+                        <span className="font-medium">{resource.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {resourceTypeLabel[resource.type]}
+                        </span>
                       </span>
                     </SelectItem>
                   ))}
@@ -535,7 +800,7 @@ export function ReservationModal({
               </Select>
               {allowedResourceIds.length > 0 && (
                 <p className="text-xs text-muted-foreground">
-                  Sedes disponibles para este servicio: {filteredResources.length}
+                  Recursos disponibles para este servicio: {filteredResources.length}
                 </p>
               )}
             </div>
@@ -558,6 +823,74 @@ export function ReservationModal({
               )}
             </div>
 
+            {/* Repeat (create mode only, Premium) */}
+            {mode === 'create' && (
+              <div className="space-y-3 rounded-lg border p-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Repeat className="h-4 w-4 text-muted-foreground" />
+                    <Label htmlFor="repeat" className="cursor-pointer">
+                      {t.reservation.repeatLabel}
+                    </Label>
+                  </div>
+                  <Switch
+                    id="repeat"
+                    checked={repeatEnabled}
+                    onCheckedChange={(checked) => {
+                      if (checked && !isPremium) {
+                        setShowUpgradeModal(true)
+                        return
+                      }
+                      setRepeatEnabled(checked)
+                    }}
+                  />
+                </div>
+                {repeatEnabled && (
+                  <div className="space-y-3 pt-1">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">{t.reservation.repeatDaysLabel}</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {dayLabels.map((label, day) => (
+                          <button
+                            key={day}
+                            type="button"
+                            onClick={() => toggleRepeatDay(day)}
+                            className={cn(
+                              'h-8 w-8 rounded-full border text-xs font-medium transition-colors',
+                              repeatDays.includes(day)
+                                ? 'border-primary bg-primary text-primary-foreground'
+                                : 'border-input text-muted-foreground hover:bg-muted'
+                            )}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="sessionCount" className="text-xs text-muted-foreground">
+                        {t.reservation.sessionCountLabel}
+                      </Label>
+                      <Input
+                        id="sessionCount"
+                        type="number"
+                        min={2}
+                        max={52}
+                        value={sessionCount}
+                        onChange={(e) =>
+                          setSessionCount(Math.max(2, Math.min(52, Number(e.target.value) || 2)))
+                        }
+                        className="w-24"
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {t.reservation.repeatHint.replace('{count}', String(sessionCount))}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Notes */}
             <div className="space-y-2">
               <Label htmlFor="notes">{t.reservation.notesOptional}</Label>
@@ -576,7 +909,13 @@ export function ReservationModal({
               </Button>
               <Button
                 type="submit"
-                disabled={isLoading || !formData.client_id || !formData.service_id || !!hoursError}
+                disabled={
+                  isLoading ||
+                  !formData.client_id ||
+                  !formData.service_id ||
+                  !!hoursError ||
+                  (repeatEnabled && repeatDays.length === 0)
+                }
                 className="gap-2"
               >
                 {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -587,5 +926,11 @@ export function ReservationModal({
         )}
       </DialogContent>
     </Dialog>
+    <UpgradeModal
+      isOpen={showUpgradeModal}
+      onClose={() => setShowUpgradeModal(false)}
+      feature={t.reservation.repeatLabel}
+    />
+    </>
   )
 }
