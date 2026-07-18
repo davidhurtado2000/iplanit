@@ -4,7 +4,7 @@ import React from 'react'
 
 import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -15,7 +15,6 @@ import { useLanguage } from '@/context/language-context'
 import { translateAuthError, withAuthLockRetry } from '@/lib/supabase/auth-errors'
 
 function LoginForm() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const { language, setLanguage, t } = useLanguage()
   const tr = t.auth.login
@@ -54,7 +53,9 @@ function LoginForm() {
       }
 
       if (data.user) {
-        router.push('/dashboard')
+        // Hard navigation, not router.push - see the comment on the
+        // equivalent redirect in register/page.tsx.
+        window.location.href = '/dashboard'
       }
     } catch (err) {
       console.error('[iplanit] unexpected auth error:', err)

@@ -33,6 +33,7 @@ import { useLanguage } from '@/context/language-context'
 import { useDashboardData } from '@/context/dashboard-data-context'
 import { getStatusBadgeVariant, getStatusLabel } from '@/lib/reservation-status'
 import { capitalizeFirst, cn } from '@/lib/utils'
+import { toTzLocalInput, parseInTimezone } from '@/lib/timezone'
 import { UpgradeModal } from '@/components/upgrade-modal'
 
 interface Client {
@@ -72,43 +73,6 @@ interface ReservationModalProps {
   selectedDate?: string
   mode: 'create' | 'edit' | 'view'
   onSave?: () => void
-}
-
-/**
- * Converts a UTC ISO timestamp to "YYYY-MM-DDTHH:MM" expressed in the given
- * IANA timezone. Used to populate datetime-local inputs with the correct
- * business-timezone time regardless of the browser's own timezone.
- */
-function toTzLocalInput(utcString: string, timezone: string): string {
-  const d = new Date(utcString)
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', hour12: false,
-  }).formatToParts(d)
-  const p = Object.fromEntries(parts.map(x => [x.type, x.value]))
-  const h = p.hour === '24' ? '00' : p.hour
-  return `${p.year}-${p.month}-${p.day}T${h}:${p.minute}`
-}
-
-/**
- * Interprets "YYYY-MM-DDTHH:MM" as a wall-clock time in the given IANA
- * timezone and returns the corresponding UTC Date.
- * This is browser-timezone-independent — it always uses the business timezone.
- */
-function parseInTimezone(localString: string, timezone: string): Date {
-  // Treat the string as UTC first (no browser-tz conversion happens with 'Z')
-  const fakeUtc = new Date(localString + ':00Z')
-  // Find out what wall-clock time that UTC moment shows in the target timezone
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric', month: 'numeric', day: 'numeric',
-    hour: 'numeric', minute: 'numeric', hour12: false,
-  }).formatToParts(fakeUtc)
-  const p = Object.fromEntries(parts.map(x => [x.type, Number(x.value)]))
-  const tzAsUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour % 24, p.minute)
-  // Shift fakeUtc by the difference so the wall-clock time matches localString
-  return new Date(fakeUtc.getTime() + (fakeUtc.getTime() - tzAsUtc))
 }
 
 export function ReservationModal({

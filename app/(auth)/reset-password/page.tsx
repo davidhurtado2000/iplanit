@@ -4,7 +4,6 @@ import React from 'react'
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -36,7 +35,6 @@ function Shell({ children }: { children: React.ReactNode }) {
 }
 
 export default function ResetPasswordPage() {
-  const router = useRouter()
   const { user, loading: authLoading } = useAuth()
   const { language, t } = useLanguage()
   const tr = t.auth.resetPassword
@@ -84,7 +82,9 @@ export default function ResetPasswordPage() {
 
       setSuccess(true)
       setTimeout(() => {
-        router.push('/dashboard')
+        // Hard navigation, not router.push - see the comment on the
+        // equivalent redirect in register/page.tsx.
+        window.location.href = '/dashboard'
       }, 2000)
     } catch (err) {
       if (err instanceof AuthTimeoutError) {

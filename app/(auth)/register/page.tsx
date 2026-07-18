@@ -4,7 +4,6 @@ import React from 'react'
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -51,7 +50,6 @@ const BUSINESS_TYPE_VALUES = [
 ] as const
 
 export default function RegisterPage() {
-  const router = useRouter()
   const { language, setLanguage, t } = useLanguage()
   const tr = t.auth.register
   const [isLoading, setIsLoading] = useState(false)
@@ -150,7 +148,15 @@ export default function RegisterPage() {
       if (authData.user) {
         setStep('success')
         setTimeout(() => {
-          router.push('/login?registered=true')
+          // Hard navigation, not router.push: signUp() just established a
+          // new session, and a client-side transition doesn't reliably
+          // give BusinessProvider/DashboardDataProvider a fresh mount with
+          // that session already hydrated - the dashboard can render before
+          // its data providers catch up, requiring a manual refresh to see
+          // anything. A full navigation guarantees every provider mounts
+          // fresh against the confirmed session, same reasoning as signOut()
+          // in auth-context.tsx.
+          window.location.href = '/login?registered=true'
         }, 2600)
       }
     } catch (err) {

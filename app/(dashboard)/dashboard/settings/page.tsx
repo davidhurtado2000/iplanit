@@ -55,6 +55,9 @@ import {
   EyeOff,
   Users,
   Trash2,
+  Copy,
+  ExternalLink,
+  Link2,
 } from 'lucide-react'
 
 type DayOfWeek = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday'
@@ -94,6 +97,7 @@ export default function SettingsPage() {
   const [isCreatingBusiness, setIsCreatingBusiness] = useState(false)
   const [isSavingHours, setIsSavingHours] = useState(false)
   const [hoursSaveStatus, setHoursSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [linkCopied, setLinkCopied] = useState(false)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [showPasswordDialog, setShowPasswordDialog] = useState(false)
   const [newPassword, setNewPassword] = useState('')
@@ -143,6 +147,7 @@ export default function SettingsPage() {
   // Business State
   const [business, setBusiness] = useState({
     name: '',
+    slug: '',
     timezone: 'America/Lima',
     address: '',
     phone: '',
@@ -150,6 +155,7 @@ export default function SettingsPage() {
     country: 'PE' as 'PE' | 'US',
     tax_id: '',
   })
+  const [slugError, setSlugError] = useState('')
 
   // Business Hours State
   const [businessHours, setBusinessHours] = useState(DEFAULT_BUSINESS_HOURS)
@@ -179,6 +185,7 @@ export default function SettingsPage() {
     if (currentBusiness) {
       setBusiness({
         name: currentBusiness.name,
+        slug: currentBusiness.slug || '',
         timezone: currentBusiness.timezone,
         address: currentBusiness.address || '',
         phone: currentBusiness.phone || '',
@@ -310,9 +317,22 @@ export default function SettingsPage() {
     }
   }
 
+  const bookingLink =
+    currentBusiness?.slug && typeof window !== 'undefined'
+      ? `${window.location.origin}/reservar/${currentBusiness.slug}`
+      : ''
+
+  const handleCopyLink = async () => {
+    if (!bookingLink) return
+    await navigator.clipboard.writeText(bookingLink)
+    setLinkCopied(true)
+    setTimeout(() => setLinkCopied(false), 2000)
+  }
+
   const handleSave = async () => {
     setIsSaving(true)
     setSaveStatus('idle')
+    setSlugError('')
     try {
       if (user) {
         const { error: profileError } = await supabase
@@ -323,15 +343,40 @@ export default function SettingsPage() {
       }
 
       if (currentBusiness) {
-        await updateBusiness(currentBusiness.id, {
-          name: business.name,
-          timezone: business.timezone,
-          address: business.address || null,
-          phone: business.phone || null,
-          email: business.email || null,
-          country: business.country,
-          tax_id: business.tax_id || null,
-        })
+        const sanitizedSlug = business.slug
+          .toLowerCase()
+          .trim()
+          .replace(/\s+/g, '-')
+          .replace(/[^a-z0-9-]/g, '')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '')
+
+        if (!sanitizedSlug) {
+          setSlugError(t.settings.slugRequired)
+          setIsSaving(false)
+          return
+        }
+
+        try {
+          await updateBusiness(currentBusiness.id, {
+            name: business.name,
+            slug: sanitizedSlug,
+            timezone: business.timezone,
+            address: business.address || null,
+            phone: business.phone || null,
+            email: business.email || null,
+            country: business.country,
+            tax_id: business.tax_id || null,
+          })
+        } catch (businessErr: any) {
+          if (businessErr?.code === '23505') {
+            setSlugError(t.settings.slugTaken)
+            setIsSaving(false)
+            return
+          }
+          throw businessErr
+        }
+        setBusiness((prev) => ({ ...prev, slug: sanitizedSlug }))
       }
 
       await refreshProfile()
@@ -714,6 +759,32 @@ export default function SettingsPage() {
                   </div>
 
                   <div className="space-y-2">
+                    <Label htmlFor="business-slug">{t.settings.slugLabel}</Label>
+                    <Input
+                      id="business-slug"
+                      value={business.slug}
+                      onChange={(e) => {
+                        setSlugError('')
+                        setBusiness({ ...business, slug: e.target.value })
+                      }}
+                      placeholder="mi-negocio"
+                      className={slugError ? 'border-destructive focus-visible:ring-destructive' : ''}
+                    />
+                    {slugError ? (
+                      <p className="text-xs text-destructive">{slugError}</p>
+                    ) : (
+                      <p className="truncate text-xs text-muted-foreground">
+                        {typeof window !== 'undefined' ? window.location.origin : ''}/reservar/
+                        {business.slug
+                          .toLowerCase()
+                          .trim()
+                          .replace(/\s+/g, '-')
+                          .replace(/[^a-z0-9-]/g, '') || '...'}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
                     <Label htmlFor="business-tax-id">
                       {business.country === 'US' ? t.settings.einLabel : t.settings.rucLabel}
                     </Label>
@@ -785,6 +856,36 @@ export default function SettingsPage() {
                     <Save className="h-4 w-4" />
                     {t.saveChanges}
                   </Button>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Link2 className="h-5 w-5" />
+                    {t.settings.bookingLinkTitle}
+                  </CardTitle>
+                  <CardDescription>{t.settings.bookingLinkDesc}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {bookingLink ? (
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Input value={bookingLink} readOnly className="font-mono text-xs sm:text-sm" />
+                      <div className="flex gap-2">
+                        <Button type="button" variant="outline" onClick={handleCopyLink} className="gap-2">
+                          {linkCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                          {linkCopied ? t.settings.linkCopied : t.settings.copyLink}
+                        </Button>
+                        <Button type="button" variant="outline" size="icon" asChild>
+                          <a href={bookingLink} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">{t.settings.bookingLinkUnavailable}</p>
+                  )}
                 </CardContent>
               </Card>
 

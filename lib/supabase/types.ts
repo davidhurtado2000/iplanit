@@ -424,6 +424,35 @@ export interface Database {
         Args: { target_business_id: string }
         Returns: boolean
       }
+      get_public_business: {
+        Args: { p_slug: string }
+        Returns: Json
+      }
+      get_public_services: {
+        Args: { p_business_id: string }
+        Returns: Json
+      }
+      get_public_business_hours: {
+        Args: { p_business_id: string }
+        Returns: Json
+      }
+      get_public_busy_times: {
+        Args: { p_business_id: string; p_resource_id: string | null; p_from: string; p_to: string }
+        Returns: Json
+      }
+      create_public_reservation: {
+        Args: {
+          p_slug: string
+          p_service_id: string
+          p_resource_id: string | null
+          p_start_time: string
+          p_client_name: string
+          p_client_email: string | null
+          p_client_phone: string | null
+          p_notes: string | null
+        }
+        Returns: Json
+      }
     }
     Enums: Record<string, never>
   }
