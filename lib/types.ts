@@ -102,7 +102,7 @@ export interface DashboardStats {
 }
 
 // Calendar View Types
-export type CalendarView = 'day' | 'week' | 'month'
+export type CalendarView = 'day' | 'week' | 'month' | 'list'
 
 export interface CalendarEvent {
   id: string

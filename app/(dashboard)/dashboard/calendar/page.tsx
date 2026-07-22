@@ -19,7 +19,7 @@ import { useDashboardData } from '@/context/dashboard-data-context'
 import { getStatusBadgeVariant, getStatusLabel } from '@/lib/reservation-status'
 import { capitalizeFirst } from '@/lib/utils'
 import type { CalendarView } from '@/lib/types'
-import { Plus, CalendarDays, CalendarRange, Calendar as CalendarIcon, Clock, ChevronDown, Building2 } from 'lucide-react'
+import { Plus, CalendarDays, CalendarRange, Calendar as CalendarIcon, Clock, ChevronDown, Building2, List } from 'lucide-react'
 
 interface Reservation {
   id: string
@@ -69,6 +69,7 @@ const VIEW_CONFIG: { value: CalendarView; icon: React.ElementType }[] = [
   { value: 'day', icon: CalendarDays },
   { value: 'week', icon: CalendarRange },
   { value: 'month', icon: CalendarIcon },
+  { value: 'list', icon: List },
 ]
 
 export default function CalendarPage() {
@@ -102,7 +103,7 @@ export default function CalendarPage() {
   const VIEW_OPTIONS = VIEW_CONFIG.map(({ value, icon }) => ({
     value,
     icon,
-    label: t.calendar[value as 'day' | 'week' | 'month'],
+    label: t.calendar[value as 'day' | 'week' | 'month' | 'list'],
   }))
 
   const handleCreateReservation = () => {

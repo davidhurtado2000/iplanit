@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -10,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ChevronLeft, ChevronRight, CalendarDays, Clock, Check, ParkingSquare } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CalendarDays, Clock, Check, ParkingSquare, Search } from 'lucide-react'
 import type { CalendarView } from '@/lib/types'
 import { cn, capitalizeFirst } from '@/lib/utils'
 
@@ -91,7 +92,10 @@ export function CalendarViewComponent({
   // data is actually loaded (see ensureReservationsInRange in
   // dashboard-data-context) - the default fetch only covers ±90 days.
   useEffect(() => {
-    if (!onVisibleRangeChange) return
+    // List view has no "current date" to navigate around - it just shows
+    // whatever's already loaded (the default ±90 day window), so there's
+    // no wider range to request here.
+    if (!onVisibleRangeChange || view === 'list') return
     let from: Date
     let to: Date
     if (view === 'day') {
@@ -142,6 +146,20 @@ export function CalendarViewComponent({
       return `${start.toLocaleDateString('es-ES', { timeZone: timezone, day: 'numeric', month: 'short' })} – ${end.toLocaleDateString('es-ES', { timeZone: timezone, day: 'numeric', month: 'short' })}`
     }
     return currentDate.toLocaleDateString('es-ES', { timeZone: timezone, month: 'long', year: 'numeric' })
+  }
+
+  if (view === 'list') {
+    return (
+      <div className="flex flex-col gap-4">
+        <ListView
+          reservations={reservations}
+          clientsMap={clientsMap}
+          servicesMap={servicesMap}
+          onSelectReservation={onSelectReservation}
+          timezone={timezone}
+        />
+      </div>
+    )
   }
 
   return (
@@ -578,6 +596,176 @@ function MonthView({
           )
         })}
       </div>
+    </div>
+  )
+}
+
+// ─── List View — searchable/filterable table, for reviewing and auditing
+// rather than browsing a specific day (see day/week/month above for that).
+// Works off whatever's already loaded (±90 days by default, same as the
+// rest of the calendar) instead of its own paginated query. ────────────────
+const LIST_PAGE_SIZE = 20
+
+const STATUS_LABELS_ES: Record<string, string> = {
+  pending: 'Pendiente',
+  confirmed: 'Confirmada',
+  completed: 'Completada',
+  cancelled: 'Cancelada',
+  no_show: 'No-show',
+}
+
+function listStatusBadgeVariant(status: string): 'default' | 'secondary' | 'destructive' {
+  if (status === 'cancelled' || status === 'no_show') return 'destructive'
+  if (status === 'pending') return 'secondary'
+  return 'default'
+}
+
+function ListView({
+  reservations, clientsMap, servicesMap, onSelectReservation, timezone,
+}: {
+  reservations: any[]
+  clientsMap: Record<string, Client>
+  servicesMap: Record<string, Service>
+  onSelectReservation: (r: any) => void
+  timezone: string
+}) {
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [page, setPage] = useState(1)
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return reservations
+      .filter((r) => {
+        if (statusFilter !== 'all' && r.status !== statusFilter) return false
+        if (typeFilter !== 'all' && (r.type || 'booking') !== typeFilter) return false
+        if (!q) return true
+        const clientName = clientsMap[r.client_id]?.name?.toLowerCase() ?? ''
+        const serviceName = servicesMap[r.service_id]?.name?.toLowerCase() ?? ''
+        return clientName.includes(q) || serviceName.includes(q)
+      })
+      .sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime())
+  }, [reservations, clientsMap, servicesMap, search, statusFilter, typeFilter])
+
+  useEffect(() => {
+    setPage(1)
+  }, [search, statusFilter, typeFilter])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / LIST_PAGE_SIZE))
+  const pageRows = filtered.slice((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE)
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por cliente o servicio..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-full sm:w-[170px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos los estados</SelectItem>
+            <SelectItem value="pending">Pendiente</SelectItem>
+            <SelectItem value="confirmed">Confirmada</SelectItem>
+            <SelectItem value="completed">Completada</SelectItem>
+            <SelectItem value="cancelled">Cancelada</SelectItem>
+            <SelectItem value="no_show">No-show</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={typeFilter} onValueChange={setTypeFilter}>
+          <SelectTrigger className="w-full sm:w-[140px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos los tipos</SelectItem>
+            <SelectItem value="booking">Reserva</SelectItem>
+            <SelectItem value="visit">Visita</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border">
+        <table className="w-full text-sm">
+          <thead className="border-b bg-muted/40">
+            <tr>
+              <th className="whitespace-nowrap p-2 text-left font-medium">Fecha</th>
+              <th className="p-2 text-left font-medium">Cliente</th>
+              <th className="p-2 text-left font-medium">Servicio</th>
+              <th className="p-2 text-left font-medium">Estado</th>
+              <th className="p-2 text-left font-medium" />
+            </tr>
+          </thead>
+          <tbody>
+            {pageRows.map((r) => {
+              const client = clientsMap[r.client_id]
+              const service = servicesMap[r.service_id]
+              const { h, m } = getTzHourMin(r.start_time, timezone)
+              return (
+                <tr
+                  key={r.id}
+                  onClick={() => onSelectReservation(r)}
+                  className="cursor-pointer border-b last:border-0 hover:bg-muted/40"
+                >
+                  <td className="whitespace-nowrap p-2">
+                    {capitalizeFirst(
+                      new Date(r.start_time).toLocaleDateString('es-ES', { timeZone: timezone, day: 'numeric', month: 'short' })
+                    )}{' '}
+                    {String(h).padStart(2, '0')}:{String(m).padStart(2, '0')}
+                  </td>
+                  <td className="p-2">{client?.name ?? '—'}</td>
+                  <td className="p-2">
+                    <span className="flex items-center gap-1.5">
+                      {service && (
+                        <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: service.color }} />
+                      )}
+                      {service?.name ?? (r.type === 'visit' ? 'Visita' : '—')}
+                    </span>
+                  </td>
+                  <td className="p-2">
+                    <Badge variant={listStatusBadgeVariant(r.status)}>
+                      {STATUS_LABELS_ES[r.status] ?? r.status}
+                    </Badge>
+                  </td>
+                  <td className="p-2 text-right">
+                    {r.parking_resource_id && <ParkingSquare className="ml-auto h-3.5 w-3.5 text-muted-foreground" />}
+                  </td>
+                </tr>
+              )
+            })}
+            {pageRows.length === 0 && (
+              <tr>
+                <td colSpan={5} className="p-6 text-center text-muted-foreground">
+                  No se encontraron reservas.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">
+            Pagina {page} de {totalPages} · {filtered.length} resultados
+          </p>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+              Anterior
+            </Button>
+            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
+              Siguiente
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -7,10 +7,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
 import { PremiumFeature } from '@/components/premium-feature'
-import { CalendarDays, DollarSign, Gauge, Trophy, UserX, Building2, Eye } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { CalendarDays, DollarSign, Gauge, Trophy, UserX, Building2, Eye, Download } from 'lucide-react'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useDashboardData } from '@/context/dashboard-data-context'
 import { useLanguage } from '@/context/language-context'
+import { toCsv, downloadCsv } from '@/lib/csv'
+import { getStatusLabel } from '@/lib/reservation-status'
 import {
   getRangeBounds,
   getDailyDemand,
@@ -25,7 +28,7 @@ import {
 
 export default function AnalyticsPage() {
   const { currentBusiness, loading: businessLoading } = useBusinesses()
-  const { reservations, services, businessHours, loading: dataLoading } = useDashboardData()
+  const { reservations, clients, services, resources, businessHours, loading: dataLoading } = useDashboardData()
   const { t, locale } = useLanguage()
   const tr = t.analytics
   const [range, setRange] = useState<DateRangeOption>('30d')
@@ -70,6 +73,35 @@ export default function AnalyticsPage() {
     [serviceBreakdown]
   )
   const topService = serviceBreakdown[0]
+
+  // Includes cancelled/no-show reservations too (unlike the KPIs above,
+  // which deliberately exclude them) - an export meant for bookkeeping
+  // should show the full record with its real status, not a pre-filtered
+  // subset that would look like data went missing.
+  const handleExportReservations = () => {
+    const inRange = reservations.filter((r) => {
+      const start = new Date(r.start_time)
+      return start >= from && start <= to
+    })
+    const csv = toCsv(inRange, [
+      {
+        label: tr.exportColDate,
+        value: (r) => new Date(r.start_time).toLocaleDateString(locale, { timeZone: timezone }),
+      },
+      {
+        label: tr.exportColTime,
+        value: (r) => new Date(r.start_time).toLocaleTimeString(locale, { timeZone: timezone, hour: '2-digit', minute: '2-digit' }),
+      },
+      { label: tr.exportColClient, value: (r) => clients.find((c) => c.id === r.client_id)?.name },
+      { label: tr.exportColService, value: (r) => services.find((s) => s.id === r.service_id)?.name },
+      { label: tr.exportColResource, value: (r) => resources.find((res) => res.id === r.resource_id)?.name },
+      { label: tr.exportColType, value: (r) => (r.type === 'visit' ? tr.exportTypeVisit : tr.exportTypeBooking) },
+      { label: tr.exportColStatus, value: (r) => getStatusLabel(r.status, t.reservation) },
+      { label: tr.exportColPrice, value: (r) => r.price_usd ?? r.price ?? '' },
+      { label: tr.exportColNotes, value: (r) => r.notes },
+    ])
+    downloadCsv(`reservas-${currentBusiness?.slug || 'negocio'}-${range}.csv`, csv)
+  }
 
   const demandConfig = { count: { label: tr.kpiReservations, color: 'var(--chart-1)' } } satisfies ChartConfig
   const hoursConfig = { count: { label: tr.kpiReservations, color: 'var(--chart-2)' } } satisfies ChartConfig
@@ -117,6 +149,12 @@ export default function AnalyticsPage() {
 
       <PremiumFeature featureName={tr.premiumTitle}>
         <div className="space-y-4 sm:space-y-6">
+          <div className="flex justify-end">
+            <Button variant="outline" size="sm" className="gap-2" onClick={handleExportReservations}>
+              <Download className="h-4 w-4" />
+              {tr.exportReservations}
+            </Button>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <Card>
               <CardHeader className="pb-2">

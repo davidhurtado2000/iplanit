@@ -65,7 +65,10 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
+  Download,
 } from 'lucide-react'
+import { PremiumButton } from '@/components/premium-feature'
+import { toCsv, downloadCsv } from '@/lib/csv'
 
 const AVATAR_COLORS = [
   '#3B82F6',
@@ -270,6 +273,28 @@ export default function ClientsPage() {
     return arr
   }, [filteredClients, reservationCounts, sortKey, sortDir])
 
+  // Exports whatever the current search filter shows (sortedClients), not
+  // the full unfiltered list - matches what the owner is actually looking
+  // at on screen.
+  const handleExportCsv = () => {
+    const csv = toCsv(sortedClients, [
+      { label: t.clients.fullName, value: (c) => c.name },
+      { label: t.clients.emailLabel, value: (c) => c.email },
+      { label: t.clients.phoneLabel, value: (c) => c.phone },
+      { label: t.clients.documentTypeLabel, value: (c) => (c.document_type ? documentTypeLabels[c.document_type] : '') },
+      { label: t.clients.documentNumberLabel, value: (c) => c.document_number },
+      { label: t.clients.reservationsCol, value: (c) => reservationCounts.get(c.id)?.reservation_count ?? 0 },
+      {
+        label: t.clients.lastVisitCol,
+        value: (c) => {
+          const lastVisit = reservationCounts.get(c.id)?.last_reservation_at
+          return lastVisit ? new Date(lastVisit).toLocaleDateString(locale) : ''
+        },
+      },
+    ])
+    downloadCsv(`clientes-${currentBusiness?.slug || 'negocio'}.csv`, csv)
+  }
+
   const totalPages = Math.max(1, Math.ceil(sortedClients.length / PAGE_SIZE))
   const paginatedClients = sortedClients.slice(
     (currentPage - 1) * PAGE_SIZE,
@@ -413,10 +438,21 @@ export default function ClientsPage() {
           <h1 className="text-2xl font-bold text-foreground">{t.clients.title}</h1>
           <p className="text-muted-foreground">{t.clients.subtitle}</p>
         </div>
-        <Button onClick={() => handleOpenModal()} className="gap-2">
-          <Plus className="h-4 w-4" />
-          {t.clients.newClient}
-        </Button>
+        <div className="flex gap-2">
+          <PremiumButton
+            variant="outline"
+            className="gap-2"
+            featureName={t.clients.exportCsv}
+            onClick={handleExportCsv}
+          >
+            <Download className="h-4 w-4" />
+            {t.clients.exportCsv}
+          </PremiumButton>
+          <Button onClick={() => handleOpenModal()} className="gap-2">
+            <Plus className="h-4 w-4" />
+            {t.clients.newClient}
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}
