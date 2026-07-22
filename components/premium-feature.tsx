@@ -7,56 +7,54 @@ import { Crown, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { UpgradeModal } from '@/components/upgrade-modal'
 import { useAuth } from '@/hooks/use-auth'
+import { useLanguage } from '@/context/language-context'
 import { cn } from '@/lib/utils'
 
 interface PremiumFeatureProps {
   children: React.ReactNode
   featureName: string
   className?: string
-  showOverlay?: boolean
 }
 
-export function PremiumFeature({
-  children,
-  featureName,
-  className,
-  showOverlay = true,
-}: PremiumFeatureProps) {
+export function PremiumFeature({ children, featureName, className }: PremiumFeatureProps) {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const { profile } = useAuth()
+  const { t } = useLanguage()
   const isPremium = profile?.plan === 'premium'
 
   if (isPremium) {
     return <>{children}</>
   }
 
+  // `children` is never mounted for non-Premium accounts - it can hold real
+  // business data (revenue, client details, team member info). Blurring the
+  // real content with CSS still puts that data in the DOM, so opening
+  // devtools and deleting the overlay/blur classes reveals it - found in
+  // production. A locked placeholder with no real data behind it can't be
+  // un-blurred into anything.
   return (
     <>
-      <div className={cn('relative', className)}>
-        {showOverlay && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-lg bg-background/80 backdrop-blur-sm">
-            <div className="flex flex-col items-center gap-3 p-4 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-amber-400/20 to-orange-500/20">
-                <Crown className="h-6 w-6 text-amber-500" />
-              </div>
-              <div>
-                <p className="font-medium text-foreground">Funcion Premium</p>
-                <p className="text-sm text-muted-foreground">{featureName}</p>
-              </div>
-              <Button
-                size="sm"
-                className="gap-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600"
-                onClick={() => setShowUpgradeModal(true)}
-              >
-                <Crown className="h-4 w-4" />
-                Desbloquear
-              </Button>
-            </div>
-          </div>
+      <div
+        className={cn(
+          'flex min-h-[280px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed bg-muted/20 p-8 text-center',
+          className
         )}
-        <div className={showOverlay ? 'pointer-events-none select-none opacity-50 blur-[2px]' : ''}>
-          {children}
+      >
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-amber-400/20 to-orange-500/20">
+          <Crown className="h-6 w-6 text-amber-500" />
         </div>
+        <div>
+          <p className="font-medium text-foreground">{t.premiumFeatureTitle}</p>
+          <p className="text-sm text-muted-foreground">{featureName}</p>
+        </div>
+        <Button
+          size="sm"
+          className="gap-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600"
+          onClick={() => setShowUpgradeModal(true)}
+        >
+          <Crown className="h-4 w-4" />
+          {t.premiumFeatureUnlock}
+        </Button>
       </div>
       <UpgradeModal
         isOpen={showUpgradeModal}

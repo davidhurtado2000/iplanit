@@ -22,6 +22,7 @@ import {
   Loader2,
   Clock,
   BarChart3,
+  ParkingSquare,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
@@ -50,6 +51,7 @@ const NAV_ITEMS = [
   { key: 'calendar' as const, href: '/dashboard/calendar', icon: Calendar },
   { key: 'services' as const, href: '/dashboard/services', icon: Briefcase },
   { key: 'clients' as const, href: '/dashboard/clients', icon: Users },
+  { key: 'parking' as const, href: '/dashboard/parking', icon: ParkingSquare },
   { key: 'analytics' as const, href: '/dashboard/analytics', icon: BarChart3 },
   { key: 'settings' as const, href: '/dashboard/settings', icon: Settings },
 ]
@@ -79,6 +81,23 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
   const userPlan = profile?.plan || 'free'
   const userName = profile?.full_name || user?.email?.split('@')[0] || 'Usuario'
   const userEmail = profile?.email || user?.email || ''
+
+  // Sales only does reservations + clients - no Servicios (can't manage
+  // what they're not allowed to write, see business_member_role() RLS) and
+  // no Reportes (kept for Admin/Owner focus, not a hard data boundary).
+  // Cochera only shows once the business has actually turned it on
+  // (Configuracion > Negocio) - otherwise it's just an empty section.
+  const visibleNavItems = NAV_ITEMS.filter((item) => {
+    if (currentBusiness?.role === 'sales' && (item.key === 'services' || item.key === 'analytics')) return false
+    if (item.key === 'parking' && !currentBusiness?.offers_parking) return false
+    return true
+  })
+
+  const roleLabel = (role: 'owner' | 'admin' | 'sales') => {
+    if (role === 'owner') return t.sidebar.roleOwner
+    if (role === 'admin') return t.sidebar.roleAdmin
+    return t.sidebar.roleSales
+  }
 
   const getInitials = (name: string) => {
     return name
@@ -148,7 +167,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
                           {currentBusiness.name}
                         </p>
                         <p className="truncate text-xs text-sidebar-foreground/60">
-                          {currentBusiness.role === 'owner' ? t.sidebar.roleOwner : t.sidebar.roleStaff}
+                          {roleLabel(currentBusiness.role)}
                         </p>
                       </div>
                       <ChevronsUpDown className="h-4 w-4 shrink-0 text-sidebar-foreground/50" />
@@ -161,7 +180,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
                         <div className="flex-1 overflow-hidden">
                           <p className="truncate text-sm">{b.name}</p>
                           <p className="truncate text-xs text-muted-foreground">
-                            {b.role === 'owner' ? t.sidebar.roleOwner : t.sidebar.roleStaff}
+                            {roleLabel(b.role)}
                           </p>
                         </div>
                         {b.id === currentBusiness.id && (
@@ -229,7 +248,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
 
         {/* Navigation */}
         <nav className="flex-1 space-y-1 p-2">
-          {NAV_ITEMS.map((item) => {
+          {visibleNavItems.map((item) => {
             const label = t.nav[item.key]
             const isActive = pathname === item.href
             const NavLink = (

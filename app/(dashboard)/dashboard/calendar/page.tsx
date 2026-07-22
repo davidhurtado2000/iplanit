@@ -25,12 +25,13 @@ interface Reservation {
   id: string
   business_id: string
   client_id: string
-  service_id: string
+  service_id: string | null
   resource_id: string | null
   series_id: string | null
   start_time: string
   end_time: string
-  status: 'confirmed' | 'pending' | 'cancelled' | 'completed'
+  status: 'confirmed' | 'pending' | 'cancelled' | 'completed' | 'no_show'
+  type: 'booking' | 'visit'
   notes: string | null
   created_at: string
 }
@@ -53,7 +54,7 @@ interface Service {
 interface Resource {
   id: string
   name: string
-  type: 'room' | 'person' | 'equipment' | 'virtual'
+  type: 'room' | 'person' | 'equipment' | 'virtual' | 'parking'
   color: string
 }
 
@@ -77,7 +78,7 @@ export default function CalendarPage() {
     reservations,
     clients,
     services,
-    resources,
+    resources: allResources,
     calendarStartHour,
     calendarEndHour,
     loading,
@@ -85,10 +86,17 @@ export default function CalendarPage() {
     refetchReservations,
     ensureReservationsInRange,
   } = useDashboardData()
+  // Parking spots are a resource type but are never the "main" resource a
+  // reservation is scheduled against (see needsParking/parking_resource_id
+  // in reservation-modal.tsx) - showing them as calendar columns would just
+  // be an always-empty column, since no reservation ever sets resource_id
+  // to a parking spot.
+  const resources = allResources.filter((r) => r.type !== 'parking')
   const [view, setView] = useState<CalendarView>('day')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null)
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view'>('create')
+  const [modalInitialType, setModalInitialType] = useState<'booking' | 'visit'>('booking')
 
   // Build view options with translated labels
   const VIEW_OPTIONS = VIEW_CONFIG.map(({ value, icon }) => ({
@@ -100,6 +108,14 @@ export default function CalendarPage() {
   const handleCreateReservation = () => {
     setSelectedReservation(null)
     setModalMode('create')
+    setModalInitialType('booking')
+    setIsModalOpen(true)
+  }
+
+  const handleCreateVisit = () => {
+    setSelectedReservation(null)
+    setModalMode('create')
+    setModalInitialType('visit')
     setIsModalOpen(true)
   }
 
@@ -190,6 +206,11 @@ export default function CalendarPage() {
             <span className="hidden sm:inline">{t.calendar.newReservation}</span>
             <span className="sm:hidden">{t.calendar.newShort}</span>
           </Button>
+          <Button onClick={handleCreateVisit} size="sm" variant="outline" className="gap-2">
+            <Plus className="h-4 w-4" />
+            <span className="hidden sm:inline">{t.calendar.newVisit}</span>
+            <span className="sm:hidden">{t.calendar.newVisitShort}</span>
+          </Button>
         </div>
       </div>
 
@@ -243,7 +264,7 @@ export default function CalendarPage() {
                 <div className="space-y-2 max-h-[300px] overflow-y-auto">
                   {todayReservations.map((reservation) => {
                     const client = clientsMap[reservation.client_id]
-                    const service = servicesMap[reservation.service_id]
+                    const service = reservation.service_id ? servicesMap[reservation.service_id] : undefined
                     return (
                       <button
                         key={reservation.id}
@@ -305,6 +326,7 @@ export default function CalendarPage() {
         selectedDate={today}
         mode={modalMode}
         onSave={refetchReservations}
+        initialType={modalInitialType}
       />
     </div>
   )

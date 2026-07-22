@@ -223,7 +223,7 @@ export default function DashboardPage() {
               <div className="space-y-2">
                 {todayReservations.slice(0, 5).map((reservation) => {
                   const client = clientsMap[reservation.client_id]
-                  const service = servicesMap[reservation.service_id]
+                  const service = reservation.service_id ? servicesMap[reservation.service_id] : undefined
                   return (
                     <button
                       key={reservation.id}

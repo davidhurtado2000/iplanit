@@ -33,6 +33,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useAuth } from '@/hooks/use-auth'
 import { useLanguage } from '@/context/language-context'
@@ -93,6 +100,8 @@ function SortIndicator({ active, dir }: { active: boolean; dir: SortDir }) {
   return dir === 'asc' ? <ArrowUp className="ml-1 h-3 w-3" /> : <ArrowDown className="ml-1 h-3 w-3" />
 }
 
+type ClientDocumentType = 'dni' | 'ruc' | 'ein' | 'passport' | 'other'
+
 interface Client {
   id: string
   business_id: string
@@ -101,9 +110,11 @@ interface Client {
   phone: string | null
   notes: string | null
   created_at: string
-  dni: string | null
-  ruc: string | null
+  document_type: ClientDocumentType | null
+  document_number: string | null
 }
+
+const DOCUMENT_TYPES: ClientDocumentType[] = ['dni', 'ruc', 'ein', 'passport', 'other']
 
 export default function ClientsPage() {
   const { currentBusiness } = useBusinesses()
@@ -120,18 +131,25 @@ export default function ClientsPage() {
   const supabase = createClient()
   const PAGE_SIZE = 10
 
-  // US businesses don't collect a personal ID (DNI) from clients the way
-  // Peru businesses commonly do - only an optional business tax ID (EIN).
-  const isUSBusiness = currentBusiness?.country === 'US'
-  const idColumnLabel = isUSBusiness ? 'EIN' : 'DNI / RUC'
+  const documentTypeLabels: Record<ClientDocumentType, string> = {
+    dni: t.clients.documentTypeDni,
+    ruc: t.clients.documentTypeRuc,
+    ein: t.clients.documentTypeEin,
+    passport: t.clients.documentTypePassport,
+    other: t.clients.documentTypeOther,
+  }
+  // Just the default selection for a new client - the dropdown still lets
+  // the user pick any type regardless of the business's own country (a
+  // Peru business can have a foreign client with a passport, and vice versa).
+  const defaultDocumentType: ClientDocumentType = currentBusiness?.country === 'US' ? 'ein' : 'dni'
 
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     phone: '',
     notes: '',
-    dni: '',
-    ruc: '',
+    documentType: defaultDocumentType as ClientDocumentType,
+    documentNumber: '',
   })
 
   // Reservation counts per client (all-time) come from a small aggregate
@@ -140,7 +158,16 @@ export default function ClientsPage() {
   // dashboard-data-context.tsx), which would silently under-count a
   // long-time client's real history.
   const [reservationCounts, setReservationCounts] = useState<
-    Map<string, { reservation_count: number; confirmed_count: number; last_reservation_at: string | null }>
+    Map<
+      string,
+      {
+        reservation_count: number
+        confirmed_count: number
+        no_show_count: number
+        late_cancellation_count: number
+        last_reservation_at: string | null
+      }
+    >
   >(new Map())
 
   useEffect(() => {
@@ -148,7 +175,7 @@ export default function ClientsPage() {
     const loadCounts = async () => {
       const { data } = await supabase
         .from('client_reservation_counts')
-        .select('client_id, reservation_count, confirmed_count, last_reservation_at')
+        .select('client_id, reservation_count, confirmed_count, no_show_count, late_cancellation_count, last_reservation_at')
         .eq('business_id', currentBusiness.id)
       setReservationCounts(
         new Map(
@@ -157,6 +184,8 @@ export default function ClientsPage() {
             {
               reservation_count: row.reservation_count,
               confirmed_count: row.confirmed_count,
+              no_show_count: row.no_show_count,
+              late_cancellation_count: row.late_cancellation_count,
               last_reservation_at: row.last_reservation_at,
             },
           ])
@@ -215,8 +244,7 @@ export default function ClientsPage() {
       (c) =>
         c.name.toLowerCase().includes(q) ||
         (c.email && c.email.toLowerCase().includes(q)) ||
-        (c.dni && c.dni.toLowerCase().includes(q)) ||
-        (c.ruc && c.ruc.toLowerCase().includes(q))
+        (c.document_number && c.document_number.toLowerCase().includes(q))
     )
   }, [clients, searchQuery])
 
@@ -276,8 +304,8 @@ export default function ClientsPage() {
         email: client.email || '',
         phone: client.phone || '',
         notes: client.notes || '',
-        dni: client.dni || '',
-        ruc: client.ruc || '',
+        documentType: client.document_type || defaultDocumentType,
+        documentNumber: client.document_number || '',
       })
     } else {
       setEditingClient(null)
@@ -286,8 +314,8 @@ export default function ClientsPage() {
         email: '',
         phone: '',
         notes: '',
-        dni: '',
-        ruc: '',
+        documentType: defaultDocumentType,
+        documentNumber: '',
       })
     }
     setIsModalOpen(true)
@@ -304,8 +332,8 @@ export default function ClientsPage() {
         email: formData.email,
         phone: formData.phone || null,
         notes: formData.notes || null,
-        dni: formData.dni || null,
-        ruc: formData.ruc || null,
+        document_type: formData.documentNumber ? formData.documentType : null,
+        document_number: formData.documentNumber || null,
         business_id: currentBusiness.id,
       }
 
@@ -466,7 +494,7 @@ export default function ClientsPage() {
                   </button>
                 </TableHead>
                 <TableHead>{t.clients.contactCol}</TableHead>
-                <TableHead>{idColumnLabel}</TableHead>
+                <TableHead>{t.clients.documentCol}</TableHead>
                 <TableHead>
                   <button
                     type="button"
@@ -544,25 +572,30 @@ export default function ClientsPage() {
                       </div>
                     </TableCell>
                     <TableCell className="text-sm">
-                      {isUSBusiness ? (
-                        client.ruc ? (
-                          <div>EIN: {client.ruc}</div>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )
-                      ) : client.dni || client.ruc ? (
-                        <div className="space-y-0.5">
-                          {client.dni && <div>DNI: {client.dni}</div>}
-                          {client.ruc && <div className="text-muted-foreground">RUC: {client.ruc}</div>}
+                      {client.document_number ? (
+                        <div>
+                          {client.document_type && (
+                            <span className="text-muted-foreground">
+                              {documentTypeLabels[client.document_type]}:{' '}
+                            </span>
+                          )}
+                          {client.document_number}
                         </div>
                       ) : (
                         <span className="text-muted-foreground">-</span>
                       )}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary">
-                        {clientReservationCount} {t.clients.reservationsWord}
-                      </Badge>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <Badge variant="secondary">
+                          {clientReservationCount} {t.clients.reservationsWord}
+                        </Badge>
+                        {!!info?.no_show_count && (
+                          <Badge variant="destructive" title={`${info.no_show_count} ${t.clients.noShowCount}`}>
+                            {info.no_show_count} {t.clients.noShow}
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-sm">
                       {info?.last_reservation_at ? (
@@ -692,41 +725,37 @@ export default function ClientsPage() {
               />
             </div>
 
-            {isUSBusiness ? (
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="ruc">{t.clients.einLabel}</Label>
+                <Label htmlFor="documentType">{t.clients.documentTypeLabel}</Label>
+                <Select
+                  value={formData.documentType}
+                  onValueChange={(value: ClientDocumentType) =>
+                    setFormData({ ...formData, documentType: value })
+                  }
+                >
+                  <SelectTrigger id="documentType">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DOCUMENT_TYPES.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {documentTypeLabels[type]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="documentNumber">{t.clients.documentNumberLabel}</Label>
                 <Input
-                  id="ruc"
-                  value={formData.ruc}
-                  onChange={(e) => setFormData({ ...formData, ruc: e.target.value })}
-                  placeholder="12-3456789"
-                  maxLength={20}
+                  id="documentNumber"
+                  value={formData.documentNumber}
+                  onChange={(e) => setFormData({ ...formData, documentNumber: e.target.value })}
+                  maxLength={30}
                 />
               </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="dni">DNI</Label>
-                  <Input
-                    id="dni"
-                    value={formData.dni}
-                    onChange={(e) => setFormData({ ...formData, dni: e.target.value })}
-                    placeholder="12345678"
-                    maxLength={20}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="ruc">RUC</Label>
-                  <Input
-                    id="ruc"
-                    value={formData.ruc}
-                    onChange={(e) => setFormData({ ...formData, ruc: e.target.value })}
-                    placeholder="20123456789"
-                    maxLength={20}
-                  />
-                </div>
-              </div>
-            )}
+            </div>
 
             <div className="space-y-2">
               <Label htmlFor="notes">{t.clients.notesLabel}</Label>
@@ -809,6 +838,25 @@ export default function ClientsPage() {
                 </div>
               )}
 
+              {(() => {
+                const info = reservationCounts.get(selectedClient.id)
+                if (!info || (!info.no_show_count && !info.late_cancellation_count)) return null
+                return (
+                  <div className="flex flex-wrap gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
+                    {!!info.no_show_count && (
+                      <Badge variant="destructive">
+                        {info.no_show_count} {t.clients.noShowCount}
+                      </Badge>
+                    )}
+                    {!!info.late_cancellation_count && (
+                      <Badge variant="outline">
+                        {info.late_cancellation_count} {t.clients.lateCancellationCount}
+                      </Badge>
+                    )}
+                  </div>
+                )
+              })()}
+
               {/* Reservation History (Premium) */}
               <div>
                 <div className="mb-3 flex items-center gap-2">
@@ -857,6 +905,7 @@ export default function ClientsPage() {
                                   cancelled: t.clients.cancelled,
                                   pending: t.clients.pending,
                                   completed: t.clients.completed,
+                                  noShow: t.clients.noShow,
                                 })}
                               </Badge>
                             </div>

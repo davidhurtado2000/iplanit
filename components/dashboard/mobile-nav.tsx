@@ -20,6 +20,7 @@ import {
   Building2,
   Loader2,
   BarChart3,
+  ParkingSquare,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
@@ -32,8 +33,9 @@ interface MobileNavProps {
 }
 
 // Order matters: the bottom tab bar only shows the first 5 (see
-// NAV_ITEMS.slice(0, 5) below), so analytics goes last to keep the existing
-// 5 quick-access items unchanged - it's still reachable from the full menu.
+// NAV_ITEMS.slice(0, 5) below), so analytics/parking go last to keep the
+// existing 5 quick-access items unchanged - both still reachable from the
+// full menu.
 const NAV_ITEMS = [
   { key: 'dashboard' as const, href: '/dashboard', icon: LayoutDashboard },
   { key: 'calendar' as const, href: '/dashboard/calendar', icon: Calendar },
@@ -41,6 +43,7 @@ const NAV_ITEMS = [
   { key: 'clients' as const, href: '/dashboard/clients', icon: Users },
   { key: 'settings' as const, href: '/dashboard/settings', icon: Settings },
   { key: 'analytics' as const, href: '/dashboard/analytics', icon: BarChart3 },
+  { key: 'parking' as const, href: '/dashboard/parking', icon: ParkingSquare },
 ]
 
 export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
@@ -53,6 +56,14 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
   const userPlan = profile?.plan || 'free'
   const userName = profile?.full_name || user?.email?.split('@')[0] || t.mobileNav.defaultUser
   const userEmail = profile?.email || user?.email || ''
+
+  // Sales/Cochera filtering - see sidebar.tsx for the same filter and the
+  // reasoning behind it.
+  const visibleNavItems = NAV_ITEMS.filter((item) => {
+    if (currentBusiness?.role === 'sales' && (item.key === 'services' || item.key === 'analytics')) return false
+    if (item.key === 'parking' && !currentBusiness?.offers_parking) return false
+    return true
+  })
 
   const getInitials = (name: string) => {
     return name
@@ -143,7 +154,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
 
               {/* Navigation */}
               <nav className="flex-1 space-y-1 p-2">
-                {NAV_ITEMS.map((item) => {
+                {visibleNavItems.map((item) => {
                   const isActive = pathname === item.href
                   return (
                     <Link
@@ -208,7 +219,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
       {/* Bottom Navigation Bar for quick access on mobile */}
       <div className="fixed inset-x-0 bottom-0 z-50 border-t bg-background lg:hidden">
         <nav className="flex items-center justify-around py-2">
-          {NAV_ITEMS.slice(0, 5).map((item) => {
+          {visibleNavItems.slice(0, 5).map((item) => {
             const isActive = pathname === item.href
             return (
               <Link

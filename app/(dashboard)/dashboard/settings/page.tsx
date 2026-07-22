@@ -118,14 +118,16 @@ export default function SettingsPage() {
 
   // Team State
   const [teamMembers, setTeamMembers] = useState<
-    { id: string; email: string; full_name: string | null; created_at: string }[]
+    { id: string; email: string; full_name: string | null; created_at: string; role: 'admin' | 'sales' }[]
   >([])
   const [loadingTeam, setLoadingTeam] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState<'admin' | 'sales'>('admin')
   const [inviteError, setInviteError] = useState('')
   const [inviteSuccess, setInviteSuccess] = useState('')
   const [isInviting, setIsInviting] = useState(false)
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null)
+  const [updatingRoleId, setUpdatingRoleId] = useState<string | null>(null)
 
   // DAYS computed from translations so they update when language changes
   const DAYS: { value: DayOfWeek; label: string }[] = [
@@ -154,14 +156,19 @@ export default function SettingsPage() {
     email: '',
     country: 'PE' as 'PE' | 'US',
     tax_id: '',
+    currency: 'PEN' as 'PEN' | 'USD',
+    cancellation_policy_hours: 24,
+    offers_parking: false,
   })
   const [slugError, setSlugError] = useState('')
 
   // Business Hours State
   const [businessHours, setBusinessHours] = useState(DEFAULT_BUSINESS_HOURS)
 
-  // Notifications State
-  const [notifications, setNotifications] = useState({
+  // Notifications State - preview only, not wired to any email sending yet
+  // (see the "Proximamente" banner on this tab), so there's no setter: these
+  // values are display-only defaults until real notifications exist.
+  const [notifications] = useState({
     emailConfirmations: true,
     emailReminders: true,
     emailCancellations: true,
@@ -192,6 +199,9 @@ export default function SettingsPage() {
         email: currentBusiness.email || '',
         country: currentBusiness.country || 'PE',
         tax_id: currentBusiness.tax_id || '',
+        currency: currentBusiness.currency || (currentBusiness.country === 'US' ? 'USD' : 'PEN'),
+        cancellation_policy_hours: currentBusiness.cancellation_policy_hours ?? 24,
+        offers_parking: currentBusiness.offers_parking ?? false,
       })
     }
   }, [authProfile, user, currentBusiness])
@@ -207,7 +217,7 @@ export default function SettingsPage() {
       setLoadingTeam(true)
       const { data } = await supabase
         .from('business_members')
-        .select('id, email, full_name, created_at')
+        .select('id, email, full_name, created_at, role')
         .eq('business_id', currentBusiness.id)
         .order('created_at', { ascending: true })
       setTeamMembers(data || [])
@@ -227,6 +237,7 @@ export default function SettingsPage() {
       const { data, error } = await supabase.rpc('add_business_staff', {
         p_business_id: currentBusiness.id,
         p_email: inviteEmail.trim(),
+        p_role: inviteRole,
       })
       if (error) throw error
 
@@ -247,7 +258,7 @@ export default function SettingsPage() {
       setInviteEmail('')
       const { data: refreshed } = await supabase
         .from('business_members')
-        .select('id, email, full_name, created_at')
+        .select('id, email, full_name, created_at, role')
         .eq('business_id', currentBusiness.id)
         .order('created_at', { ascending: true })
       setTeamMembers(refreshed || [])
@@ -269,6 +280,19 @@ export default function SettingsPage() {
       console.error('[v0] Error removing team member:', err)
     } finally {
       setRemovingMemberId(null)
+    }
+  }
+
+  const handleChangeRole = async (memberId: string, role: 'admin' | 'sales') => {
+    setUpdatingRoleId(memberId)
+    try {
+      const { error } = await supabase.from('business_members').update({ role }).eq('id', memberId)
+      if (error) throw error
+      setTeamMembers((prev) => prev.map((m) => (m.id === memberId ? { ...m, role } : m)))
+    } catch (err) {
+      console.error('[v0] Error updating team member role:', err)
+    } finally {
+      setUpdatingRoleId(null)
     }
   }
 
@@ -367,6 +391,9 @@ export default function SettingsPage() {
             email: business.email || null,
             country: business.country,
             tax_id: business.tax_id || null,
+            currency: business.currency,
+            cancellation_policy_hours: business.cancellation_policy_hours,
+            offers_parking: business.offers_parking,
           })
         } catch (businessErr: any) {
           if (businessErr?.code === '23505') {
@@ -579,6 +606,7 @@ export default function SettingsPage() {
           >
             <Bell className="h-5 w-5 sm:h-4 sm:w-4" />
             <span className="text-xs sm:text-sm">{t.settings.notificationsTab}</span>
+            <Badge variant="secondary" className="text-[10px]">{t.settings.comingSoon}</Badge>
           </TabsTrigger>
           <TabsTrigger
             value="plan"
@@ -759,6 +787,23 @@ export default function SettingsPage() {
                   </div>
 
                   <div className="space-y-2">
+                    <Label htmlFor="business-currency">{t.settings.businessCurrency}</Label>
+                    <Select
+                      value={business.currency}
+                      onValueChange={(value: 'PEN' | 'USD') => setBusiness({ ...business, currency: value })}
+                    >
+                      <SelectTrigger id="business-currency" className="w-full sm:w-[220px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="PEN">{t.settings.currencyPEN}</SelectItem>
+                        <SelectItem value="USD">{t.settings.currencyUSD}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">{t.settings.businessCurrencyHint}</p>
+                  </div>
+
+                  <div className="space-y-2">
                     <Label htmlFor="business-slug">{t.settings.slugLabel}</Label>
                     <Input
                       id="business-slug"
@@ -794,6 +839,36 @@ export default function SettingsPage() {
                       onChange={(e) => setBusiness({ ...business, tax_id: e.target.value })}
                       placeholder={business.country === 'US' ? '12-3456789' : '20123456789'}
                       maxLength={20}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="business-cancellation-policy">{t.settings.cancellationPolicyLabel}</Label>
+                    <Input
+                      id="business-cancellation-policy"
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={business.cancellation_policy_hours}
+                      onChange={(e) =>
+                        setBusiness({ ...business, cancellation_policy_hours: parseInt(e.target.value) || 0 })
+                      }
+                      className="w-full sm:w-[140px]"
+                    />
+                    <p className="text-xs text-muted-foreground">{t.settings.cancellationPolicyHint}</p>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-lg border p-3">
+                    <div>
+                      <Label htmlFor="business-offers-parking" className="cursor-pointer">
+                        {t.settings.offersParkingLabel}
+                      </Label>
+                      <p className="text-xs text-muted-foreground">{t.settings.offersParkingDesc}</p>
+                    </div>
+                    <Switch
+                      id="business-offers-parking"
+                      checked={business.offers_parking}
+                      onCheckedChange={(checked) => setBusiness({ ...business, offers_parking: checked })}
                     />
                   </div>
 
@@ -1018,9 +1093,17 @@ export default function SettingsPage() {
         </TabsContent>
         )}
 
-        {/* Notifications Tab */}
+        {/* Notifications Tab - not wired to any email sending yet (no
+            domain/Resend configured), so every control here is disabled and
+            nothing is persisted. Showing them as interactive would imply
+            emails go out when none do - see the security-fix precedent on
+            PremiumFeature for why a "looks real but isn't" UI is worse than
+            just being upfront about what's not built yet. */}
         <TabsContent value="notifications" className="space-y-6">
-          <Card>
+          <div className="rounded-lg border border-dashed bg-muted/30 p-4 text-sm text-muted-foreground">
+            {t.settings.notifComingSoonBanner}
+          </div>
+          <Card className="opacity-60">
             <CardHeader>
               <CardTitle>{t.settings.notifTitle}</CardTitle>
               <CardDescription>{t.settings.notifDesc}</CardDescription>
@@ -1033,12 +1116,7 @@ export default function SettingsPage() {
                     {t.settings.confirmationsDesc}
                   </p>
                 </div>
-                <Switch
-                  checked={notifications.emailConfirmations}
-                  onCheckedChange={(checked) =>
-                    setNotifications({ ...notifications, emailConfirmations: checked })
-                  }
-                />
+                <Switch checked={notifications.emailConfirmations} disabled />
               </div>
 
               <Separator />
@@ -1050,23 +1128,13 @@ export default function SettingsPage() {
                     {t.settings.remindersDesc}
                   </p>
                 </div>
-                <Switch
-                  checked={notifications.emailReminders}
-                  onCheckedChange={(checked) =>
-                    setNotifications({ ...notifications, emailReminders: checked })
-                  }
-                />
+                <Switch checked={notifications.emailReminders} disabled />
               </div>
 
               {notifications.emailReminders && (
                 <div className="ml-4 space-y-2 border-l-2 pl-4">
                   <Label>{t.settings.reminderTiming}</Label>
-                  <Select
-                    value={String(notifications.reminderHours)}
-                    onValueChange={(value) =>
-                      setNotifications({ ...notifications, reminderHours: parseInt(value) })
-                    }
-                  >
+                  <Select value={String(notifications.reminderHours)} disabled>
                     <SelectTrigger className="w-[200px]">
                       <SelectValue />
                     </SelectTrigger>
@@ -1089,12 +1157,7 @@ export default function SettingsPage() {
                     {t.settings.cancellationsDesc}
                   </p>
                 </div>
-                <Switch
-                  checked={notifications.emailCancellations}
-                  onCheckedChange={(checked) =>
-                    setNotifications({ ...notifications, emailCancellations: checked })
-                  }
-                />
+                <Switch checked={notifications.emailCancellations} disabled />
               </div>
             </CardContent>
           </Card>
@@ -1189,11 +1252,23 @@ export default function SettingsPage() {
                       disabled={isInviting}
                     />
                   </div>
+                  <Select value={inviteRole} onValueChange={(v: 'admin' | 'sales') => setInviteRole(v)} disabled={isInviting}>
+                    <SelectTrigger className="sm:w-[180px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="admin">{t.settings.team.roleAdmin}</SelectItem>
+                      <SelectItem value="sales">{t.settings.team.roleSales}</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <Button type="submit" disabled={isInviting || !inviteEmail.trim()} className="gap-2">
                     {isInviting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                     {t.settings.team.addBtn}
                   </Button>
                 </form>
+                <p className="text-xs text-muted-foreground">
+                  {inviteRole === 'admin' ? t.settings.team.roleAdminDesc : t.settings.team.roleSalesDesc}
+                </p>
                 {inviteError && <p className="text-sm text-destructive">{inviteError}</p>}
                 {inviteSuccess && <p className="text-sm text-green-600">{inviteSuccess}</p>}
 
@@ -1228,6 +1303,19 @@ export default function SettingsPage() {
                             <p className="truncate text-xs text-muted-foreground">{member.email}</p>
                           </div>
                         </div>
+                        <Select
+                          value={member.role}
+                          onValueChange={(v: 'admin' | 'sales') => handleChangeRole(member.id, v)}
+                          disabled={updatingRoleId === member.id}
+                        >
+                          <SelectTrigger className="w-[140px] shrink-0">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="admin">{t.settings.team.roleAdmin}</SelectItem>
+                            <SelectItem value="sales">{t.settings.team.roleSales}</SelectItem>
+                          </SelectContent>
+                        </Select>
                         <Button
                           variant="ghost"
                           size="icon"

@@ -3,12 +3,13 @@ export type ReservationStatusLabels = {
   pending: string
   completed: string
   cancelled: string
+  noShow: string
 }
 
 export function getStatusBadgeVariant(
   status: string
 ): 'default' | 'secondary' | 'destructive' {
-  if (status === 'cancelled') return 'destructive'
+  if (status === 'cancelled' || status === 'no_show') return 'destructive'
   if (status === 'pending') return 'secondary'
   return 'default'
 }
@@ -23,6 +24,8 @@ export function getStatusLabel(status: string, labels: ReservationStatusLabels):
       return labels.completed
     case 'cancelled':
       return labels.cancelled
+    case 'no_show':
+      return labels.noShow
     default:
       return status
   }

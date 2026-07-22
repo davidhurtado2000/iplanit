@@ -15,13 +15,28 @@ interface Business {
   email: string | null
   country: 'PE' | 'US'
   tax_id: string | null
+  /** The currency the business actually bills in. Independent of country -
+   * a Peru-based business may bill international clients in USD and vice
+   * versa - country is only used as the smart default when first set. */
+  currency: 'PEN' | 'USD'
+  /** Hours before start_time within which a client-initiated cancellation
+   * counts as "late" for the reliability history on Clients (see
+   * client_reservation_counts). Informational only - see scripts/031 - no
+   * payment is ever charged automatically. */
+  cancellation_policy_hours: number
+  /** Free for every plan (not Premium-gated) - see scripts/035-parking.sql.
+   * When true, unlocks the Cochera nav item and the parking checkbox on
+   * reservations (internal and public booking page). */
+  offers_parking: boolean
   created_at: string
   updated_at: string
-  /** Computed client-side from owner_id, not a DB column. Staff (Premium
-   * team members, see business_members) can operate reservations/clients/
-   * services but not Configuracion - see is_business_accessible() in
-   * scripts/024-business-members.sql for the server-side equivalent. */
-  role: 'owner' | 'staff'
+  /** 'owner' is computed client-side from owner_id; 'admin'/'sales' come
+   * from business_members.role (Premium team members - see
+   * scripts/032-granular-roles.sql). Admin operates everything but
+   * Configuracion/team, same as the old single "staff" role. Sales is
+   * reservations + clients only - see business_member_role() server-side
+   * for the source of truth this mirrors. */
+  role: 'owner' | 'admin' | 'sales'
 }
 
 type BusinessContextType = {
@@ -88,15 +103,22 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
       // now returns both businesses the user owns and ones where they're an
       // active Premium staff member, so we let the database decide
       // visibility rather than assuming "owned" is the only case.
-      const { data, error: err } = await supabase
-        .from('businesses')
-        .select('*')
-        .order('created_at', { ascending: false })
+      const [{ data, error: err }, { data: memberships }] = await Promise.all([
+        supabase.from('businesses').select('*').order('created_at', { ascending: false }),
+        // Own membership rows only (RLS) - gives the actual admin/sales role
+        // per business instead of assuming every non-owned business means
+        // the same access level.
+        supabase.from('business_members').select('business_id, role').eq('user_id', user.id),
+      ])
 
       if (err) throw err
+      const roleByBusinessId = new Map((memberships || []).map((m) => [m.business_id, m.role]))
       const withRole = (data || []).map((b) => ({
         ...b,
-        role: (b.owner_id === user.id ? 'owner' : 'staff') as 'owner' | 'staff',
+        role: (b.owner_id === user.id ? 'owner' : roleByBusinessId.get(b.id) ?? 'admin') as
+          | 'owner'
+          | 'admin'
+          | 'sales',
       }))
       setBusinesses(withRole)
       setError(null)

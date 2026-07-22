@@ -45,7 +45,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
-import { useDashboardData, type ServiceResource } from '@/context/dashboard-data-context'
+import { useDashboardData, type ServiceResource, type ServiceDurationOption } from '@/context/dashboard-data-context'
 import { createClient } from '@/lib/supabase/client'
 import {
   Plus,
@@ -60,6 +60,7 @@ import {
   Video,
   Search,
   Loader2,
+  X,
 } from 'lucide-react'
 
 interface Service {
@@ -71,7 +72,20 @@ interface Service {
   price: number | null
   price_usd: number | null
   color: string
+  pricing_mode: 'fixed' | 'preset' | 'hourly'
+  hourly_rate: number | null
+  hourly_rate_usd: number | null
+  min_hours: number | null
+  max_hours: number | null
   is_active: boolean
+}
+
+// One row of the flexible-duration editor - price/priceUsd is whichever
+// matches the business's currency, same single-field pattern as the
+// service's own base price (see isUSD below).
+interface DurationOptionForm {
+  duration: number | ''
+  price: number | ''
 }
 
 interface Resource {
@@ -79,7 +93,7 @@ interface Resource {
   business_id: string
   name: string
   description: string | null
-  type: 'room' | 'person' | 'equipment' | 'virtual'
+  type: 'room' | 'person' | 'equipment' | 'virtual' | 'parking'
   color: string
   is_active: boolean
 }
@@ -92,7 +106,23 @@ const SERVICE_COLORS = [
 export default function ServicesPage() {
   const { currentBusiness } = useBusinesses()
   const { t } = useLanguage()
-  const { services, resources, serviceResources, loading, refetchServicesAndResources, refetchServiceResources } = useDashboardData()
+  const {
+    services,
+    resources: allResources,
+    serviceResources,
+    serviceDurationOptions,
+    loading,
+    refetchServicesAndResources,
+    refetchServiceResources,
+    refetchServiceDurationOptions,
+  } = useDashboardData()
+  // Parking spots are their own resource type but are managed exclusively
+  // on the dedicated Cochera page (see app/(dashboard)/dashboard/parking) -
+  // they don't belong in the generic Recursos tab or the service-linked
+  // resource picker, since a client never picks "a parking spot" as the
+  // resource for a service the way they'd pick a room or a stylist.
+  const resources = allResources.filter((r) => r.type !== 'parking')
+  const isUSD = currentBusiness?.currency === 'USD'
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState<'services' | 'resources'>('services')
   const [isServiceModalOpen, setIsServiceModalOpen] = useState(false)
@@ -103,6 +133,7 @@ export default function ServicesPage() {
   const [deletingService, setDeletingService] = useState<Service | null>(null)
   const [deletingResource, setDeletingResource] = useState<Resource | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [durationOptionsError, setDurationOptionsError] = useState('')
   const supabase = createClient()
 
   const [serviceForm, setServiceForm] = useState({
@@ -113,7 +144,12 @@ export default function ServicesPage() {
     priceUsd: '' as number | '',
     color: SERVICE_COLORS[0],
     isActive: true,
+    pricingMode: 'fixed' as 'fixed' | 'preset' | 'hourly',
+    hourlyRate: '' as number | '',
+    minHours: 1 as number | '',
+    maxHours: 8 as number | '',
   })
+  const [durationOptions, setDurationOptions] = useState<DurationOptionForm[]>([])
   const [selectedResourceIds, setSelectedResourceIds] = useState<string[]>([])
 
   const [resourceForm, setResourceForm] = useState({
@@ -134,6 +170,7 @@ export default function ServicesPage() {
   )
 
   const handleOpenServiceModal = (service?: Service) => {
+    setDurationOptionsError('')
     if (service) {
       setEditingService(service)
       setServiceForm({
@@ -144,7 +181,19 @@ export default function ServicesPage() {
         priceUsd: service.price_usd ?? '',
         color: service.color,
         isActive: service.is_active,
+        pricingMode: service.pricing_mode,
+        hourlyRate: (isUSD ? service.hourly_rate_usd : service.hourly_rate) ?? '',
+        minHours: service.min_hours ?? 1,
+        maxHours: service.max_hours ?? 8,
       })
+      setDurationOptions(
+        serviceDurationOptions
+          .filter((o) => o.service_id === service.id)
+          .map((o) => ({
+            duration: o.duration_minutes,
+            price: (isUSD ? o.price_usd : o.price) ?? '',
+          }))
+      )
       setSelectedResourceIds(
         serviceResources
           .filter((sr) => sr.service_id === service.id)
@@ -160,26 +209,80 @@ export default function ServicesPage() {
         priceUsd: '',
         color: SERVICE_COLORS[0],
         isActive: true,
+        pricingMode: 'fixed',
+        hourlyRate: '',
+        minHours: 1,
+        maxHours: 8,
       })
+      setDurationOptions([])
       setSelectedResourceIds([])
     }
     setIsServiceModalOpen(true)
+  }
+
+  const addDurationOption = () => {
+    setDurationOptions([...durationOptions, { duration: '', price: '' }])
+  }
+
+  const updateDurationOption = (index: number, field: keyof DurationOptionForm, value: number | '') => {
+    setDurationOptions(durationOptions.map((o, i) => (i === index ? { ...o, [field]: value } : o)))
+  }
+
+  const removeDurationOption = (index: number) => {
+    setDurationOptions(durationOptions.filter((_, i) => i !== index))
   }
 
   const handleSaveService = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!currentBusiness) return
 
+    setDurationOptionsError('')
+    if (serviceForm.pricingMode === 'preset') {
+      const validOptions = durationOptions.filter((o) => o.duration !== '' && o.price !== '')
+      if (validOptions.length === 0) {
+        // Otherwise this saves silently as an unbookable service - staff
+        // and the public booking page both hit "no hay duraciones
+        // configuradas" with no way to complete a reservation.
+        setDurationOptionsError(t.services.durationOptionsRequired)
+        return
+      }
+    }
+    if (serviceForm.pricingMode === 'hourly') {
+      if (serviceForm.hourlyRate === '' || serviceForm.minHours === '' || serviceForm.maxHours === '') {
+        setDurationOptionsError(t.services.hourlyFieldsRequired)
+        return
+      }
+      if (serviceForm.minHours > serviceForm.maxHours) {
+        setDurationOptionsError(t.services.hourlyRangeInvalid)
+        return
+      }
+    }
+
     setSaving(true)
     try {
+      // Only one currency is ever editable at a time (matches the
+      // business's own currency setting, see Settings > Negocio), so the
+      // other is always saved as null instead of carrying stale data from
+      // before a currency switch. Same pattern for the hourly rate.
       const serviceData = {
         name: serviceForm.name,
         description: serviceForm.description || null,
         duration_minutes: serviceForm.duration,
-        price: serviceForm.price || 0,
-        price_usd: serviceForm.priceUsd !== '' ? serviceForm.priceUsd : null,
+        price: isUSD ? 0 : serviceForm.price || 0,
+        price_usd: isUSD ? (serviceForm.priceUsd !== '' ? serviceForm.priceUsd : 0) : null,
         color: serviceForm.color,
         is_active: serviceForm.isActive,
+        pricing_mode: serviceForm.pricingMode,
+        hourly_rate:
+          serviceForm.pricingMode === 'hourly' && !isUSD && serviceForm.hourlyRate !== ''
+            ? serviceForm.hourlyRate
+            : null,
+        hourly_rate_usd:
+          serviceForm.pricingMode === 'hourly' && isUSD && serviceForm.hourlyRate !== ''
+            ? serviceForm.hourlyRate
+            : null,
+        min_hours: serviceForm.pricingMode === 'hourly' && serviceForm.minHours !== '' ? serviceForm.minHours : null,
+        max_hours: serviceForm.pricingMode === 'hourly' && serviceForm.maxHours !== '' ? serviceForm.maxHours : null,
         business_id: currentBusiness.id,
       }
 
@@ -219,7 +322,31 @@ export default function ServicesPage() {
         if (linkError) throw linkError
       }
 
-      await Promise.all([refetchServicesAndResources(), refetchServiceResources()])
+      // Sync duration options - always cleared first so turning the toggle
+      // off (or emptying the list) actually removes stale options instead
+      // of leaving orphaned rows behind.
+      await supabase
+        .from('service_duration_options')
+        .delete()
+        .eq('service_id', serviceId)
+        .eq('business_id', currentBusiness.id)
+
+      if (serviceForm.pricingMode === 'preset') {
+        const validOptions = durationOptions.filter((o) => o.duration !== '' && o.price !== '')
+        if (validOptions.length > 0) {
+          const optionRows = validOptions.map((o) => ({
+            service_id: serviceId,
+            business_id: currentBusiness.id,
+            duration_minutes: o.duration as number,
+            price: isUSD ? null : (o.price as number),
+            price_usd: isUSD ? (o.price as number) : null,
+          }))
+          const { error: optionsError } = await supabase.from('service_duration_options').insert(optionRows)
+          if (optionsError) throw optionsError
+        }
+      }
+
+      await Promise.all([refetchServicesAndResources(), refetchServiceResources(), refetchServiceDurationOptions()])
       setIsServiceModalOpen(false)
     } catch (err) {
       console.error('[v0] Error saving service:', err)
@@ -253,7 +380,10 @@ export default function ServicesPage() {
       setResourceForm({
         name: resource.name,
         description: resource.description || '',
-        type: resource.type,
+        // Safe: `resources` (see the filter above) never includes parking
+        // spots here - those are only ever created/edited on the Cochera
+        // page, never through this modal.
+        type: resource.type as 'room' | 'person' | 'equipment' | 'virtual',
         color: resource.color || SERVICE_COLORS[0],
         isActive: resource.is_active,
       })
@@ -370,6 +500,16 @@ export default function ServicesPage() {
     )
   }
 
+  if (currentBusiness.role === 'sales') {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center">
+        <Building className="mb-4 h-12 w-12 text-muted-foreground/50" />
+        <h2 className="text-xl font-semibold">{t.services.accessRestricted}</h2>
+        <p className="mt-2 text-muted-foreground">{t.services.accessRestrictedDesc}</p>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -470,15 +610,56 @@ export default function ServicesPage() {
                     <TableCell>
                       <div className="flex items-center gap-1 text-sm">
                         <Clock className="h-3 w-3" />
-                        {service.duration_minutes} min
+                        {service.pricing_mode === 'hourly'
+                          ? `${service.min_hours ?? '?'}-${service.max_hours ?? '?'} h`
+                          : `${service.duration_minutes} min`}
                       </div>
                     </TableCell>
                     <TableCell>
-                      {service.price || service.price_usd ? (
-                        <div className="text-sm space-y-0.5">
-                          {service.price ? <div>S/ {service.price}</div> : null}
-                          {service.price_usd ? <div className="text-muted-foreground">$ {service.price_usd}</div> : null}
-                        </div>
+                      {service.pricing_mode === 'preset' ? (
+                        (() => {
+                          const options = serviceDurationOptions.filter((o) => o.service_id === service.id)
+                          const prices = options
+                            .map((o) => (isUSD ? o.price_usd : o.price))
+                            .filter((p): p is number => p != null)
+                          if (prices.length === 0) {
+                            return (
+                              <Badge variant="destructive" className="text-xs">
+                                {t.services.noDurationOptionsWarning}
+                              </Badge>
+                            )
+                          }
+                          const min = Math.min(...prices)
+                          return (
+                            <div className="text-sm">
+                              {t.services.fromPrice} {isUSD ? '$' : 'S/'} {min}
+                            </div>
+                          )
+                        })()
+                      ) : service.pricing_mode === 'hourly' ? (
+                        (() => {
+                          const rate = isUSD ? service.hourly_rate_usd : service.hourly_rate
+                          if (!rate) {
+                            return (
+                              <Badge variant="destructive" className="text-xs">
+                                {t.services.noHourlyRateWarning}
+                              </Badge>
+                            )
+                          }
+                          return (
+                            <div className="text-sm">
+                              {isUSD ? '$' : 'S/'} {rate} {t.services.perHour}
+                            </div>
+                          )
+                        })()
+                      ) : isUSD ? (
+                        service.price_usd ? (
+                          <div className="text-sm">$ {service.price_usd}</div>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )
+                      ) : service.price ? (
+                        <div className="text-sm">S/ {service.price}</div>
                       ) : (
                         <span className="text-muted-foreground">-</span>
                       )}
@@ -634,47 +815,180 @@ export default function ServicesPage() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="service-duration">{t.services.durationLabel}</Label>
-                <Input
-                  id="service-duration"
-                  type="number"
-                  min={5}
-                  step={5}
-                  value={serviceForm.duration}
-                  onChange={(e) => setServiceForm({ ...serviceForm, duration: parseInt(e.target.value) || 0 })}
-                  required
-                />
+            <div className="space-y-2">
+              <Label>{t.services.pricingModeLabel}</Label>
+              <div className="grid grid-cols-3 gap-2 rounded-lg border p-1">
+                {(['fixed', 'preset', 'hourly'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => {
+                      setDurationOptionsError('')
+                      setServiceForm({ ...serviceForm, pricingMode: mode })
+                      if (mode === 'preset' && durationOptions.length === 0) {
+                        setDurationOptions([{ duration: '', price: '' }])
+                      }
+                    }}
+                    className={`rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
+                      serviceForm.pricingMode === mode
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:bg-muted'
+                    }`}
+                  >
+                    {mode === 'fixed' && t.services.pricingModeFixed}
+                    {mode === 'preset' && t.services.pricingModePreset}
+                    {mode === 'hourly' && t.services.pricingModeHourly}
+                  </button>
+                ))}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="service-price">{t.services.priceLabel} (S/.)</Label>
-                <Input
-                  id="service-price"
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={serviceForm.price}
-                  onChange={(e) => setServiceForm({ ...serviceForm, price: parseFloat(e.target.value) || 0 })}
-                  required
-                />
-                <p className="text-xs text-muted-foreground">Usado en Analytics e ingresos</p>
-              </div>
+              <p className="text-xs text-muted-foreground">
+                {serviceForm.pricingMode === 'fixed' && t.services.pricingModeFixedDesc}
+                {serviceForm.pricingMode === 'preset' && t.services.pricingModePresetDesc}
+                {serviceForm.pricingMode === 'hourly' && t.services.pricingModeHourlyDesc}
+              </p>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="service-price-usd">Precio (USD $)</Label>
-              <Input
-                id="service-price-usd"
-                type="number"
-                min={0}
-                step={0.01}
-                placeholder="Opcional"
-                value={serviceForm.priceUsd}
-                onChange={(e) => setServiceForm({ ...serviceForm, priceUsd: e.target.value !== '' ? parseFloat(e.target.value) : '' })}
-              />
-              <p className="text-xs text-muted-foreground">Solo referencia — no se usa en reportes ni ingresos</p>
-            </div>
+            {serviceForm.pricingMode === 'hourly' ? (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="service-hourly-rate">
+                    {t.services.hourlyRateLabel} ({isUSD ? '$' : 'S/.'})
+                  </Label>
+                  <Input
+                    id="service-hourly-rate"
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={serviceForm.hourlyRate}
+                    onChange={(e) =>
+                      setServiceForm({ ...serviceForm, hourlyRate: e.target.value !== '' ? parseFloat(e.target.value) : '' })
+                    }
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="service-min-hours">{t.services.minHoursLabel}</Label>
+                    <Input
+                      id="service-min-hours"
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={serviceForm.minHours}
+                      onChange={(e) =>
+                        setServiceForm({ ...serviceForm, minHours: e.target.value !== '' ? parseInt(e.target.value) : '' })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="service-max-hours">{t.services.maxHoursLabel}</Label>
+                    <Input
+                      id="service-max-hours"
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={serviceForm.maxHours}
+                      onChange={(e) =>
+                        setServiceForm({ ...serviceForm, maxHours: e.target.value !== '' ? parseInt(e.target.value) : '' })
+                      }
+                    />
+                  </div>
+                </div>
+                {durationOptionsError && (
+                  <p className="text-xs text-destructive">{durationOptionsError}</p>
+                )}
+              </div>
+            ) : serviceForm.pricingMode === 'preset' ? (
+              <div className="space-y-2">
+                <Label>{t.services.durationOptionsLabel}</Label>
+                <div className="space-y-2">
+                  {durationOptions.map((option, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min={5}
+                        step={5}
+                        placeholder={t.services.durationLabel}
+                        value={option.duration}
+                        onChange={(e) =>
+                          updateDurationOption(index, 'duration', e.target.value !== '' ? parseInt(e.target.value) : '')
+                        }
+                        className="flex-1"
+                      />
+                      <span className="text-xs text-muted-foreground">min</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        placeholder={`${t.services.priceLabel} (${isUSD ? '$' : 'S/.'})`}
+                        value={option.price}
+                        onChange={(e) =>
+                          updateDurationOption(index, 'price', e.target.value !== '' ? parseFloat(e.target.value) : '')
+                        }
+                        className="flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeDurationOption(index)}
+                        className="shrink-0 text-muted-foreground hover:text-destructive"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={addDurationOption} className="gap-2">
+                  <Plus className="h-4 w-4" />
+                  {t.services.addDurationOption}
+                </Button>
+                {durationOptionsError && (
+                  <p className="text-xs text-destructive">{durationOptionsError}</p>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="service-duration">{t.services.durationLabel}</Label>
+                  <Input
+                    id="service-duration"
+                    type="number"
+                    min={5}
+                    step={5}
+                    value={serviceForm.duration}
+                    onChange={(e) => setServiceForm({ ...serviceForm, duration: parseInt(e.target.value) || 0 })}
+                    required
+                  />
+                </div>
+                {isUSD ? (
+                  <div className="space-y-2">
+                    <Label htmlFor="service-price-usd">{t.services.priceLabel} ($)</Label>
+                    <Input
+                      id="service-price-usd"
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={serviceForm.priceUsd}
+                      onChange={(e) => setServiceForm({ ...serviceForm, priceUsd: e.target.value !== '' ? parseFloat(e.target.value) : '' })}
+                      required
+                    />
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Label htmlFor="service-price">{t.services.priceLabel} (S/.)</Label>
+                    <Input
+                      id="service-price"
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={serviceForm.price}
+                      onChange={(e) => setServiceForm({ ...serviceForm, price: parseFloat(e.target.value) || 0 })}
+                      required
+                    />
+                  </div>
+                )}
+              </div>
+            )}
 
             {resources.length > 0 && (
               <div className="space-y-2">

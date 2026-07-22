@@ -10,15 +10,33 @@ export interface Reservation {
   id: string
   business_id: string
   client_id: string
-  service_id: string
+  /** Null for visits with no specific service in mind - see type. */
+  service_id: string | null
   resource_id: string | null
+  /** Independent of resource_id - a separately-booked parking spot, see
+   * scripts/035-parking.sql. Null unless the business offers parking and
+   * one was requested/assigned. */
+  parking_resource_id: string | null
   series_id: string | null
   start_time: string
   end_time: string
-  status: 'confirmed' | 'pending' | 'cancelled' | 'completed'
+  status: 'confirmed' | 'pending' | 'cancelled' | 'completed' | 'no_show'
+  /** 'visit' = a prospective client seeing the place before booking - no
+   * revenue, excluded from service/revenue analytics, counted separately. */
+  type: 'booking' | 'visit'
+  /** Price actually used for this reservation, snapshotted at booking time
+   * (pre-filled from the service/duration option but editable for one-off
+   * quotes) - see lib/analytics.ts for why this replaced reading
+   * services.price live. Null for visits. */
+  price: number | null
+  price_usd: number | null
+  cancelled_by: 'client' | 'business' | null
+  cancelled_at: string | null
   notes: string | null
   created_at: string
 }
+
+export type ClientDocumentType = 'dni' | 'ruc' | 'ein' | 'passport' | 'other'
 
 export interface Client {
   id: string
@@ -29,8 +47,8 @@ export interface Client {
   notes: string | null
   created_at: string
   is_active: boolean
-  dni: string | null
-  ruc: string | null
+  document_type: ClientDocumentType | null
+  document_number: string | null
 }
 
 export interface Service {
@@ -42,7 +60,24 @@ export interface Service {
   price: number | null
   price_usd: number | null
   color: string
+  /** 'fixed' uses this row's own duration_minutes/price/price_usd. 'preset'
+   * uses service_duration_options instead. 'hourly' uses hourly_rate(_usd)
+   * x a client-chosen whole number of hours within [min_hours, max_hours]. */
+  pricing_mode: 'fixed' | 'preset' | 'hourly'
+  hourly_rate: number | null
+  hourly_rate_usd: number | null
+  min_hours: number | null
+  max_hours: number | null
   is_active: boolean
+}
+
+export interface ServiceDurationOption {
+  id: string
+  service_id: string
+  business_id: string
+  duration_minutes: number
+  price: number | null
+  price_usd: number | null
 }
 
 export interface Resource {
@@ -50,7 +85,7 @@ export interface Resource {
   business_id: string
   name: string
   description: string | null
-  type: 'room' | 'person' | 'equipment' | 'virtual'
+  type: 'room' | 'person' | 'equipment' | 'virtual' | 'parking'
   color: string
   is_active: boolean
 }
@@ -77,6 +112,7 @@ type DashboardDataContextType = {
   services: Service[]
   resources: Resource[]
   serviceResources: ServiceResource[]
+  serviceDurationOptions: ServiceDurationOption[]
   businessHours: BusinessHour[]
   calendarStartHour: number
   calendarEndHour: number
@@ -88,6 +124,7 @@ type DashboardDataContextType = {
   refetchClients: () => Promise<void>
   refetchServicesAndResources: () => Promise<void>
   refetchServiceResources: () => Promise<void>
+  refetchServiceDurationOptions: () => Promise<void>
   refetchBusinessHours: () => Promise<void>
   /**
    * Reservations are only loaded ±RESERVATION_WINDOW_DAYS from when this
@@ -123,6 +160,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
   const [services, setServices] = useState<Service[]>([])
   const [resources, setResources] = useState<Resource[]>([])
   const [serviceResources, setServiceResources] = useState<ServiceResource[]>([])
+  const [serviceDurationOptions, setServiceDurationOptions] = useState<ServiceDurationOption[]>([])
   const [businessHours, setBusinessHours] = useState<BusinessHour[]>([])
   const [calendarStartHour, setCalendarStartHour] = useState(7)
   const [calendarEndHour, setCalendarEndHour] = useState(21)
@@ -160,7 +198,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
     const fetchAll = async () => {
       try {
         const defaultWindow = getDefaultReservationWindow()
-        const [reservationsRes, clientsRes, servicesRes, resourcesRes, hoursRes, serviceResourcesRes] = await Promise.all([
+        const [reservationsRes, clientsRes, servicesRes, resourcesRes, hoursRes, serviceResourcesRes, durationOptionsRes] = await Promise.all([
           supabase
             .from('reservations')
             .select('*')
@@ -191,6 +229,10 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
             .from('service_resources')
             .select('*')
             .eq('business_id', currentBusiness.id),
+          supabase
+            .from('service_duration_options')
+            .select('*')
+            .eq('business_id', currentBusiness.id),
         ])
 
         setReservations(reservationsRes.data || [])
@@ -199,6 +241,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         setServices(servicesRes.data || [])
         setResources(resourcesRes.data || [])
         setServiceResources(serviceResourcesRes.data || [])
+        setServiceDurationOptions(durationOptionsRes.data || [])
         applyBusinessHours(hoursRes.data || [])
       } catch (err) {
         console.error('[dashboard-data] Error fetching data:', err)
@@ -286,6 +329,15 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
     setServiceResources(data || [])
   }, [currentBusiness?.id])
 
+  const refetchServiceDurationOptions = useCallback(async () => {
+    if (!currentBusiness) return
+    const { data } = await supabase
+      .from('service_duration_options')
+      .select('*')
+      .eq('business_id', currentBusiness.id)
+    setServiceDurationOptions(data || [])
+  }, [currentBusiness?.id])
+
   const refetchBusinessHours = useCallback(async () => {
     if (!currentBusiness) return
     const { data } = await supabase
@@ -303,6 +355,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         services,
         resources,
         serviceResources,
+        serviceDurationOptions,
         businessHours,
         calendarStartHour,
         calendarEndHour,
@@ -312,6 +365,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         refetchClients,
         refetchServicesAndResources,
         refetchServiceResources,
+        refetchServiceDurationOptions,
         refetchBusinessHours,
         ensureReservationsInRange,
       }}

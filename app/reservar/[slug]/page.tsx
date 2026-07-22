@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Calendar as CalendarIcon,
@@ -17,12 +18,16 @@ import {
   ChevronRight,
   CheckCircle2,
   Building2,
+  Copy,
+  Check,
+  ParkingSquare,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Confetti } from '@/components/confetti'
 import { useLanguage } from '@/context/language-context'
 import { capitalizeFirst } from '@/lib/utils'
-import { parseInTimezone, getTzDayOfWeek } from '@/lib/timezone'
+import { parseInTimezone } from '@/lib/timezone'
+import { generateAvailableSlots } from '@/lib/availability'
 
 interface PublicBusiness {
   id: string
@@ -32,12 +37,20 @@ interface PublicBusiness {
   phone: string | null
   timezone: string
   logo_url: string | null
+  offers_parking: boolean
 }
 
 interface PublicResource {
   id: string
   name: string
   color: string
+}
+
+interface PublicDurationOption {
+  id: string
+  duration_minutes: number
+  price: number | null
+  price_usd: number | null
 }
 
 interface PublicService {
@@ -48,6 +61,12 @@ interface PublicService {
   price: number
   price_usd: number | null
   color: string
+  pricing_mode: 'fixed' | 'preset' | 'hourly'
+  hourly_rate: number | null
+  hourly_rate_usd: number | null
+  min_hours: number | null
+  max_hours: number | null
+  duration_options: PublicDurationOption[]
   resources: PublicResource[]
 }
 
@@ -58,55 +77,7 @@ interface PublicBusinessHour {
   is_closed: boolean
 }
 
-type Step = 'service' | 'resource' | 'datetime' | 'contact' | 'success'
-
-const SLOT_INTERVAL_MINUTES = 30
-
-function toMinutes(t: string) {
-  const [h, m] = t.split(':').map(Number)
-  return h * 60 + m
-}
-
-function generateSlots(
-  dateStr: string,
-  hours: PublicBusinessHour[],
-  durationMinutes: number,
-  busy: { start_time: string; end_time: string }[],
-  tz: string
-): Date[] {
-  const dayOfWeek = getTzDayOfWeek(dateStr, tz)
-  const bh = hours.find((h) => h.day_of_week === dayOfWeek)
-
-  let openMinutes: number
-  let closeMinutes: number
-  if (hours.length === 0) {
-    // Owner hasn't configured business hours yet - default to a permissive
-    // range instead of looking fully booked to every visitor. Matches the
-    // internal reservation modal's own fallback (hoursError skips the
-    // check entirely when businessHours is empty).
-    openMinutes = 7 * 60
-    closeMinutes = 21 * 60
-  } else {
-    if (!bh || bh.is_closed) return []
-    openMinutes = toMinutes(bh.open_time)
-    closeMinutes = toMinutes(bh.close_time)
-  }
-
-  const busyRanges = busy.map((b) => ({ start: new Date(b.start_time), end: new Date(b.end_time) }))
-  const now = new Date()
-  const slots: Date[] = []
-
-  for (let m = openMinutes; m + durationMinutes <= closeMinutes; m += SLOT_INTERVAL_MINUTES) {
-    const hh = String(Math.floor(m / 60)).padStart(2, '0')
-    const mm = String(m % 60).padStart(2, '0')
-    const slotStart = parseInTimezone(`${dateStr}T${hh}:${mm}`, tz)
-    const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60000)
-    if (slotStart < now) continue
-    if (busyRanges.some((b) => slotStart < b.end && slotEnd > b.start)) continue
-    slots.push(slotStart)
-  }
-  return slots
-}
+type Step = 'service' | 'duration' | 'hours' | 'resource' | 'datetime' | 'contact' | 'success'
 
 function todayInTz(tz: string) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date())
@@ -133,7 +104,17 @@ export default function PublicBookingPage() {
 
   const [step, setStep] = useState<Step>('service')
   const [selectedService, setSelectedService] = useState<PublicService | null>(null)
+  const [selectedDurationOptionId, setSelectedDurationOptionId] = useState<string | null>(null)
+  const [selectedHours, setSelectedHours] = useState<number | ''>('')
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null)
+
+  const selectedDurationOption = selectedService?.duration_options.find((o) => o.id === selectedDurationOptionId) ?? null
+  const effectiveDurationMinutes =
+    selectedService?.pricing_mode === 'preset'
+      ? selectedDurationOption?.duration_minutes ?? 0
+      : selectedService?.pricing_mode === 'hourly'
+        ? (selectedHours || 0) * 60
+        : selectedService?.duration_minutes ?? 0
 
   const [selectedDate, setSelectedDate] = useState('')
   const [slots, setSlots] = useState<Date[]>([])
@@ -141,8 +122,11 @@ export default function PublicBookingPage() {
   const [selectedSlot, setSelectedSlot] = useState<Date | null>(null)
 
   const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '', notes: '' })
+  const [needsParking, setNeedsParking] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
+  const [manageReservationId, setManageReservationId] = useState<string | null>(null)
+  const [linkCopied, setLinkCopied] = useState(false)
 
   useEffect(() => {
     if (!slug) return
@@ -161,7 +145,18 @@ export default function PublicBookingPage() {
         supabase.rpc('get_public_services', { p_business_id: biz.id }),
         supabase.rpc('get_public_business_hours', { p_business_id: biz.id }),
       ])
-      setServices((servicesData as PublicService[] | null) || [])
+      // A 'preset' service with no options, or an 'hourly' service with no
+      // rate configured, can't actually be booked (no way to resolve a
+      // duration/price) - never show either to a real client here, even
+      // though the Services form now blocks saving into those states.
+      const fetchedServices = (servicesData as PublicService[] | null) || []
+      setServices(
+        fetchedServices.filter((s) => {
+          if (s.pricing_mode === 'preset') return s.duration_options.length > 0
+          if (s.pricing_mode === 'hourly') return !!(s.hourly_rate || s.hourly_rate_usd)
+          return true
+        })
+      )
       setBusinessHours((hoursData as PublicBusinessHour[] | null) || [])
       setSelectedDate(todayInTz(biz.timezone))
       setLoading(false)
@@ -172,7 +167,7 @@ export default function PublicBookingPage() {
   const tz = business?.timezone || 'America/Lima'
 
   useEffect(() => {
-    if (step !== 'datetime' || !business || !selectedService || !selectedDate) return
+    if (step !== 'datetime' || !business || !selectedService || !selectedDate || !effectiveDurationMinutes) return
     const loadSlots = async () => {
       setLoadingSlots(true)
       setSelectedSlot(null)
@@ -185,14 +180,13 @@ export default function PublicBookingPage() {
         p_to: dayEnd.toISOString(),
       })
       const busy = (data as { start_time: string; end_time: string }[] | null) || []
-      setSlots(generateSlots(selectedDate, businessHours, selectedService.duration_minutes, busy, tz))
+      setSlots(generateAvailableSlots(selectedDate, businessHours, effectiveDurationMinutes, busy, tz))
       setLoadingSlots(false)
     }
     loadSlots()
-  }, [step, business, selectedService, selectedResourceId, selectedDate, businessHours])
+  }, [step, business, selectedService, selectedResourceId, selectedDate, businessHours, effectiveDurationMinutes])
 
-  const handleSelectService = (svc: PublicService) => {
-    setSelectedService(svc)
+  const goToResourceOrDatetime = (svc: PublicService) => {
     if (svc.resources.length > 1) {
       setSelectedResourceId(null)
       setStep('resource')
@@ -200,6 +194,33 @@ export default function PublicBookingPage() {
       setSelectedResourceId(svc.resources[0]?.id ?? null)
       setStep('datetime')
     }
+  }
+
+  // Which step comes right before the resource/datetime steps, for back
+  // buttons - depends on how this service resolves its duration.
+  const stepBeforeResource = (svc: PublicService): Step =>
+    svc.pricing_mode === 'preset' ? 'duration' : svc.pricing_mode === 'hourly' ? 'hours' : 'service'
+
+  const handleSelectService = (svc: PublicService) => {
+    setSelectedService(svc)
+    setSelectedDurationOptionId(null)
+    setSelectedHours('')
+    if (svc.pricing_mode === 'preset') {
+      setStep('duration')
+    } else if (svc.pricing_mode === 'hourly') {
+      setStep('hours')
+    } else {
+      goToResourceOrDatetime(svc)
+    }
+  }
+
+  const handleSelectDurationOption = (optionId: string) => {
+    setSelectedDurationOptionId(optionId)
+    if (selectedService) goToResourceOrDatetime(selectedService)
+  }
+
+  const handleConfirmHours = () => {
+    if (selectedService) goToResourceOrDatetime(selectedService)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -217,19 +238,26 @@ export default function PublicBookingPage() {
         p_client_email: contactForm.email || null,
         p_client_phone: contactForm.phone || null,
         p_notes: contactForm.notes || null,
+        p_duration_option_id: selectedDurationOptionId,
+        p_needs_parking: needsParking,
+        p_hours: selectedHours || null,
       })
       if (error) throw error
-      const result = data as { success?: boolean; error?: string }
+      const result = data as { success?: boolean; error?: string; reservation_id?: string }
       if (result.error) {
         const messages: Record<string, string> = {
           time_conflict: tr.errorTimeConflict,
           time_in_past: tr.errorTimeConflict,
           name_required: tr.errorNameRequired,
           contact_required: tr.errorContactRequired,
+          duration_option_not_found: tr.errorGeneric,
+          parking_unavailable: tr.errorParkingUnavailable,
+          invalid_hours: tr.errorGeneric,
         }
         setSubmitError(messages[result.error] || tr.errorGeneric)
         return
       }
+      setManageReservationId(result.reservation_id || null)
       setStep('success')
     } catch (err) {
       console.error('[v0] Error creating public reservation:', err)
@@ -239,8 +267,26 @@ export default function PublicBookingPage() {
     }
   }
 
-  const priceLabel = (svc: PublicService) =>
-    svc.price_usd ? `$ ${svc.price_usd}` : svc.price ? `S/ ${svc.price}` : ''
+  const priceLabel = (svc: PublicService) => {
+    if (svc.pricing_mode === 'preset') {
+      const prices = svc.duration_options
+        .map((o) => o.price_usd ?? o.price)
+        .filter((p): p is number => p != null)
+      if (prices.length === 0) return ''
+      const min = Math.min(...prices)
+      const isUsd = svc.duration_options.some((o) => o.price_usd != null)
+      return `${tr.fromPrice} ${isUsd ? '$' : 'S/'} ${min}`
+    }
+    if (svc.pricing_mode === 'hourly') {
+      const rate = svc.hourly_rate_usd ?? svc.hourly_rate
+      if (!rate) return ''
+      return `${svc.hourly_rate_usd ? '$' : 'S/'} ${rate}${tr.perHourShort}`
+    }
+    return svc.price_usd ? `$ ${svc.price_usd}` : svc.price ? `S/ ${svc.price}` : ''
+  }
+
+  const optionPriceLabel = (option: PublicDurationOption) =>
+    option.price_usd ? `$ ${option.price_usd}` : option.price ? `S/ ${option.price}` : ''
 
   const LanguageToggle = (
     <div className="mb-4 flex w-full max-w-lg justify-end">
@@ -337,18 +383,54 @@ export default function PublicBookingPage() {
                 </p>
               </div>
             )}
+            {needsParking && (
+              <div className="flex w-full items-center gap-2 rounded-lg border bg-muted/40 p-3 text-left text-sm text-muted-foreground">
+                <ParkingSquare className="h-4 w-4 shrink-0" />
+                {tr.parkingConfirmed}
+              </div>
+            )}
+            {manageReservationId && (
+              <div className="w-full space-y-2 rounded-lg border border-dashed p-3 text-left">
+                <p className="text-xs font-medium text-foreground">{tr.manageLinkTitle}</p>
+                <p className="text-xs text-muted-foreground">{tr.manageLinkDesc}</p>
+                <div className="flex gap-2">
+                  <Input
+                    readOnly
+                    value={typeof window !== 'undefined' ? `${window.location.origin}/reservar/cita/${manageReservationId}` : ''}
+                    className="font-mono text-xs"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="shrink-0"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(`${window.location.origin}/reservar/cita/${manageReservationId}`)
+                      setLinkCopied(true)
+                      setTimeout(() => setLinkCopied(false), 2000)
+                    }}
+                  >
+                    {linkCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         ) : (
           <>
             <CardHeader>
               <CardTitle>
                 {step === 'service' && tr.stepService}
+                {step === 'duration' && tr.stepDuration}
+                {step === 'hours' && tr.stepHours}
                 {step === 'resource' && tr.stepResource}
                 {step === 'datetime' && tr.stepDatetime}
                 {step === 'contact' && tr.stepContact}
               </CardTitle>
               <CardDescription>
                 {step === 'service' && tr.stepServiceDesc}
+                {step === 'duration' && tr.stepDurationDesc}
+                {step === 'hours' && tr.stepHoursDesc}
                 {step === 'resource' && tr.stepResourceDesc}
                 {step === 'datetime' && tr.stepDatetimeDesc}
                 {step === 'contact' && tr.stepContactDesc}
@@ -371,7 +453,9 @@ export default function PublicBookingPage() {
                         <div className="min-w-0 flex-1">
                           <p className="font-medium">{svc.name}</p>
                           <p className="text-xs text-muted-foreground">
-                            {svc.duration_minutes} min
+                            {svc.pricing_mode === 'preset' && tr.flexibleDurationTag}
+                            {svc.pricing_mode === 'hourly' && tr.hourlyTag}
+                            {svc.pricing_mode === 'fixed' && `${svc.duration_minutes} min`}
                             {priceLabel(svc) && ` · ${priceLabel(svc)}`}
                           </p>
                         </div>
@@ -382,11 +466,92 @@ export default function PublicBookingPage() {
                 </div>
               )}
 
-              {step === 'resource' && selectedService && (
+              {step === 'duration' && selectedService && (
                 <div className="space-y-4">
                   <button
                     type="button"
                     onClick={() => setStep('service')}
+                    className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    {tr.back}
+                  </button>
+                  <div className="space-y-2">
+                    {selectedService.duration_options.length === 0 ? (
+                      <p className="py-6 text-center text-sm text-muted-foreground">{tr.noDurationOptions}</p>
+                    ) : (
+                      selectedService.duration_options.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => handleSelectDurationOption(option.id)}
+                          className="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50"
+                        >
+                          <span className="flex-1 font-medium">
+                            {option.duration_minutes} min
+                            {optionPriceLabel(option) && ` · ${optionPriceLabel(option)}`}
+                          </span>
+                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {step === 'hours' && selectedService && (
+                <div className="space-y-4">
+                  <button
+                    type="button"
+                    onClick={() => setStep('service')}
+                    className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    {tr.back}
+                  </button>
+                  <div className="space-y-2">
+                    <Label htmlFor="pb-hours">{tr.hoursLabel}</Label>
+                    <Input
+                      id="pb-hours"
+                      type="number"
+                      min={selectedService.min_hours ?? 1}
+                      max={selectedService.max_hours ?? undefined}
+                      step={1}
+                      value={selectedHours}
+                      onChange={(e) => setSelectedHours(e.target.value !== '' ? parseInt(e.target.value) : '')}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {tr.hoursRangeHint
+                        .replace('{min}', String(selectedService.min_hours ?? 1))
+                        .replace('{max}', String(selectedService.max_hours ?? '—'))}
+                    </p>
+                    {selectedHours !== '' && (selectedService.hourly_rate_usd ?? selectedService.hourly_rate) && (
+                      <p className="text-sm font-medium">
+                        {tr.totalPriceLabel}: {selectedService.hourly_rate_usd ? '$' : 'S/'}{' '}
+                        {selectedHours * (selectedService.hourly_rate_usd ?? selectedService.hourly_rate ?? 0)}
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    className="w-full"
+                    disabled={
+                      selectedHours === '' ||
+                      selectedHours < (selectedService.min_hours ?? 1) ||
+                      selectedHours > (selectedService.max_hours ?? Infinity)
+                    }
+                    onClick={handleConfirmHours}
+                  >
+                    {tr.continueBtn}
+                  </Button>
+                </div>
+              )}
+
+              {step === 'resource' && selectedService && (
+                <div className="space-y-4">
+                  <button
+                    type="button"
+                    onClick={() => setStep(stepBeforeResource(selectedService))}
                     className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
                   >
                     <ChevronLeft className="h-4 w-4" />
@@ -416,7 +581,9 @@ export default function PublicBookingPage() {
                 <div className="space-y-4">
                   <button
                     type="button"
-                    onClick={() => setStep(selectedService.resources.length > 1 ? 'resource' : 'service')}
+                    onClick={() =>
+                      setStep(selectedService.resources.length > 1 ? 'resource' : stepBeforeResource(selectedService))
+                    }
                     className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
                   >
                     <ChevronLeft className="h-4 w-4" />
@@ -499,7 +666,14 @@ export default function PublicBookingPage() {
                   </button>
 
                   <div className="rounded-lg border bg-muted/40 p-3 text-sm">
-                    <p className="font-medium">{selectedService.name}</p>
+                    <p className="font-medium">
+                      {selectedService.name}
+                      {selectedDurationOption &&
+                        ` (${selectedDurationOption.duration_minutes} min${
+                          optionPriceLabel(selectedDurationOption) ? ` · ${optionPriceLabel(selectedDurationOption)}` : ''
+                        })`}
+                      {selectedService.pricing_mode === 'hourly' && selectedHours !== '' && ` (${selectedHours} h)`}
+                    </p>
                     <p className="flex items-center gap-1 text-muted-foreground">
                       <Clock className="h-3.5 w-3.5" />
                       {capitalizeFirst(
@@ -562,6 +736,18 @@ export default function PublicBookingPage() {
                       disabled={submitting}
                     />
                   </div>
+
+                  {business.offers_parking && (
+                    <label className="flex items-center gap-2 rounded-lg border p-3 text-sm">
+                      <Checkbox
+                        checked={needsParking}
+                        onCheckedChange={(checked) => setNeedsParking(checked === true)}
+                        disabled={submitting}
+                      />
+                      <ParkingSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      {tr.needsParkingLabel}
+                    </label>
+                  )}
 
                   <Button type="submit" className="w-full gap-2" disabled={submitting || !contactForm.name}>
                     {submitting && <Loader2 className="h-4 w-4 animate-spin" />}

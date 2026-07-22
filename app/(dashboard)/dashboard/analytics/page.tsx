@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
 import { PremiumFeature } from '@/components/premium-feature'
-import { CalendarDays, DollarSign, Gauge, Trophy } from 'lucide-react'
+import { CalendarDays, DollarSign, Gauge, Trophy, UserX, Building2, Eye } from 'lucide-react'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useDashboardData } from '@/context/dashboard-data-context'
 import { useLanguage } from '@/context/language-context'
@@ -18,6 +18,8 @@ import {
   getServiceBreakdown,
   getTotalRevenue,
   getOccupancy,
+  getNoShowRate,
+  getVisitsCount,
   type DateRangeOption,
 } from '@/lib/analytics'
 
@@ -29,6 +31,7 @@ export default function AnalyticsPage() {
   const [range, setRange] = useState<DateRangeOption>('30d')
 
   const timezone = currentBusiness?.timezone || 'America/Lima'
+  const currencySymbol = currentBusiness?.currency === 'USD' ? '$' : 'S/'
   const loading = businessLoading || dataLoading
 
   const { from, to } = useMemo(() => getRangeBounds(range), [range])
@@ -54,6 +57,14 @@ export default function AnalyticsPage() {
     () => getOccupancy(reservations, businessHours, from, to, timezone),
     [reservations, businessHours, from, to, timezone]
   )
+  const noShowRate = useMemo(
+    () => getNoShowRate(reservations, from, to),
+    [reservations, from, to]
+  )
+  const visitsCount = useMemo(
+    () => getVisitsCount(reservations, from, to),
+    [reservations, from, to]
+  )
   const totalReservations = useMemo(
     () => serviceBreakdown.reduce((sum, s) => sum + s.count, 0),
     [serviceBreakdown]
@@ -71,6 +82,16 @@ export default function AnalyticsPage() {
         <Skeleton className="h-10 w-64" />
         <Skeleton className="h-24 w-full" />
         <Skeleton className="h-80 w-full" />
+      </div>
+    )
+  }
+
+  if (currentBusiness?.role === 'sales') {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center">
+        <Building2 className="mb-4 h-12 w-12 text-muted-foreground/50" />
+        <h2 className="text-xl font-semibold">{tr.accessRestricted}</h2>
+        <p className="mt-2 text-muted-foreground">{tr.accessRestrictedDesc}</p>
       </div>
     )
   }
@@ -96,7 +117,7 @@ export default function AnalyticsPage() {
 
       <PremiumFeature featureName={tr.premiumTitle}>
         <div className="space-y-4 sm:space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-sm font-medium">
@@ -117,7 +138,7 @@ export default function AnalyticsPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold">S/ {totalRevenue.toFixed(0)}</div>
+                <div className="text-3xl font-bold">{currencySymbol} {totalRevenue.toFixed(0)}</div>
               </CardContent>
             </Card>
 
@@ -150,6 +171,34 @@ export default function AnalyticsPage() {
                     {topService.count} {tr.reservationsUnit}
                   </p>
                 )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm font-medium">
+                  <UserX className="h-4 w-4 text-muted-foreground" />
+                  {tr.kpiNoShowRate}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold">{noShowRate.rate}%</div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {noShowRate.noShows} {tr.hoursBookedOf} {noShowRate.total} {tr.reservationsUnit}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm font-medium">
+                  <Eye className="h-4 w-4 text-muted-foreground" />
+                  {tr.kpiVisits}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold">{visitsCount}</div>
+                <p className="mt-1 text-xs text-muted-foreground">{tr.kpiVisitsDesc}</p>
               </CardContent>
             </Card>
           </div>

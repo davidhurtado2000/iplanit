@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ChevronLeft, ChevronRight, CalendarDays, Clock, Check } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CalendarDays, Clock, Check, ParkingSquare } from 'lucide-react'
 import type { CalendarView } from '@/lib/types'
 import { cn, capitalizeFirst } from '@/lib/utils'
 
@@ -49,7 +49,7 @@ function blockHeight(startStr: string, endStr: string) {
 }
 
 // ─── Interfaces ────────────────────────────────────────────────────────────
-interface Resource { id: string; name: string; type: 'room' | 'person' | 'equipment' | 'virtual'; color: string }
+interface Resource { id: string; name: string; type: 'room' | 'person' | 'equipment' | 'virtual' | 'parking'; color: string }
 interface Client   { id: string; name: string }
 interface Service  { id: string; name: string; duration_minutes: number; color: string }
 
@@ -357,6 +357,14 @@ function DayView({
                           <span className="absolute right-1 top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white/90 text-foreground shadow-sm">
                             {r.status === 'pending' && <Clock className="h-2 w-2" />}
                             {r.status === 'completed' && <Check className="h-2 w-2" />}
+                          </span>
+                        )}
+                        {!isShort && r.parking_resource_id && (
+                          <span
+                            className="absolute left-1 top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white/90 text-foreground shadow-sm"
+                            title="Cochera asignada"
+                          >
+                            <ParkingSquare className="h-2 w-2" />
                           </span>
                         )}
                         {isShort ? (

@@ -103,10 +103,19 @@ export interface ServiceBreakdownRow {
 
 /**
  * Reservations and revenue grouped by service, sorted by most-booked first.
- * Cancelled reservations don't count toward either. Revenue uses
- * service.price (Soles) only - price_usd is a display-only reference field
- * (enforced as required vs. optional in the service form), so there's a
- * single, unambiguous number here rather than silently mixing currencies.
+ * Cancelled reservations don't count toward either. Revenue reads each
+ * reservation's own price/price_usd - a snapshot of what was actually
+ * charged at booking time (see reservation-modal.tsx), not a live lookup of
+ * the service's current price. That snapshot is what makes flexible-
+ * duration pricing and one-off quotes possible in the first place, and as
+ * a side effect it also means editing a service's price later no longer
+ * silently rewrites historical revenue. A business bills in a single
+ * currency (businesses.currency), so price || price_usd always picks the
+ * one actually in use. No-shows still count as a booking (kept in `count`,
+ * for demand/popularity purposes) but never contribute revenue since
+ * nothing was actually collected. Visits (type = 'visit', see
+ * getVisitsCount) are excluded entirely - they're often not tied to a
+ * specific service at all, and never generate revenue.
  */
 export function getServiceBreakdown(
   reservations: Reservation[],
@@ -114,15 +123,17 @@ export function getServiceBreakdown(
   from: Date,
   to: Date
 ): ServiceBreakdownRow[] {
-  const inRange = filterReservations(reservations, from, to)
+  const inRange = filterReservations(reservations, from, to).filter((r) => r.type !== 'visit' && r.service_id)
   const byService = new Map<string, { count: number; revenue: number }>()
 
   for (const r of inRange) {
-    const entry = byService.get(r.service_id) ?? { count: 0, revenue: 0 }
+    const serviceId = r.service_id as string
+    const entry = byService.get(serviceId) ?? { count: 0, revenue: 0 }
     entry.count += 1
-    const service = services.find((s) => s.id === r.service_id)
-    entry.revenue += service?.price ?? 0
-    byService.set(r.service_id, entry)
+    if (r.status !== 'no_show') {
+      entry.revenue += (r.price || r.price_usd) ?? 0
+    }
+    byService.set(serviceId, entry)
   }
 
   return Array.from(byService.entries())
@@ -141,6 +152,32 @@ export function getServiceBreakdown(
 
 export function getTotalRevenue(breakdown: ServiceBreakdownRow[]): number {
   return breakdown.reduce((sum, row) => sum + row.revenue, 0)
+}
+
+export interface NoShowRateResult {
+  noShows: number
+  total: number
+  rate: number
+}
+
+/** Share of non-cancelled reservations that ended up as a no-show, in the given range. */
+export function getNoShowRate(reservations: Reservation[], from: Date, to: Date): NoShowRateResult {
+  const inRange = filterReservations(reservations, from, to)
+  const noShows = inRange.filter((r) => r.status === 'no_show').length
+  const total = inRange.length
+  const rate = total > 0 ? Math.round((noShows / total) * 100) : 0
+  return { noShows, total, rate }
+}
+
+/**
+ * Count of showroom visits (type = 'visit') in the range, kept as its own
+ * independent number rather than trying to trace which visit converted
+ * into which later booking - real attribution needs a way to link the two
+ * explicitly, which isn't part of this v1. Comparing this against the
+ * reservations KPI is left to the business owner to eyeball.
+ */
+export function getVisitsCount(reservations: Reservation[], from: Date, to: Date): number {
+  return filterReservations(reservations, from, to).filter((r) => r.type === 'visit').length
 }
 
 export interface OccupancyResult {
