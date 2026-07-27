@@ -65,6 +65,7 @@ export default function RegisterPage() {
     timezone: '',
   })
   const [error, setError] = useState('')
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
 
   const passwordChecks = getPasswordChecks(formData.password)
 
@@ -175,11 +176,19 @@ export default function RegisterPage() {
       setError(tr.fillAllFields)
       return
     }
+    if (!acceptedTerms) {
+      setError(tr.acceptTermsRequired)
+      return
+    }
 
     await submitSignUp(true)
   }
 
   const handleSkipBusiness = async () => {
+    if (!acceptedTerms) {
+      setError(tr.acceptTermsRequired)
+      return
+    }
     await submitSignUp(false)
   }
 
@@ -365,6 +374,26 @@ export default function RegisterPage() {
                   </Select>
                 </div>
 
+                <label className="flex items-start gap-2 text-sm text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={acceptedTerms}
+                    onChange={(e) => setAcceptedTerms(e.target.checked)}
+                    disabled={isLoading}
+                    className="mt-0.5 rounded"
+                  />
+                  <span>
+                    {tr.acceptTermsLabel}{' '}
+                    <Link href="/terms" target="_blank" className="text-primary hover:underline">
+                      {tr.termsLinkText}
+                    </Link>{' '}
+                    {tr.acceptTermsAnd}{' '}
+                    <Link href="/privacy" target="_blank" className="text-primary hover:underline">
+                      {tr.privacyLinkText}
+                    </Link>
+                  </span>
+                </label>
+
                 <div className="flex gap-2">
                   <Button
                     type="button"
@@ -375,7 +404,7 @@ export default function RegisterPage() {
                   >
                     {tr.back}
                   </Button>
-                  <Button type="submit" className="flex-1" disabled={isLoading}>
+                  <Button type="submit" className="flex-1" disabled={isLoading || !acceptedTerms}>
                     {isLoading ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -390,7 +419,7 @@ export default function RegisterPage() {
                 <button
                   type="button"
                   onClick={handleSkipBusiness}
-                  disabled={isLoading || !formData.name || !formData.email || !formData.password}
+                  disabled={isLoading || !formData.name || !formData.email || !formData.password || !acceptedTerms}
                   className="w-full text-center text-sm text-muted-foreground hover:text-foreground hover:underline disabled:opacity-50 disabled:hover:no-underline"
                 >
                   {tr.skipBusiness}
@@ -407,6 +436,11 @@ export default function RegisterPage() {
           </div>
         </CardContent>
       </Card>
+
+      <div className="mt-6 flex gap-4 text-xs text-muted-foreground">
+        <Link href="/terms" className="hover:underline">{t.legalTerms}</Link>
+        <Link href="/privacy" className="hover:underline">{t.legalPrivacy}</Link>
+      </div>
     </div>
   )
 }

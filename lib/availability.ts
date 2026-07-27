@@ -30,7 +30,9 @@ export function generateAvailableSlots(
   hours: BusinessHourRow[],
   durationMinutes: number,
   busy: BusyRange[],
-  tz: string
+  tz: string,
+  bufferBeforeMin = 0,
+  bufferAfterMin = 0
 ): Date[] {
   if (durationMinutes <= 0) return []
 
@@ -60,7 +62,15 @@ export function generateAvailableSlots(
     const slotStart = parseInTimezone(`${dateStr}T${hh}:${mm}`, tz)
     const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60000)
     if (slotStart < now) continue
-    if (busyRanges.some((b) => slotStart < b.end && slotEnd > b.start)) continue
+    // Busy ranges are expanded by each EXISTING reservation's own buffer
+    // before they get here - expanding this candidate by its OWN buffer too
+    // makes the check bidirectional, so a service with no buffer still can't
+    // be booked inside someone else's cleanup window, and a service that
+    // needs its own cleanup won't get scheduled right up against the next
+    // appointment either.
+    const checkStart = new Date(slotStart.getTime() - bufferBeforeMin * 60000)
+    const checkEnd = new Date(slotEnd.getTime() + bufferAfterMin * 60000)
+    if (busyRanges.some((b) => checkStart < b.end && checkEnd > b.start)) continue
     slots.push(slotStart)
   }
   return slots

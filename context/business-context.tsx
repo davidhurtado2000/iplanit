@@ -28,6 +28,7 @@ interface Business {
    * When true, unlocks the Cochera nav item and the parking checkbox on
    * reservations (internal and public booking page). */
   offers_parking: boolean
+  logo_url: string | null
   created_at: string
   updated_at: string
   /** 'owner' is computed client-side from owner_id; 'admin'/'sales' come

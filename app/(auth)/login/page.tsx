@@ -222,6 +222,11 @@ function LoginForm() {
           </div>
         </CardContent>
       </Card>
+
+      <div className="mt-6 flex gap-4 text-xs text-muted-foreground">
+        <Link href="/terms" className="hover:underline">{t.legalTerms}</Link>
+        <Link href="/privacy" className="hover:underline">{t.legalPrivacy}</Link>
+      </div>
     </div>
   )
 }

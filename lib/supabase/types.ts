@@ -12,6 +12,33 @@ export interface Database {
   }
   public: {
     Tables: {
+      feedback: {
+        Row: {
+          id: string
+          user_id: string
+          business_id: string | null
+          message: string
+          page_url: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          business_id?: string | null
+          message: string
+          page_url?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          business_id?: string | null
+          message?: string
+          page_url?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           id: string
@@ -135,6 +162,8 @@ export interface Database {
           hourly_rate_usd: number | null
           min_hours: number | null
           max_hours: number | null
+          buffer_before_min: number
+          buffer_after_min: number
           is_active: boolean
           created_at: string
           updated_at: string
@@ -153,6 +182,8 @@ export interface Database {
           hourly_rate_usd?: number | null
           min_hours?: number | null
           max_hours?: number | null
+          buffer_before_min?: number
+          buffer_after_min?: number
           is_active?: boolean
           created_at?: string
           updated_at?: string
@@ -171,6 +202,8 @@ export interface Database {
           hourly_rate_usd?: number | null
           min_hours?: number | null
           max_hours?: number | null
+          buffer_before_min?: number
+          buffer_after_min?: number
           is_active?: boolean
           created_at?: string
           updated_at?: string

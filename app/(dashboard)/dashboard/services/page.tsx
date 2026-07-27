@@ -77,6 +77,8 @@ interface Service {
   hourly_rate_usd: number | null
   min_hours: number | null
   max_hours: number | null
+  buffer_before_min: number
+  buffer_after_min: number
   is_active: boolean
 }
 
@@ -148,6 +150,8 @@ export default function ServicesPage() {
     hourlyRate: '' as number | '',
     minHours: 1 as number | '',
     maxHours: 8 as number | '',
+    bufferBeforeMin: 0 as number | '',
+    bufferAfterMin: 0 as number | '',
   })
   const [durationOptions, setDurationOptions] = useState<DurationOptionForm[]>([])
   const [selectedResourceIds, setSelectedResourceIds] = useState<string[]>([])
@@ -185,6 +189,8 @@ export default function ServicesPage() {
         hourlyRate: (isUSD ? service.hourly_rate_usd : service.hourly_rate) ?? '',
         minHours: service.min_hours ?? 1,
         maxHours: service.max_hours ?? 8,
+        bufferBeforeMin: service.buffer_before_min ?? 0,
+        bufferAfterMin: service.buffer_after_min ?? 0,
       })
       setDurationOptions(
         serviceDurationOptions
@@ -213,6 +219,8 @@ export default function ServicesPage() {
         hourlyRate: '',
         minHours: 1,
         maxHours: 8,
+        bufferBeforeMin: 0,
+        bufferAfterMin: 0,
       })
       setDurationOptions([])
       setSelectedResourceIds([])
@@ -283,6 +291,8 @@ export default function ServicesPage() {
             : null,
         min_hours: serviceForm.pricingMode === 'hourly' && serviceForm.minHours !== '' ? serviceForm.minHours : null,
         max_hours: serviceForm.pricingMode === 'hourly' && serviceForm.maxHours !== '' ? serviceForm.maxHours : null,
+        buffer_before_min: serviceForm.bufferBeforeMin !== '' ? serviceForm.bufferBeforeMin : 0,
+        buffer_after_min: serviceForm.bufferAfterMin !== '' ? serviceForm.bufferAfterMin : 0,
         business_id: currentBusiness.id,
       }
 
@@ -989,6 +999,39 @@ export default function ServicesPage() {
                 )}
               </div>
             )}
+
+            <div className="space-y-2">
+              <Label>{t.services.bufferLabel}</Label>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="service-buffer-before" className="text-xs font-normal text-muted-foreground">
+                    {t.services.bufferBeforeLabel}
+                  </Label>
+                  <Input
+                    id="service-buffer-before"
+                    type="number"
+                    min={0}
+                    step={5}
+                    value={serviceForm.bufferBeforeMin}
+                    onChange={(e) => setServiceForm({ ...serviceForm, bufferBeforeMin: e.target.value !== '' ? parseInt(e.target.value) || 0 : '' })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="service-buffer-after" className="text-xs font-normal text-muted-foreground">
+                    {t.services.bufferAfterLabel}
+                  </Label>
+                  <Input
+                    id="service-buffer-after"
+                    type="number"
+                    min={0}
+                    step={5}
+                    value={serviceForm.bufferAfterMin}
+                    onChange={(e) => setServiceForm({ ...serviceForm, bufferAfterMin: e.target.value !== '' ? parseInt(e.target.value) || 0 : '' })}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">{t.services.bufferHint}</p>
+            </div>
 
             {resources.length > 0 && (
               <div className="space-y-2">

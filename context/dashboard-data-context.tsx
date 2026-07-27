@@ -68,6 +68,10 @@ export interface Service {
   hourly_rate_usd: number | null
   min_hours: number | null
   max_hours: number | null
+  /** Prep/cleanup minutes around this service's own appointments - see
+   * scripts/040-appointment-buffers.sql. Both default 0, meaning no gap. */
+  buffer_before_min: number
+  buffer_after_min: number
   is_active: boolean
 }
 

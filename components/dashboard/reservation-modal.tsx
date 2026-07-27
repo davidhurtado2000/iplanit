@@ -285,15 +285,35 @@ export function ReservationModal({
   // resource selected means nothing to conflict with, same as the DB
   // exclusion constraint (scripts 012/035), which only applies when
   // resource_id is set.
+  // Each existing reservation's busy window is expanded by its OWN service's
+  // buffer minutes (scripts/040-appointment-buffers.sql) - the candidate
+  // slot being searched then gets expanded by the SELECTED service's own
+  // buffer below, making the check bidirectional (see generateAvailableSlots).
   const busyRanges = formData.resource_id
     ? reservations
         .filter((r) => r.resource_id === formData.resource_id && r.status !== 'cancelled' && r.id !== reservation?.id)
-        .map((r) => ({ start_time: r.start_time, end_time: r.end_time }))
+        .map((r) => {
+          const svc = services.find((s) => s.id === r.service_id)
+          const before = svc?.buffer_before_min || 0
+          const after = svc?.buffer_after_min || 0
+          return {
+            start_time: new Date(new Date(r.start_time).getTime() - before * 60000).toISOString(),
+            end_time: new Date(new Date(r.end_time).getTime() + after * 60000).toISOString(),
+          }
+        })
     : []
 
   const availableSlots =
     slotDate && effectiveDurationMinutes
-      ? generateAvailableSlots(slotDate, businessHours, effectiveDurationMinutes, busyRanges, tz)
+      ? generateAvailableSlots(
+          slotDate,
+          businessHours,
+          effectiveDurationMinutes,
+          busyRanges,
+          tz,
+          selectedService?.buffer_before_min || 0,
+          selectedService?.buffer_after_min || 0
+        )
       : []
 
   const resourceTypeLabel: Record<Resource['type'], string> = {

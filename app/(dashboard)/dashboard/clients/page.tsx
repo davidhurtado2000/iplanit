@@ -2,7 +2,7 @@
 
 import React from "react"
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef, type ChangeEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -66,9 +66,11 @@ import {
   ArrowDown,
   ArrowUpDown,
   Download,
+  Upload,
+  Check,
 } from 'lucide-react'
 import { PremiumButton } from '@/components/premium-feature'
-import { toCsv, downloadCsv } from '@/lib/csv'
+import { toCsv, downloadCsv, parseCsv } from '@/lib/csv'
 
 const AVATAR_COLORS = [
   '#3B82F6',
@@ -119,6 +121,50 @@ interface Client {
 
 const DOCUMENT_TYPES: ClientDocumentType[] = ['dni', 'ruc', 'ein', 'passport', 'other']
 
+interface ImportedClientRow {
+  name: string
+  email: string | null
+  phone: string | null
+  notes: string | null
+  document_type: ClientDocumentType | null
+  document_number: string | null
+}
+
+type ImportField = 'name' | 'email' | 'phone' | 'documentType' | 'documentNumber' | 'notes'
+
+// Lowercased, accent-stripped header names a client is likely to use when
+// exporting their existing list from Excel/Sheets/another CRM - matched
+// against normalizeHeader() output, not the raw file text.
+const IMPORT_HEADER_ALIASES: Record<ImportField, string[]> = {
+  name: ['nombre', 'nombre completo', 'name', 'full name', 'cliente'],
+  email: ['email', 'correo', 'correo electronico', 'e-mail'],
+  phone: ['telefono', 'phone', 'celular', 'whatsapp'],
+  documentType: ['tipo de documento', 'tipo documento', 'document type'],
+  documentNumber: ['documento', 'numero de documento', 'nro documento', 'document number', 'dni', 'ruc'],
+  notes: ['notas', 'notes', 'observaciones', 'comentarios'],
+}
+
+function normalizeHeader(h: string): string {
+  return h
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .trim()
+}
+
+function mapCsvHeaders(header: string[]): Partial<Record<ImportField, number>> {
+  const map: Partial<Record<ImportField, number>> = {}
+  header.forEach((raw, idx) => {
+    const h = normalizeHeader(raw)
+    ;(Object.keys(IMPORT_HEADER_ALIASES) as ImportField[]).forEach((key) => {
+      if (map[key] === undefined && IMPORT_HEADER_ALIASES[key].includes(h)) {
+        map[key] = idx
+      }
+    })
+  })
+  return map
+}
+
 export default function ClientsPage() {
   const { currentBusiness } = useBusinesses()
   const { profile } = useAuth()
@@ -133,6 +179,18 @@ export default function ClientsPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const supabase = createClient()
   const PAGE_SIZE = 10
+
+  const [isImportOpen, setIsImportOpen] = useState(false)
+  const [importPreview, setImportPreview] = useState<{
+    rows: ImportedClientRow[]
+    duplicates: number
+    invalid: number
+    fileName: string
+  } | null>(null)
+  const [isImporting, setIsImporting] = useState(false)
+  const [importSuccessCount, setImportSuccessCount] = useState<number | null>(null)
+  const [importError, setImportError] = useState('')
+  const importFileInputRef = useRef<HTMLInputElement>(null)
 
   const documentTypeLabels: Record<ClientDocumentType, string> = {
     dni: t.clients.documentTypeDni,
@@ -295,6 +353,105 @@ export default function ClientsPage() {
     downloadCsv(`clientes-${currentBusiness?.slug || 'negocio'}.csv`, csv)
   }
 
+  const closeImportModal = () => {
+    setIsImportOpen(false)
+    setImportPreview(null)
+    setImportError('')
+    setImportSuccessCount(null)
+  }
+
+  // Parses the file client-side, matches recognized headers by alias, and
+  // dedupes against both the already-loaded client list (by email/phone,
+  // same match order as create_public_reservation's own dedup) and other
+  // rows within the same file - nothing is written to the DB until the user
+  // reviews the preview and confirms.
+  const handleImportFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setImportError('')
+    setImportSuccessCount(null)
+    try {
+      const allRows = parseCsv(await file.text())
+      if (allRows.length < 2) {
+        setImportError(t.clients.importEmptyFile)
+        return
+      }
+      const [header, ...dataRows] = allRows
+      const colMap = mapCsvHeaders(header)
+      if (colMap.name === undefined) {
+        setImportError(t.clients.importNoNameColumn)
+        return
+      }
+
+      const existingEmails = new Set(clients.filter((c) => c.email).map((c) => c.email!.trim().toLowerCase()))
+      const existingPhones = new Set(clients.filter((c) => c.phone).map((c) => c.phone!.trim()))
+      const seenInFile = new Set<string>()
+
+      const rows: ImportedClientRow[] = []
+      let duplicates = 0
+      let invalid = 0
+
+      for (const row of dataRows) {
+        const get = (key: ImportField) => {
+          const idx = colMap[key]
+          return idx !== undefined ? (row[idx] || '').trim() : ''
+        }
+        const name = get('name')
+        const email = get('email')
+        const phone = get('phone')
+        if (!name || (!email && !phone)) {
+          invalid++
+          continue
+        }
+
+        const dedupeKey = email.toLowerCase() || phone
+        if ((email && existingEmails.has(email.toLowerCase())) || (phone && existingPhones.has(phone)) || seenInFile.has(dedupeKey)) {
+          duplicates++
+          continue
+        }
+        seenInFile.add(dedupeKey)
+
+        const documentNumber = get('documentNumber') || null
+        const rawType = normalizeHeader(get('documentType')) as ClientDocumentType
+        const documentType = DOCUMENT_TYPES.includes(rawType) ? rawType : defaultDocumentType
+
+        rows.push({
+          name,
+          email: email || null,
+          phone: phone || null,
+          notes: get('notes') || null,
+          document_type: documentNumber ? documentType : null,
+          document_number: documentNumber,
+        })
+      }
+
+      setImportPreview({ rows, duplicates, invalid, fileName: file.name })
+    } catch (err) {
+      console.error('[iplanit] Error parsing CSV:', err)
+      setImportError(t.clients.importParseError)
+    }
+  }
+
+  const handleConfirmImport = async () => {
+    if (!currentBusiness || !importPreview || importPreview.rows.length === 0) return
+    setIsImporting(true)
+    try {
+      const { error } = await supabase
+        .from('clients')
+        .insert(importPreview.rows.map((r) => ({ ...r, business_id: currentBusiness.id })))
+      if (error) throw error
+      await refetchClients()
+      setImportSuccessCount(importPreview.rows.length)
+      setImportPreview(null)
+    } catch (err) {
+      console.error('[iplanit] Error importing clients:', err)
+      setImportError(t.clients.importSaveError)
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
   const totalPages = Math.max(1, Math.ceil(sortedClients.length / PAGE_SIZE))
   const paginatedClients = sortedClients.slice(
     (currentPage - 1) * PAGE_SIZE,
@@ -439,6 +596,15 @@ export default function ClientsPage() {
           <p className="text-muted-foreground">{t.clients.subtitle}</p>
         </div>
         <div className="flex gap-2">
+          <PremiumButton
+            variant="outline"
+            className="gap-2"
+            featureName={t.clients.importCsv}
+            onClick={() => setIsImportOpen(true)}
+          >
+            <Upload className="h-4 w-4" />
+            {t.clients.importCsv}
+          </PremiumButton>
           <PremiumButton
             variant="outline"
             className="gap-2"
@@ -814,6 +980,92 @@ export default function ClientsPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import CSV Modal */}
+      <Dialog open={isImportOpen} onOpenChange={(open) => (open ? setIsImportOpen(true) : closeImportModal())}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t.clients.importCsv}</DialogTitle>
+            <DialogDescription>{t.clients.importDesc}</DialogDescription>
+          </DialogHeader>
+
+          {importSuccessCount !== null ? (
+            <div className="flex flex-col items-center gap-2 py-6 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
+                <Check className="h-6 w-6 text-green-600 dark:text-green-500" />
+              </div>
+              <p className="font-medium">{t.clients.importSuccess.replace('{count}', String(importSuccessCount))}</p>
+            </div>
+          ) : importPreview ? (
+            <div className="space-y-4">
+              <p className="truncate text-sm text-muted-foreground">{importPreview.fileName}</p>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-lg border p-2">
+                  <p className="text-lg font-semibold">{importPreview.rows.length}</p>
+                  <p className="text-xs text-muted-foreground">{t.clients.importNew}</p>
+                </div>
+                <div className="rounded-lg border p-2" title={t.clients.importDuplicatesHint}>
+                  <p className="text-lg font-semibold">{importPreview.duplicates}</p>
+                  <p className="text-xs text-muted-foreground">{t.clients.importDuplicates}</p>
+                </div>
+                <div className="rounded-lg border p-2" title={t.clients.importInvalidHint}>
+                  <p className="text-lg font-semibold">{importPreview.invalid}</p>
+                  <p className="text-xs text-muted-foreground">{t.clients.importInvalid}</p>
+                </div>
+              </div>
+              {importPreview.rows.length > 0 && (
+                <div className="max-h-40 overflow-y-auto rounded-md border">
+                  {importPreview.rows.slice(0, 5).map((r, i) => (
+                    <div key={i} className="flex items-center justify-between border-b px-3 py-2 text-sm last:border-b-0">
+                      <span className="font-medium">{r.name}</span>
+                      <span className="truncate text-muted-foreground">{r.email || r.phone}</span>
+                    </div>
+                  ))}
+                  {importPreview.rows.length > 5 && (
+                    <p className="p-2 text-center text-xs text-muted-foreground">
+                      {t.clients.importMoreRows.replace('{count}', String(importPreview.rows.length - 5))}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">{t.clients.importHint}</p>
+              <input
+                ref={importFileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={handleImportFileChange}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full gap-2"
+                onClick={() => importFileInputRef.current?.click()}
+              >
+                <Upload className="h-4 w-4" />
+                {t.clients.importSelectFile}
+              </Button>
+            </div>
+          )}
+
+          {importError && <p className="text-sm text-destructive">{importError}</p>}
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closeImportModal}>
+              {importSuccessCount !== null ? t.clients.closeBtn : t.clients.cancelBtn}
+            </Button>
+            {importPreview && importSuccessCount === null && (
+              <Button type="button" disabled={importPreview.rows.length === 0 || isImporting} onClick={handleConfirmImport}>
+                {isImporting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {t.clients.importConfirm.replace('{count}', String(importPreview.rows.length))}
+              </Button>
+            )}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

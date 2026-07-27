@@ -33,6 +33,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
 import { useDashboardData } from '@/context/dashboard-data-context'
+import { useTheme } from 'next-themes'
 import { createClient } from '@/lib/supabase/client'
 import { translateAuthError, withAuthLockRetry, withTimeout, AuthTimeoutError } from '@/lib/supabase/auth-errors'
 import { getPasswordChecks, isPasswordStrongEnough } from '@/lib/password'
@@ -92,6 +93,8 @@ export default function SettingsPage() {
   const { currentBusiness, loading: businessLoading, updateBusiness } = useBusinesses()
   const { businessHours: realBusinessHours, refetchBusinessHours } = useDashboardData()
   const { language, setLanguage, t } = useLanguage()
+  const { theme, setTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [isCreatingBusiness, setIsCreatingBusiness] = useState(false)
@@ -109,6 +112,9 @@ export default function SettingsPage() {
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
   const [photoError, setPhotoError] = useState('')
   const photoInputRef = useRef<HTMLInputElement>(null)
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false)
+  const [logoError, setLogoError] = useState('')
+  const logoInputRef = useRef<HTMLInputElement>(null)
   const supabase = createClient()
 
   // Staff (Premium team members) can't see/edit Configuracion or manage the
@@ -174,6 +180,13 @@ export default function SettingsPage() {
     emailCancellations: true,
     reminderHours: 24,
   })
+
+  // next-themes reads the resolved theme from localStorage/system on the
+  // client only - rendering the Select before that resolves would show the
+  // wrong value for a flash and risk a hydration mismatch.
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   // Initialize form with user/business data
   useEffect(() => {
@@ -541,6 +554,46 @@ export default function SettingsPage() {
     }
   }
 
+  const handleLogoChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !currentBusiness) return
+
+    setLogoError('')
+
+    if (!file.type.startsWith('image/')) {
+      setLogoError(t.settings.photoInvalidType)
+      return
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setLogoError(t.settings.photoTooLarge)
+      return
+    }
+
+    setIsUploadingLogo(true)
+    try {
+      const ext = file.name.split('.').pop() || 'jpg'
+      const path = `${currentBusiness.id}/logo.${ext}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('business-logos')
+        .upload(path, file, { upsert: true, cacheControl: '3600' })
+      if (uploadError) throw uploadError
+
+      const { data: urlData } = supabase.storage.from('business-logos').getPublicUrl(path)
+      // Cache-bust so the browser doesn't keep showing the previous logo
+      // after an overwrite at the same path.
+      const logoUrl = `${urlData.publicUrl}?t=${Date.now()}`
+
+      await updateBusiness(currentBusiness.id, { logo_url: logoUrl })
+    } catch (err) {
+      console.error('[iplanit] Error uploading business logo:', err)
+      setLogoError(t.settings.photoUploadError)
+    } finally {
+      setIsUploadingLogo(false)
+    }
+  }
+
   const getInitials = (name: string) => {
     return name
       .split(' ')
@@ -710,6 +763,20 @@ export default function SettingsPage() {
                 </Select>
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="profile-theme">{t.theme.label}</Label>
+                <Select value={mounted ? theme : undefined} onValueChange={(value) => setTheme(value)}>
+                  <SelectTrigger className="w-full sm:w-[200px]" id="profile-theme">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="light">{t.theme.light}</SelectItem>
+                    <SelectItem value="dark">{t.theme.dark}</SelectItem>
+                    <SelectItem value="system">{t.theme.system}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               <Separator />
 
               <div className="space-y-4">
@@ -760,6 +827,43 @@ export default function SettingsPage() {
                   <CardDescription>{t.settings.businessDesc}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
+                  <div className="flex items-center gap-4">
+                    <div className="relative">
+                      <Avatar className="h-20 w-20 rounded-lg">
+                        <AvatarImage src={currentBusiness.logo_url || undefined} alt={business.name} />
+                        <AvatarFallback className="rounded-lg text-xl">
+                          <Building2 className="h-8 w-8 text-muted-foreground" />
+                        </AvatarFallback>
+                      </Avatar>
+                      {isUploadingLogo && (
+                        <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-background/70">
+                          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <input
+                        ref={logoInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleLogoChange}
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={isUploadingLogo}
+                        onClick={() => logoInputRef.current?.click()}
+                      >
+                        {isUploadingLogo ? t.settings.logoUploading : t.settings.changeLogo}
+                      </Button>
+                      <p className="mt-1 text-xs text-muted-foreground">{t.settings.logoHint}</p>
+                      {logoError && (
+                        <p className="mt-1 text-xs text-destructive">{logoError}</p>
+                      )}
+                    </div>
+                  </div>
+
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label htmlFor="business-name">{t.settings.businessName}</Label>

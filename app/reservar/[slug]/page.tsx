@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -66,6 +67,8 @@ interface PublicService {
   hourly_rate_usd: number | null
   min_hours: number | null
   max_hours: number | null
+  buffer_before_min: number
+  buffer_after_min: number
   duration_options: PublicDurationOption[]
   resources: PublicResource[]
 }
@@ -180,7 +183,17 @@ export default function PublicBookingPage() {
         p_to: dayEnd.toISOString(),
       })
       const busy = (data as { start_time: string; end_time: string }[] | null) || []
-      setSlots(generateAvailableSlots(selectedDate, businessHours, effectiveDurationMinutes, busy, tz))
+      setSlots(
+        generateAvailableSlots(
+          selectedDate,
+          businessHours,
+          effectiveDurationMinutes,
+          busy,
+          tz,
+          selectedService.buffer_before_min || 0,
+          selectedService.buffer_after_min || 0
+        )
+      )
       setLoadingSlots(false)
     }
     loadSlots()
@@ -762,6 +775,10 @@ export default function PublicBookingPage() {
       </Card>
 
       <p className="mt-6 text-xs text-muted-foreground">{tr.poweredBy}</p>
+      <div className="mt-1 flex gap-3 text-[11px] text-muted-foreground">
+        <Link href="/terms" className="hover:underline">{t.legalTerms}</Link>
+        <Link href="/privacy" className="hover:underline">{t.legalPrivacy}</Link>
+      </div>
     </div>
   )
 }
