@@ -28,7 +28,7 @@ import { Confetti } from '@/components/confetti'
 import { useLanguage } from '@/context/language-context'
 import { capitalizeFirst } from '@/lib/utils'
 import { parseInTimezone } from '@/lib/timezone'
-import { generateAvailableSlots } from '@/lib/availability'
+import { generateAvailableSlots, isDayClosed } from '@/lib/availability'
 
 interface PublicBusiness {
   id: string
@@ -168,6 +168,10 @@ export default function PublicBookingPage() {
   }, [slug])
 
   const tz = business?.timezone || 'America/Lima'
+
+  // Distinguishes "the business doesn't open this day" from "open but fully
+  // booked" for the empty-slots message below - both show 0 slots otherwise.
+  const dayClosed = !!selectedDate && isDayClosed(selectedDate, businessHours, tz)
 
   useEffect(() => {
     if (step !== 'datetime' || !business || !selectedService || !selectedDate || !effectiveDurationMinutes) return
@@ -639,7 +643,9 @@ export default function PublicBookingPage() {
                       <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                     </div>
                   ) : slots.length === 0 ? (
-                    <p className="py-8 text-center text-sm text-muted-foreground">{tr.noSlots}</p>
+                    <p className="py-8 text-center text-sm text-muted-foreground">
+                      {dayClosed ? tr.dayClosed : tr.noSlots}
+                    </p>
                   ) : (
                     <div className="grid grid-cols-3 gap-2">
                       {slots.map((slot) => (

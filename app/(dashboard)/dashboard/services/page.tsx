@@ -155,6 +155,8 @@ export default function ServicesPage() {
   })
   const [durationOptions, setDurationOptions] = useState<DurationOptionForm[]>([])
   const [selectedResourceIds, setSelectedResourceIds] = useState<string[]>([])
+  const [initialFormSnapshot, setInitialFormSnapshot] = useState('')
+  const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false)
 
   const [resourceForm, setResourceForm] = useState({
     name: '',
@@ -175,9 +177,13 @@ export default function ServicesPage() {
 
   const handleOpenServiceModal = (service?: Service) => {
     setDurationOptionsError('')
+    let nextForm: typeof serviceForm
+    let nextDurationOptions: DurationOptionForm[]
+    let nextResourceIds: string[]
+
     if (service) {
       setEditingService(service)
-      setServiceForm({
+      nextForm = {
         name: service.name,
         description: service.description || '',
         duration: service.duration_minutes,
@@ -191,23 +197,19 @@ export default function ServicesPage() {
         maxHours: service.max_hours ?? 8,
         bufferBeforeMin: service.buffer_before_min ?? 0,
         bufferAfterMin: service.buffer_after_min ?? 0,
-      })
-      setDurationOptions(
-        serviceDurationOptions
-          .filter((o) => o.service_id === service.id)
-          .map((o) => ({
-            duration: o.duration_minutes,
-            price: (isUSD ? o.price_usd : o.price) ?? '',
-          }))
-      )
-      setSelectedResourceIds(
-        serviceResources
-          .filter((sr) => sr.service_id === service.id)
-          .map((sr) => sr.resource_id)
-      )
+      }
+      nextDurationOptions = serviceDurationOptions
+        .filter((o) => o.service_id === service.id)
+        .map((o) => ({
+          duration: o.duration_minutes,
+          price: (isUSD ? o.price_usd : o.price) ?? '',
+        }))
+      nextResourceIds = serviceResources
+        .filter((sr) => sr.service_id === service.id)
+        .map((sr) => sr.resource_id)
     } else {
       setEditingService(null)
-      setServiceForm({
+      nextForm = {
         name: '',
         description: '',
         duration: 30,
@@ -221,11 +223,37 @@ export default function ServicesPage() {
         maxHours: 8,
         bufferBeforeMin: 0,
         bufferAfterMin: 0,
-      })
-      setDurationOptions([])
-      setSelectedResourceIds([])
+      }
+      nextDurationOptions = []
+      nextResourceIds = []
     }
+
+    setServiceForm(nextForm)
+    setDurationOptions(nextDurationOptions)
+    setSelectedResourceIds(nextResourceIds)
+    // Snapshot of the just-loaded state, compared against current form state
+    // to know whether to warn before closing - see hasUnsavedChanges below.
+    setInitialFormSnapshot(JSON.stringify({ form: nextForm, durationOptions: nextDurationOptions, resourceIds: nextResourceIds }))
     setIsServiceModalOpen(true)
+  }
+
+  const hasUnsavedChanges =
+    isServiceModalOpen &&
+    initialFormSnapshot !== JSON.stringify({ form: serviceForm, durationOptions, resourceIds: selectedResourceIds })
+
+  // Single funnel for every way the modal can be dismissed (X button,
+  // Escape, backdrop click, or the form's own Cancelar button) so unsaved
+  // changes can never leak past this check.
+  const handleServiceModalOpenChange = (open: boolean) => {
+    if (open) {
+      setIsServiceModalOpen(true)
+      return
+    }
+    if (hasUnsavedChanges) {
+      setShowUnsavedConfirm(true)
+      return
+    }
+    setIsServiceModalOpen(false)
   }
 
   const addDurationOption = () => {
@@ -242,6 +270,13 @@ export default function ServicesPage() {
 
   const handleSaveService = async (e: React.FormEvent) => {
     e.preventDefault()
+    await saveService()
+  }
+
+  // Extracted from handleSaveService so the "Guardar" option in the
+  // unsaved-changes confirmation (triggered when closing the modal, not
+  // submitting the form) can reuse the exact same validation/save logic.
+  const saveService = async () => {
     if (!currentBusiness) return
 
     setDurationOptionsError('')
@@ -792,7 +827,7 @@ export default function ServicesPage() {
       )}
 
       {/* Service Modal */}
-      <Dialog open={isServiceModalOpen} onOpenChange={setIsServiceModalOpen}>
+      <Dialog open={isServiceModalOpen} onOpenChange={handleServiceModalOpenChange}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
@@ -1089,7 +1124,7 @@ export default function ServicesPage() {
             </div>
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsServiceModalOpen(false)} disabled={saving}>
+              <Button type="button" variant="outline" onClick={() => handleServiceModalOpenChange(false)} disabled={saving}>
                 {t.services.cancelBtn}
               </Button>
               <Button type="submit" disabled={saving}>
@@ -1201,6 +1236,41 @@ export default function ServicesPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Unsaved Changes Confirmation */}
+      <AlertDialog open={showUnsavedConfirm} onOpenChange={setShowUnsavedConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t.services.unsavedChangesTitle}</AlertDialogTitle>
+            <AlertDialogDescription>{t.services.unsavedChangesDesc}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t.services.keepEditingBtn}</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="outline"
+              className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => {
+                setShowUnsavedConfirm(false)
+                setIsServiceModalOpen(false)
+              }}
+            >
+              {t.services.discardChangesBtn}
+            </Button>
+            <Button
+              type="button"
+              disabled={saving}
+              onClick={async () => {
+                await saveService()
+                setShowUnsavedConfirm(false)
+              }}
+            >
+              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {t.services.saveBtn}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete Service Confirmation */}
       <AlertDialog open={!!deletingService} onOpenChange={(open) => !open && setDeletingService(null)}>

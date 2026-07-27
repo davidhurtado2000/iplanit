@@ -14,6 +14,20 @@ export interface BusyRange {
 
 export const SLOT_INTERVAL_MINUTES = 30
 
+/**
+ * True when the business doesn't open at all on this date's day of week -
+ * lets the UI tell "cerrado este dia" apart from "abierto pero todo
+ * ocupado", which generateAvailableSlots' empty array alone can't do. Same
+ * permissive fallback as generateAvailableSlots when hours aren't
+ * configured yet (never "closed" in that case).
+ */
+export function isDayClosed(dateStr: string, hours: BusinessHourRow[], tz: string): boolean {
+  if (hours.length === 0) return false
+  const dayOfWeek = getTzDayOfWeek(dateStr, tz)
+  const bh = hours.find((h) => h.day_of_week === dayOfWeek)
+  return !bh || bh.is_closed
+}
+
 function toMinutes(t: string) {
   const [h, m] = t.split(':').map(Number)
   return h * 60 + m

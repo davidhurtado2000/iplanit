@@ -34,7 +34,7 @@ import { useDashboardData } from '@/context/dashboard-data-context'
 import { getStatusBadgeVariant, getStatusLabel } from '@/lib/reservation-status'
 import { capitalizeFirst, cn } from '@/lib/utils'
 import { toTzLocalInput, parseInTimezone, toDateStr } from '@/lib/timezone'
-import { generateAvailableSlots } from '@/lib/availability'
+import { generateAvailableSlots, isDayClosed } from '@/lib/availability'
 import { UpgradeModal } from '@/components/upgrade-modal'
 
 interface Client {
@@ -315,6 +315,10 @@ export function ReservationModal({
           selectedService?.buffer_after_min || 0
         )
       : []
+
+  // Distinguishes "the business doesn't open this day" from "open but fully
+  // booked" - both show 0 slots, but staff need different next steps for each.
+  const dayClosed = !!slotDate && isDayClosed(slotDate, businessHours, tz)
 
   const resourceTypeLabel: Record<Resource['type'], string> = {
     room: t.reservation.roomType,
@@ -1133,7 +1137,7 @@ export function ReservationModal({
               ) : availableSlots.length === 0 ? (
                 <p className="flex items-center gap-1.5 text-xs text-destructive">
                   <Clock className="h-3.5 w-3.5 shrink-0" />
-                  {t.reservation.noSlotsAvailable}
+                  {dayClosed ? t.reservation.dayClosed : t.reservation.noSlotsAvailable}
                 </p>
               ) : (
                 <div className="grid grid-cols-4 gap-1.5">
