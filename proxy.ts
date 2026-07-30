@@ -7,6 +7,40 @@ const authRoutes = ['/login', '/register', '/forgot-password']
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
+  const isProtectedRoute = protectedRoutes.some((route) =>
+    pathname.startsWith(route)
+  )
+  const isAuthRoute = authRoutes.some((route) => pathname.startsWith(route))
+
+  // Public pages (landing, /reservar/*, /terms, /privacy, etc.) never need
+  // the user's identity, so skip the Supabase round-trip entirely for them.
+  // This isn't just a perf win - every skipped call is one less concurrent
+  // request racing to refresh the same session token. Supabase rotates
+  // refresh tokens on use, so when two requests refresh at nearly the same
+  // instant, the loser gets a 400 (invalid_grant) and getUser() below would
+  // report "not logged in" even though the other request's refresh
+  // succeeded - seen in production logs as spurious auth failures during
+  // bursts of navigation (e.g. clicking around quickly during a demo).
+  // Restricting getUser() to only the routes that actually check the result
+  // cuts most of that unnecessary concurrency.
+  if (!isProtectedRoute && !isAuthRoute) {
+    return NextResponse.next({ request })
+  }
+
+  // Next.js Link prefetches every sidebar/nav link that scrolls into view,
+  // each firing its own middleware invocation - during normal dashboard
+  // clicking this can produce several concurrent requests that all try to
+  // refresh the same soon-to-expire session at once. Only the first to land
+  // actually succeeds (Supabase rotates the refresh token on use); the
+  // rest get a 400 and would otherwise be treated as "logged out" below,
+  // even though the session is fine. The real navigation that follows a
+  // prefetch always hits this middleware again as a non-prefetch request,
+  // so skipping the refresh here doesn't weaken route protection - it just
+  // avoids using a prefetch to gamble with the one refresh token available.
+  if (request.headers.get('next-router-prefetch') === '1') {
+    return NextResponse.next({ request })
+  }
+
   // Start with a passthrough response so we can attach refreshed cookies to it
   let response = NextResponse.next({ request })
 
@@ -40,11 +74,6 @@ export async function proxy(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser()
-
-  const isProtectedRoute = protectedRoutes.some((route) =>
-    pathname.startsWith(route)
-  )
-  const isAuthRoute = authRoutes.some((route) => pathname.startsWith(route))
 
   if (isProtectedRoute && !user) {
     return NextResponse.redirect(new URL('/login', request.url))
