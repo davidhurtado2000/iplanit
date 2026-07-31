@@ -29,6 +29,7 @@ import { useLanguage } from '@/context/language-context'
 import { capitalizeFirst } from '@/lib/utils'
 import { parseInTimezone } from '@/lib/timezone'
 import { generateAvailableSlots, isDayClosed } from '@/lib/availability'
+import { sendReservationNotification } from '@/lib/email/notify'
 
 interface PublicBusiness {
   id: string
@@ -39,6 +40,7 @@ interface PublicBusiness {
   timezone: string
   logo_url: string | null
   offers_parking: boolean
+  notify_confirmations: boolean
 }
 
 interface PublicResource {
@@ -275,6 +277,9 @@ export default function PublicBookingPage() {
         return
       }
       setManageReservationId(result.reservation_id || null)
+      if (result.reservation_id && business.notify_confirmations && contactForm.email) {
+        sendReservationNotification('confirmation', result.reservation_id, language)
+      }
       setStep('success')
     } catch (err) {
       console.error('[v0] Error creating public reservation:', err)

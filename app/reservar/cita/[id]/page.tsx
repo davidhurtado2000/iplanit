@@ -20,17 +20,20 @@ import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/context/language-context'
 import { capitalizeFirst } from '@/lib/utils'
 import { getStatusBadgeVariant, getStatusLabel } from '@/lib/reservation-status'
+import { sendReservationNotification } from '@/lib/email/notify'
 
 interface PublicReservationStatus {
   id: string
   status: 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'no_show'
   start_time: string
   client_name: string
+  client_email: string | null
   service_name: string
   business_name: string
   business_timezone: string
   cancellation_policy_hours: number
   has_parking: boolean
+  notify_cancellations: boolean
 }
 
 export default function ManageReservationPage() {
@@ -85,6 +88,9 @@ export default function ManageReservationPage() {
       setShowConfirm(false)
       setCancelled(true)
       setReservation({ ...reservation, status: 'cancelled' })
+      if (reservation.notify_cancellations && reservation.client_email) {
+        sendReservationNotification('cancellation', reservation.id, language)
+      }
     } catch (err) {
       console.error('[v0] Error cancelling public reservation:', err)
       setCancelError(tr.manageCancelError)

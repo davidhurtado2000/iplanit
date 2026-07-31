@@ -96,6 +96,10 @@ export interface Database {
           logo_url: string | null
           plan: 'free' | 'premium'
           type: string | null
+          notify_confirmations: boolean
+          notify_cancellations: boolean
+          notify_reminders: boolean
+          reminder_hours: number
           created_at: string
           updated_at: string
         }
@@ -119,6 +123,10 @@ export interface Database {
           logo_url?: string | null
           plan?: 'free' | 'premium'
           type?: string | null
+          notify_confirmations?: boolean
+          notify_cancellations?: boolean
+          notify_reminders?: boolean
+          reminder_hours?: number
           created_at?: string
           updated_at?: string
         }
@@ -142,6 +150,10 @@ export interface Database {
           logo_url?: string | null
           plan?: 'free' | 'premium'
           type?: string | null
+          notify_confirmations?: boolean
+          notify_cancellations?: boolean
+          notify_reminders?: boolean
+          reminder_hours?: number
           created_at?: string
           updated_at?: string
         }
@@ -335,6 +347,7 @@ export interface Database {
           price_usd: number | null
           cancelled_by: 'client' | 'business' | null
           cancelled_at: string | null
+          reminder_sent_at: string | null
           notes: string | null
           created_at: string
           updated_at: string
@@ -355,6 +368,7 @@ export interface Database {
           price_usd?: number | null
           cancelled_by?: 'client' | 'business' | null
           cancelled_at?: string | null
+          reminder_sent_at?: string | null
           notes?: string | null
           created_at?: string
           updated_at?: string
@@ -375,6 +389,7 @@ export interface Database {
           price_usd?: number | null
           cancelled_by?: 'client' | 'business' | null
           cancelled_at?: string | null
+          reminder_sent_at?: string | null
           notes?: string | null
           created_at?: string
           updated_at?: string
@@ -578,6 +593,19 @@ export interface Database {
       cancel_public_reservation: {
         Args: { p_reservation_id: string }
         Returns: Json
+      }
+      get_reservations_needing_reminders: {
+        Args: Record<string, never>
+        Returns: {
+          reservation_id: string
+          client_email: string | null
+          client_name: string
+          service_name: string
+          business_name: string
+          business_timezone: string
+          business_country: 'PE' | 'US'
+          start_time: string
+        }[]
       }
     }
     Enums: Record<string, never>

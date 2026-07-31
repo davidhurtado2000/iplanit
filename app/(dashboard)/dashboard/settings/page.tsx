@@ -171,15 +171,18 @@ export default function SettingsPage() {
   // Business Hours State
   const [businessHours, setBusinessHours] = useState(DEFAULT_BUSINESS_HOURS)
 
-  // Notifications State - preview only, not wired to any email sending yet
-  // (see the "Proximamente" banner on this tab), so there's no setter: these
-  // values are display-only defaults until real notifications exist.
-  const [notifications] = useState({
+  // Notifications State - see scripts/041-email-notifications.sql. Toggles
+  // are meaningful regardless of whether RESEND_API_KEY is configured yet
+  // (a business can opt out ahead of time), but actual sending only starts
+  // once that env var exists.
+  const [notifications, setNotifications] = useState({
     emailConfirmations: true,
     emailReminders: true,
     emailCancellations: true,
     reminderHours: 24,
   })
+  const [isSavingNotifications, setIsSavingNotifications] = useState(false)
+  const [notifSaveStatus, setNotifSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
 
   // next-themes reads the resolved theme from localStorage/system on the
   // client only - rendering the Select before that resolves would show the
@@ -215,6 +218,12 @@ export default function SettingsPage() {
         currency: currentBusiness.currency || (currentBusiness.country === 'US' ? 'USD' : 'PEN'),
         cancellation_policy_hours: currentBusiness.cancellation_policy_hours ?? 24,
         offers_parking: currentBusiness.offers_parking ?? false,
+      })
+      setNotifications({
+        emailConfirmations: currentBusiness.notify_confirmations ?? true,
+        emailReminders: currentBusiness.notify_reminders ?? true,
+        emailCancellations: currentBusiness.notify_cancellations ?? true,
+        reminderHours: currentBusiness.reminder_hours ?? 24,
       })
     }
   }, [authProfile, user, currentBusiness])
@@ -429,6 +438,28 @@ export default function SettingsPage() {
       setTimeout(() => setSaveStatus('idle'), 4000)
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const handleSaveNotifications = async () => {
+    if (!currentBusiness) return
+    setIsSavingNotifications(true)
+    setNotifSaveStatus('idle')
+    try {
+      await updateBusiness(currentBusiness.id, {
+        notify_confirmations: notifications.emailConfirmations,
+        notify_cancellations: notifications.emailCancellations,
+        notify_reminders: notifications.emailReminders,
+        reminder_hours: notifications.reminderHours,
+      })
+      setNotifSaveStatus('success')
+      setTimeout(() => setNotifSaveStatus('idle'), 3000)
+    } catch (err) {
+      console.error('[iplanit] Error saving notification preferences:', err)
+      setNotifSaveStatus('error')
+      setTimeout(() => setNotifSaveStatus('idle'), 4000)
+    } finally {
+      setIsSavingNotifications(false)
     }
   }
 
@@ -659,7 +690,6 @@ export default function SettingsPage() {
           >
             <Bell className="h-5 w-5 sm:h-4 sm:w-4" />
             <span className="text-xs sm:text-sm">{t.settings.notificationsTab}</span>
-            <Badge variant="secondary" className="text-[10px]">{t.settings.comingSoon}</Badge>
           </TabsTrigger>
           <TabsTrigger
             value="plan"
@@ -1197,17 +1227,11 @@ export default function SettingsPage() {
         </TabsContent>
         )}
 
-        {/* Notifications Tab - not wired to any email sending yet (no
-            domain/Resend configured), so every control here is disabled and
-            nothing is persisted. Showing them as interactive would imply
-            emails go out when none do - see the security-fix precedent on
-            PremiumFeature for why a "looks real but isn't" UI is worse than
-            just being upfront about what's not built yet. */}
+        {/* Notifications Tab - wired to real columns on businesses (see
+            scripts/041-email-notifications.sql) and actually sent via Resend
+            (lib/email) once RESEND_API_KEY is configured. */}
         <TabsContent value="notifications" className="space-y-6">
-          <div className="rounded-lg border border-dashed bg-muted/30 p-4 text-sm text-muted-foreground">
-            {t.settings.notifComingSoonBanner}
-          </div>
-          <Card className="opacity-60">
+          <Card>
             <CardHeader>
               <CardTitle>{t.settings.notifTitle}</CardTitle>
               <CardDescription>{t.settings.notifDesc}</CardDescription>
@@ -1220,7 +1244,10 @@ export default function SettingsPage() {
                     {t.settings.confirmationsDesc}
                   </p>
                 </div>
-                <Switch checked={notifications.emailConfirmations} disabled />
+                <Switch
+                  checked={notifications.emailConfirmations}
+                  onCheckedChange={(checked) => setNotifications({ ...notifications, emailConfirmations: checked })}
+                />
               </div>
 
               <Separator />
@@ -1232,13 +1259,19 @@ export default function SettingsPage() {
                     {t.settings.remindersDesc}
                   </p>
                 </div>
-                <Switch checked={notifications.emailReminders} disabled />
+                <Switch
+                  checked={notifications.emailReminders}
+                  onCheckedChange={(checked) => setNotifications({ ...notifications, emailReminders: checked })}
+                />
               </div>
 
               {notifications.emailReminders && (
                 <div className="ml-4 space-y-2 border-l-2 pl-4">
                   <Label>{t.settings.reminderTiming}</Label>
-                  <Select value={String(notifications.reminderHours)} disabled>
+                  <Select
+                    value={String(notifications.reminderHours)}
+                    onValueChange={(value) => setNotifications({ ...notifications, reminderHours: Number(value) })}
+                  >
                     <SelectTrigger className="w-[200px]">
                       <SelectValue />
                     </SelectTrigger>
@@ -1261,7 +1294,29 @@ export default function SettingsPage() {
                     {t.settings.cancellationsDesc}
                   </p>
                 </div>
-                <Switch checked={notifications.emailCancellations} disabled />
+                <Switch
+                  checked={notifications.emailCancellations}
+                  onCheckedChange={(checked) => setNotifications({ ...notifications, emailCancellations: checked })}
+                />
+              </div>
+
+              <Separator />
+
+              <div className="flex items-center gap-3">
+                <Button onClick={handleSaveNotifications} disabled={isSavingNotifications || !currentBusiness} className="gap-2">
+                  {isSavingNotifications
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : notifSaveStatus === 'success'
+                      ? <Check className="h-4 w-4" />
+                      : <Save className="h-4 w-4" />}
+                  {t.saveChanges}
+                </Button>
+                {notifSaveStatus === 'success' && (
+                  <span className="text-sm text-green-600">{t.changesSaved}</span>
+                )}
+                {notifSaveStatus === 'error' && (
+                  <span className="text-sm text-destructive">{t.saveError}</span>
+                )}
               </div>
             </CardContent>
           </Card>

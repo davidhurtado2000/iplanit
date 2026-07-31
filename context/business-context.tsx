@@ -29,6 +29,14 @@ interface Business {
    * reservations (internal and public booking page). */
   offers_parking: boolean
   logo_url: string | null
+  /** Email notification preferences - see scripts/041-email-notifications.sql.
+   * Sending itself only actually happens once RESEND_API_KEY is configured;
+   * these toggles are meaningful regardless so a business can turn one off
+   * ahead of time. */
+  notify_confirmations: boolean
+  notify_cancellations: boolean
+  notify_reminders: boolean
+  reminder_hours: number
   created_at: string
   updated_at: string
   /** 'owner' is computed client-side from owner_id; 'admin'/'sales' come

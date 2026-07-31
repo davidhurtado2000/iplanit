@@ -35,6 +35,7 @@ import { getStatusBadgeVariant, getStatusLabel } from '@/lib/reservation-status'
 import { capitalizeFirst, cn } from '@/lib/utils'
 import { toTzLocalInput, parseInTimezone, toDateStr } from '@/lib/timezone'
 import { generateAvailableSlots, isDayClosed } from '@/lib/availability'
+import { sendReservationNotification } from '@/lib/email/notify'
 import { UpgradeModal } from '@/components/upgrade-modal'
 
 interface Client {
@@ -98,7 +99,7 @@ export function ReservationModal({
   const supabase = createClient()
   const { profile } = useAuth()
   const { currentBusiness } = useBusinesses()
-  const { t, locale } = useLanguage()
+  const { t, locale, language } = useLanguage()
   const { clients, services, resources: allResources, serviceResources, serviceDurationOptions, businessHours, reservations } = useDashboardData()
   // Parking is a separate concept from a service's linked resource (see the
   // needsParking switch below) - never offered as a pickable resource here.
@@ -573,12 +574,17 @@ export function ReservationModal({
       }
 
       if (effectiveMode === 'create') {
-        const { error } = await supabase
+        const { data: created, error } = await supabase
           .from('reservations')
           .insert([reservationData])
+          .select('id')
+          .single()
 
         if (error) throw error
         console.log('[v0] Reservation created successfully')
+        if (created && currentBusiness.notify_confirmations && selectedClient?.email) {
+          sendReservationNotification('confirmation', created.id, language)
+        }
       } else if (effectiveMode === 'edit' && reservation?.id) {
         const { error } = await supabase
           .from('reservations')
@@ -617,6 +623,9 @@ export function ReservationModal({
 
       if (error) throw error
       console.log('[v0] Reservation cancelled successfully')
+      if (currentBusiness?.notify_cancellations && selectedClient?.email) {
+        sendReservationNotification('cancellation', reservation.id, language)
+      }
       onSave?.()
       onClose()
     } catch (error) {
