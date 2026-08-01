@@ -4,6 +4,7 @@ import React, { useState } from 'react'
 import { Sidebar } from '@/components/dashboard/sidebar'
 import { MobileNav } from '@/components/dashboard/mobile-nav'
 import { FeedbackWidget } from '@/components/dashboard/feedback-widget'
+import { Toaster } from '@/components/ui/sonner'
 import { BusinessProvider } from '@/context/business-context'
 import { DashboardDataProvider } from '@/context/dashboard-data-context'
 import { cn } from '@/lib/utils'
@@ -39,6 +40,7 @@ export default function DashboardLayout({
       </main>
 
       <FeedbackWidget />
+      <Toaster position="top-right" />
     </div>
     </DashboardDataProvider>
     </BusinessProvider>

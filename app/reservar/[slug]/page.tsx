@@ -126,7 +126,7 @@ export default function PublicBookingPage() {
   const [loadingSlots, setLoadingSlots] = useState(false)
   const [selectedSlot, setSelectedSlot] = useState<Date | null>(null)
 
-  const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '', notes: '' })
+  const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '', documentNumber: '', notes: '' })
   const [needsParking, setNeedsParking] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
@@ -260,6 +260,7 @@ export default function PublicBookingPage() {
         p_duration_option_id: selectedDurationOptionId,
         p_needs_parking: needsParking,
         p_hours: selectedHours || null,
+        p_document_number: contactForm.documentNumber || null,
       })
       if (error) throw error
       const result = data as { success?: boolean; error?: string; reservation_id?: string }
@@ -750,6 +751,16 @@ export default function PublicBookingPage() {
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground">{tr.contactHint}</p>
+                  <div className="space-y-2">
+                    <Label htmlFor="pb-document">{tr.documentLabel}</Label>
+                    <Input
+                      id="pb-document"
+                      value={contactForm.documentNumber}
+                      onChange={(e) => setContactForm({ ...contactForm, documentNumber: e.target.value })}
+                      disabled={submitting}
+                    />
+                    <p className="text-xs text-muted-foreground">{tr.documentHint}</p>
+                  </div>
                   <div className="space-y-2">
                     <Label htmlFor="pb-notes">{tr.notesLabel}</Label>
                     <Textarea

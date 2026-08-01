@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getResendClient, NOTIFICATIONS_FROM_EMAIL } from '@/lib/email/resend'
-import { buildConfirmationEmail, buildCancellationEmail, type EmailLanguage } from '@/lib/email/templates'
+import { buildConfirmationEmail, buildCancellationEmail, buildApprovedEmail, type EmailLanguage } from '@/lib/email/templates'
 import type { Database } from '@/lib/supabase/types'
 
 // Only { type, reservationId, language } come from the caller - every other
@@ -18,11 +18,11 @@ import type { Database } from '@/lib/supabase/types'
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => null)
-    const type = body?.type as 'confirmation' | 'cancellation' | undefined
+    const type = body?.type as 'confirmation' | 'cancellation' | 'approved' | undefined
     const reservationId = body?.reservationId as string | undefined
     const language: EmailLanguage = body?.language === 'en' ? 'en' : 'es'
 
-    if (type !== 'confirmation' && type !== 'cancellation') {
+    if (type !== 'confirmation' && type !== 'cancellation' && type !== 'approved') {
       return NextResponse.json({ error: 'invalid_type' }, { status: 400 })
     }
     if (!reservationId) {
@@ -56,7 +56,11 @@ export async function POST(request: Request) {
     if (!reservation.client_email) {
       return NextResponse.json({ skipped: 'no_client_email' })
     }
-    const enabled = type === 'confirmation' ? reservation.notify_confirmations : reservation.notify_cancellations
+    // 'approved' (business marks a pending reservation as confirmed) rides
+    // the same toggle as 'confirmation' (the request-received email) - one
+    // "notify about confirmations" preference covers both stages of the
+    // same lifecycle rather than adding a 4th settings toggle for it.
+    const enabled = type === 'cancellation' ? reservation.notify_cancellations : reservation.notify_confirmations
     if (!enabled) {
       return NextResponse.json({ skipped: 'notifications_disabled' })
     }
@@ -72,7 +76,11 @@ export async function POST(request: Request) {
     }
 
     const { subject, html } =
-      type === 'confirmation' ? buildConfirmationEmail(emailData) : buildCancellationEmail(emailData)
+      type === 'confirmation'
+        ? buildConfirmationEmail(emailData)
+        : type === 'approved'
+          ? buildApprovedEmail(emailData)
+          : buildCancellationEmail(emailData)
 
     await getResendClient().emails.send({
       from: NOTIFICATIONS_FROM_EMAIL,

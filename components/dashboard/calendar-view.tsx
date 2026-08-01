@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ChevronLeft, ChevronRight, CalendarDays, Clock, Check, ParkingSquare, Search } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CalendarDays, Clock, Check, CheckCheck, X, ParkingSquare, Search } from 'lucide-react'
 import type { CalendarView } from '@/lib/types'
 import { cn, capitalizeFirst } from '@/lib/utils'
 
@@ -368,13 +368,18 @@ function DayView({
                         key={r.id}
                         type="button"
                         onClick={() => onSelectReservation(r)}
-                        className="absolute left-1 right-1 overflow-hidden rounded-md px-2 py-1 text-left text-white shadow-sm transition-all hover:brightness-110 hover:shadow-md"
+                        className={cn(
+                          'absolute left-1 right-1 overflow-hidden rounded-md px-2 py-1 text-left text-white shadow-sm transition-all hover:brightness-110 hover:shadow-md',
+                          (r.status === 'cancelled' || r.status === 'no_show') && 'opacity-45 saturate-50'
+                        )}
                         style={{ top: top + 1, height: height - 2, backgroundColor: color }}
                       >
-                        {!isShort && r.status !== 'confirmed' && (
+                        {!isShort && (
                           <span className="absolute right-1 top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white/90 text-foreground shadow-sm">
                             {r.status === 'pending' && <Clock className="h-2 w-2" />}
+                            {r.status === 'confirmed' && <CheckCheck className="h-2 w-2" />}
                             {r.status === 'completed' && <Check className="h-2 w-2" />}
+                            {(r.status === 'cancelled' || r.status === 'no_show') && <X className="h-2 w-2" />}
                           </span>
                         )}
                         {!isShort && r.parking_resource_id && (
@@ -481,12 +486,17 @@ function WeekView({
                   return (
                     <div
                       key={r.id}
-                      className="flex w-full items-center gap-1 truncate rounded px-1.5 py-0.5 text-[10px] font-medium text-white"
+                      className={cn(
+                        'flex w-full items-center gap-1 truncate rounded px-1.5 py-0.5 text-[10px] font-medium text-white',
+                        (r.status === 'cancelled' || r.status === 'no_show') && 'opacity-45 saturate-50'
+                      )}
                       style={{ backgroundColor: service?.color ?? '#3B82F6' }}
                       onClick={e => { e.stopPropagation(); onSelectReservation(r) }}
                     >
                       {r.status === 'pending' && <Clock className="h-2.5 w-2.5 shrink-0" />}
+                      {r.status === 'confirmed' && <CheckCheck className="h-2.5 w-2.5 shrink-0" />}
                       {r.status === 'completed' && <Check className="h-2.5 w-2.5 shrink-0" />}
+                      {(r.status === 'cancelled' || r.status === 'no_show') && <X className="h-2.5 w-2.5 shrink-0" />}
                       <span className="truncate">{fmt} {client?.name ?? '—'}</span>
                     </div>
                   )
@@ -578,12 +588,17 @@ function MonthView({
                   return (
                     <div
                       key={r.id}
-                      className="flex w-full items-center gap-0.5 truncate rounded px-1 py-0.5 text-[9px] sm:text-[10px] text-white"
+                      className={cn(
+                        'flex w-full items-center gap-0.5 truncate rounded px-1 py-0.5 text-[9px] sm:text-[10px] text-white',
+                        (r.status === 'cancelled' || r.status === 'no_show') && 'opacity-45 saturate-50'
+                      )}
                       style={{ backgroundColor: service?.color ?? '#3B82F6' }}
                       onClick={e => { e.stopPropagation(); onSelectReservation(r) }}
                     >
                       {r.status === 'pending' && <Clock className="h-2 w-2 shrink-0" />}
+                      {r.status === 'confirmed' && <CheckCheck className="h-2 w-2 shrink-0" />}
                       {r.status === 'completed' && <Check className="h-2 w-2 shrink-0" />}
+                      {(r.status === 'cancelled' || r.status === 'no_show') && <X className="h-2 w-2 shrink-0" />}
                       <span className="truncate">{fmt}</span>
                     </div>
                   )

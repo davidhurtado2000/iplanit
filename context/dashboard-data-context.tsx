@@ -1,8 +1,13 @@
 'use client'
 
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
+import { CalendarPlus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useBusinessContext } from './business-context'
+import { useLanguage } from './language-context'
+import { playNotificationChime } from '@/lib/notification-sound'
 
 // ---- Shared types used across all dashboard pages ----
 
@@ -158,6 +163,8 @@ function getDefaultReservationWindow() {
 
 export function DashboardDataProvider({ children }: { children: React.ReactNode }) {
   const { currentBusiness, loading: businessLoading } = useBusinessContext()
+  const { t, locale } = useLanguage()
+  const router = useRouter()
 
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [clients, setClients] = useState<Client[]>([])
@@ -256,6 +263,83 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
 
     fetchAll()
   }, [currentBusiness?.id, businessLoading])
+
+  // Live toast (+ chime) when a reservation is inserted for this business -
+  // mainly for bookings that land via the public link while staff are
+  // looking at the dashboard, which otherwise only show up after a manual
+  // refresh. Fires for every insert regardless of source (including the
+  // staff member's own just-created reservation) rather than trying to
+  // distinguish "from the public page" vs "from this dashboard" - simpler,
+  // and an extra confirmation toast for your own action isn't harmful.
+  // Requires reservations to be added to the supabase_realtime publication
+  // (scripts/042-realtime-reservations.sql).
+  useEffect(() => {
+    if (!currentBusiness) return
+
+    const channel = supabase
+      .channel(`reservations-inserts-${currentBusiness.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'reservations', filter: `business_id=eq.${currentBusiness.id}` },
+        (payload) => {
+          const newReservation = payload.new as Reservation
+          setReservations((prev) =>
+            prev.some((r) => r.id === newReservation.id)
+              ? prev
+              : [...prev, newReservation].sort((a, b) => a.start_time.localeCompare(b.start_time))
+          )
+          playNotificationChime()
+          toast(t.dashboard.newReservationToast, {
+            description: new Date(newReservation.start_time).toLocaleString(locale, {
+              dateStyle: 'medium',
+              timeStyle: 'short',
+            }),
+            icon: <CalendarPlus className="h-4 w-4" />,
+            duration: 8000,
+            style: {
+              background: 'var(--primary)',
+              color: 'var(--primary-foreground)',
+              border: 'none',
+            },
+            action: {
+              label: t.dashboard.newReservationToastCta,
+              onClick: () => router.push('/dashboard/calendar'),
+            },
+          })
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'reservations', filter: `business_id=eq.${currentBusiness.id}` },
+        (payload) => {
+          const updated = payload.new as Reservation
+          const previousStatus = (payload.old as Partial<Reservation>).status
+          setReservations((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
+
+          if (previousStatus === updated.status) return
+
+          const when = new Date(updated.start_time).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })
+          const cta = { label: t.dashboard.newReservationToastCta, onClick: () => router.push('/dashboard/calendar') }
+
+          if (updated.status === 'confirmed') {
+            playNotificationChime()
+            toast.success(t.dashboard.reservationConfirmedToast, { description: when, duration: 6000, action: cta })
+          } else if (updated.status === 'cancelled') {
+            playNotificationChime()
+            toast.error(t.dashboard.reservationCancelledToast, { description: when, duration: 6000, action: cta })
+          } else if (updated.status === 'completed') {
+            toast.success(t.dashboard.reservationCompletedToast, { description: when, duration: 5000, action: cta })
+          } else if (updated.status === 'no_show') {
+            toast.warning(t.dashboard.reservationNoShowToast, { description: when, duration: 6000, action: cta })
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [currentBusiness?.id, t, locale, router])
 
   const refetchReservations = useCallback(async () => {
     if (!currentBusiness) return

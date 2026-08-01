@@ -69,7 +69,52 @@ function manageButton(url: string | undefined, language: EmailLanguage): string 
   return `<a href="${url}" style="display: inline-block; margin-top: 8px; padding: 10px 18px; background-color: #2563eb; color: #ffffff; font-size: 14px; font-weight: 500; text-decoration: none; border-radius: 6px;">${label}</a>`
 }
 
+// Fires right when a reservation is created (still 'pending' - nobody has
+// approved it yet), so this deliberately does NOT say "confirmed" - that
+// word is reserved for buildApprovedEmail below, which fires at the actual
+// moment staff changes the status to 'confirmed'. Both existing under the
+// same "confirmations" toggle would be genuinely confusing to a client if
+// they both claimed "your booking is confirmed" one after the other.
 export function buildConfirmationEmail(data: ReservationEmailData): { subject: string; html: string } {
+  const { clientName, businessName, serviceName, startTime, timezone, language, manageUrl } = data
+  const when = formatDateTime(startTime, timezone, language)
+
+  if (language === 'es') {
+    return {
+      subject: `Solicitud de reserva recibida - ${businessName}`,
+      html: emailLayout(
+        'es',
+        'Recibimos tu solicitud de reserva',
+        `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hola ${clientName},</p>
+         <p style="font-size: 14px; color: #374151; margin: 0;">Recibimos tu solicitud de reserva en <strong>${businessName}</strong>. Te avisaremos en cuanto quede confirmada.</p>
+         ${detailsCard([
+           ['Servicio', serviceName],
+           ['Fecha y hora', when],
+         ])}
+         ${manageButton(manageUrl, 'es')}`
+      ),
+    }
+  }
+  return {
+    subject: `Booking request received - ${businessName}`,
+    html: emailLayout(
+      'en',
+      'We received your booking request',
+      `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hi ${clientName},</p>
+       <p style="font-size: 14px; color: #374151; margin: 0;">We received your booking request with <strong>${businessName}</strong>. We'll let you know once it's confirmed.</p>
+       ${detailsCard([
+         ['Service', serviceName],
+         ['Date and time', when],
+       ])}
+       ${manageButton(manageUrl, 'en')}`
+    ),
+  }
+}
+
+// Fires when staff explicitly marks a pending reservation as 'confirmed' -
+// the actual moment the word "confirmed" becomes true, unlike the creation
+// email above which fires while still pending.
+export function buildApprovedEmail(data: ReservationEmailData): { subject: string; html: string } {
   const { clientName, businessName, serviceName, startTime, timezone, language, manageUrl } = data
   const when = formatDateTime(startTime, timezone, language)
 
@@ -80,7 +125,7 @@ export function buildConfirmationEmail(data: ReservationEmailData): { subject: s
         'es',
         'Tu reserva fue confirmada',
         `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hola ${clientName},</p>
-         <p style="font-size: 14px; color: #374151; margin: 0;">Tu reserva en <strong>${businessName}</strong> quedó registrada.</p>
+         <p style="font-size: 14px; color: #374151; margin: 0;">Buenas noticias: tu reserva en <strong>${businessName}</strong> ya fue confirmada.</p>
          ${detailsCard([
            ['Servicio', serviceName],
            ['Fecha y hora', when],
@@ -95,7 +140,7 @@ export function buildConfirmationEmail(data: ReservationEmailData): { subject: s
       'en',
       'Your booking is confirmed',
       `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hi ${clientName},</p>
-       <p style="font-size: 14px; color: #374151; margin: 0;">Your booking with <strong>${businessName}</strong> is set.</p>
+       <p style="font-size: 14px; color: #374151; margin: 0;">Good news: your booking with <strong>${businessName}</strong> is now confirmed.</p>
        ${detailsCard([
          ['Service', serviceName],
          ['Date and time', when],

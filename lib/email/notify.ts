@@ -8,7 +8,7 @@
  * success/error handling.
  */
 export function sendReservationNotification(
-  type: 'confirmation' | 'cancellation',
+  type: 'confirmation' | 'cancellation' | 'approved',
   reservationId: string,
   language: 'es' | 'en'
 ): void {

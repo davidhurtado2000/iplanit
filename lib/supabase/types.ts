@@ -579,6 +579,7 @@ export interface Database {
           p_duration_option_id?: string | null
           p_needs_parking?: boolean
           p_hours?: number | null
+          p_document_number?: string | null
         }
         Returns: Json
       }

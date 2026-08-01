@@ -11,6 +11,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -105,6 +115,7 @@ export function ReservationModal({
   // needsParking switch below) - never offered as a pickable resource here.
   const resources = allResources.filter((r) => r.type !== 'parking')
   const [isLoading, setIsLoading] = useState(false)
+  const [cancelConfirmType, setCancelConfirmType] = useState<'single' | 'series' | null>(null)
   const [error, setError] = useState('')
 
   const [formData, setFormData] = useState({
@@ -646,6 +657,9 @@ export function ReservationModal({
         .eq('id', reservation.id)
 
       if (error) throw error
+      if (newStatus === 'confirmed' && currentBusiness?.notify_confirmations && selectedClient?.email) {
+        sendReservationNotification('approved', reservation.id, language)
+      }
       onSave?.()
       onClose()
     } catch (error) {
@@ -826,7 +840,7 @@ export function ReservationModal({
               {(reservation.status === 'pending' || reservation.status === 'confirmed') && (
                 <Button
                   variant="destructive"
-                  onClick={handleDelete}
+                  onClick={() => setCancelConfirmType('single')}
                   disabled={isLoading}
                   className="gap-2"
                 >
@@ -851,7 +865,7 @@ export function ReservationModal({
                 </Button>
               )}
               {reservation.series_id && seriesRemaining !== null && seriesRemaining > 0 && (
-                <Button variant="destructive" onClick={handleCancelSeries} disabled={isLoading} className="gap-2">
+                <Button variant="destructive" onClick={() => setCancelConfirmType('series')} disabled={isLoading} className="gap-2">
                   <Repeat className="h-4 w-4" />
                   {t.reservation.cancelSeriesRemaining}
                 </Button>
@@ -1316,6 +1330,36 @@ export function ReservationModal({
       onClose={() => setShowUpgradeModal(false)}
       feature={t.reservation.repeatLabel}
     />
+    <AlertDialog open={cancelConfirmType !== null} onOpenChange={(open) => !open && setCancelConfirmType(null)}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {cancelConfirmType === 'series' ? t.reservation.cancelSeriesConfirmTitle : t.reservation.cancelConfirmTitle}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {cancelConfirmType === 'series' ? t.reservation.cancelSeriesConfirmDesc : t.reservation.cancelConfirmDesc}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isLoading}>{t.reservation.keepReservationBtn}</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={isLoading}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            onClick={async () => {
+              if (cancelConfirmType === 'series') {
+                await handleCancelSeries()
+              } else {
+                await handleDelete()
+              }
+              setCancelConfirmType(null)
+            }}
+          >
+            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {t.reservation.confirmCancelBtn}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     </>
   )
 }
