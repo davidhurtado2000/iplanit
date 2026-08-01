@@ -1,0 +1,20 @@
+name: Send reservation reminders
+
+# Vercel's Hobby plan only allows daily cron jobs, too coarse for
+# reminder_hours settings as short as 1-2 hours (see
+# app/api/cron/send-reminders/route.ts + scripts/041-email-notifications.sql).
+# GitHub Actions has no such restriction and is free for a repo this size,
+# so it calls the same endpoint hourly instead of relying on vercel.json.
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  trigger-reminders:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call /api/cron/send-reminders
+        run: |
+          curl --fail-with-body -sS -X GET "https://iplanit.io/api/cron/send-reminders" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
