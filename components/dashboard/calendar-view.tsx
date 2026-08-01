@@ -21,6 +21,20 @@ const DEFAULT_START  = 7   // fallback 07:00
 const DEFAULT_END    = 21  // fallback 21:00
 const DEFAULT_TZ     = 'America/Lima'
 
+// A colored left border signals status at a glance without replacing the
+// block's own background (still the service's color, so services stay
+// visually identifiable) - shared by every calendar render mode below.
+function statusBorderClass(status: string): string {
+  switch (status) {
+    case 'pending':   return 'border-l-4 border-amber-400'
+    case 'confirmed': return 'border-l-4 border-emerald-400'
+    case 'completed': return 'border-l-4 border-sky-400'
+    case 'cancelled': return 'border-l-4 border-red-400'
+    case 'no_show':   return 'border-l-4 border-orange-500'
+    default:          return ''
+  }
+}
+
 // ─── Timezone-aware date helpers ───────────────────────────────────────────
 /** Returns "YYYY-MM-DD" for a Date or ISO string expressed in the given IANA timezone. */
 function toDateStr(date: Date | string, tz: string): string {
@@ -370,6 +384,7 @@ function DayView({
                         onClick={() => onSelectReservation(r)}
                         className={cn(
                           'absolute left-1 right-1 overflow-hidden rounded-md px-2 py-1 text-left text-white shadow-sm transition-all hover:brightness-110 hover:shadow-md',
+                          statusBorderClass(r.status),
                           (r.status === 'cancelled' || r.status === 'no_show') && 'opacity-45 saturate-50'
                         )}
                         style={{ top: top + 1, height: height - 2, backgroundColor: color }}
@@ -488,6 +503,7 @@ function WeekView({
                       key={r.id}
                       className={cn(
                         'flex w-full items-center gap-1 truncate rounded px-1.5 py-0.5 text-[10px] font-medium text-white',
+                        statusBorderClass(r.status),
                         (r.status === 'cancelled' || r.status === 'no_show') && 'opacity-45 saturate-50'
                       )}
                       style={{ backgroundColor: service?.color ?? '#3B82F6' }}
@@ -590,6 +606,7 @@ function MonthView({
                       key={r.id}
                       className={cn(
                         'flex w-full items-center gap-0.5 truncate rounded px-1 py-0.5 text-[9px] sm:text-[10px] text-white',
+                        statusBorderClass(r.status),
                         (r.status === 'cancelled' || r.status === 'no_show') && 'opacity-45 saturate-50'
                       )}
                       style={{ backgroundColor: service?.color ?? '#3B82F6' }}
