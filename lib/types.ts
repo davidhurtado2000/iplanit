@@ -1,4 +1,4 @@
-// Core Types for iPlannit
+// Core Types for iPlanit
 
 export type UserRole = 'owner' | 'staff'
 export type PlanType = 'free' | 'premium'

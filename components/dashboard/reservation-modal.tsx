@@ -35,7 +35,22 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Loader2 } from 'lucide-react'
-import { Calendar, Clock, User, Briefcase, Trash2, MapPin, Repeat, DollarSign, ParkingSquare } from 'lucide-react'
+import { Calendar, Clock, User, Briefcase, Trash2, MapPin, Repeat, DollarSign, ParkingSquare, ChevronDown, ChevronsUpDown, Check } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
@@ -46,6 +61,7 @@ import { capitalizeFirst, cn } from '@/lib/utils'
 import { toTzLocalInput, parseInTimezone, toDateStr } from '@/lib/timezone'
 import { generateAvailableSlots, isDayClosed } from '@/lib/availability'
 import { sendReservationNotification } from '@/lib/email/notify'
+import { isPlanLimitReached } from '@/lib/plan-limits'
 import { UpgradeModal } from '@/components/upgrade-modal'
 
 interface Client {
@@ -109,7 +125,7 @@ export function ReservationModal({
   const supabase = createClient()
   const { profile } = useAuth()
   const { currentBusiness } = useBusinesses()
-  const { t, locale, language } = useLanguage()
+  const { t, locale } = useLanguage()
   const { clients, services, resources: allResources, serviceResources, serviceDurationOptions, businessHours, reservations } = useDashboardData()
   // Parking is a separate concept from a service's linked resource (see the
   // needsParking switch below) - never offered as a pickable resource here.
@@ -117,6 +133,12 @@ export function ReservationModal({
   const [isLoading, setIsLoading] = useState(false)
   const [cancelConfirmType, setCancelConfirmType] = useState<'single' | 'series' | null>(null)
   const [error, setError] = useState('')
+  // Client picker: a searchable combobox instead of a plain <Select> so
+  // businesses with a large client list don't have to scroll a giant
+  // dropdown to find one person - see clients/page.tsx's own search for the
+  // same name/email/document match, kept consistent here.
+  const [clientComboOpen, setClientComboOpen] = useState(false)
+  const [clientSearch, setClientSearch] = useState('')
 
   const [formData, setFormData] = useState({
     client_id: '',
@@ -142,6 +164,28 @@ export function ReservationModal({
 
   const isPremium = profile?.plan === 'premium'
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+
+  // Checked fresh right when a "create" open is requested, rather than on
+  // every render - the database trigger (scripts/048-free-plan-limits.sql)
+  // is the actual guarantee, this is only the proactive nicety that avoids
+  // making someone fill out the whole form just to hit a rejection at the
+  // end. Closes the (still-empty) create dialog and shows the Upgrade modal
+  // in its place instead of leaving a dead form open.
+  useEffect(() => {
+    if (!isOpen || mode !== 'create' || isPremium || !currentBusiness) return
+    let cancelled = false
+    isPlanLimitReached(currentBusiness.id, 'reservations_this_month').then((reached) => {
+      if (!cancelled && reached) {
+        onClose()
+        setShowUpgradeModal(true)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, mode, isPremium, currentBusiness?.id])
+
   const [repeatEnabled, setRepeatEnabled] = useState(false)
   const [repeatDays, setRepeatDays] = useState<number[]>([])
   const [sessionCount, setSessionCount] = useState(4)
@@ -275,9 +319,30 @@ export function ReservationModal({
     return true
   }
 
+  // Client-facing emails triggered from here should match the BUSINESS's
+  // audience, not whatever language the staff member happens to have their
+  // own dashboard set to (those can differ - e.g. Spanish-speaking staff at
+  // a US business serving English-speaking clients). Same country -> language
+  // heuristic already used by the reminder cron (app/api/cron/send-reminders),
+  // now applied consistently across every email trigger.
+  const clientEmailLanguage: 'es' | 'en' = currentBusiness?.country === 'US' ? 'en' : 'es'
+
   const selectedService = services.find((s) => s.id === formData.service_id)
   const selectedClient = clients.find((c) => c.id === formData.client_id)
   const selectedResource = resources.find((r) => r.id === formData.resource_id)
+  const activeClients = clients.filter((c) => c.is_active)
+  // Same fields/matching as clients/page.tsx's own search, kept consistent
+  // rather than introducing a second fuzzy-match algorithm for the same data.
+  const clientSearchResults = (() => {
+    const q = clientSearch.trim().toLowerCase()
+    if (!q) return activeClients
+    return activeClients.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        (c.email && c.email.toLowerCase().includes(q)) ||
+        (c.document_number && c.document_number.toLowerCase().includes(q))
+    )
+  })()
   const selectedServiceDurationOptions = serviceDurationOptions.filter((o) => o.service_id === formData.service_id)
   const selectedDurationOption = selectedServiceDurationOptions.find((o) => o.id === formData.duration_option_id)
   // Effective duration: a preset service without a chosen option, or an
@@ -540,6 +605,11 @@ export function ReservationModal({
         }
       }
 
+      // status deliberately isn't here - only the 'create' branch below sets
+      // it (new reservations always start 'pending'). If it were included
+      // here, editing an already-confirmed/completed reservation would
+      // silently revert it to 'pending' on every save, even when nothing
+      // about its status was touched.
       const reservationData = {
         business_id: currentBusiness.id,
         client_id: formData.client_id,
@@ -548,7 +618,6 @@ export function ReservationModal({
         parking_resource_id: parkingResourceId,
         start_time: startDate.toISOString(),
         end_time: endDate.toISOString(),
-        status: 'pending' as const,
         type: formData.type,
         price: isUSD ? null : formData.price || null,
         price_usd: isUSD ? formData.price || null : null,
@@ -587,14 +656,14 @@ export function ReservationModal({
       if (effectiveMode === 'create') {
         const { data: created, error } = await supabase
           .from('reservations')
-          .insert([reservationData])
+          .insert([{ ...reservationData, status: 'pending' }])
           .select('id')
           .single()
 
         if (error) throw error
         console.log('[v0] Reservation created successfully')
         if (created && currentBusiness.notify_confirmations && selectedClient?.email) {
-          sendReservationNotification('confirmation', created.id, language)
+          sendReservationNotification('confirmation', created.id, clientEmailLanguage)
         }
       } else if (effectiveMode === 'edit' && reservation?.id) {
         const { error } = await supabase
@@ -614,6 +683,11 @@ export function ReservationModal({
       // two near-simultaneous submits both pass the pre-flight check above.
       if (error?.code === '23P01') {
         setError(t.reservation.timeConflict)
+      } else if (error?.code === 'PLN01') {
+        // Backstop for the proactive check above (scripts/048) - only
+        // reachable via a real race (e.g. two tabs creating at once).
+        onClose()
+        setShowUpgradeModal(true)
       } else {
         setError(error?.message || 'Ocurrió un error al guardar la reserva. Intenta de nuevo.')
       }
@@ -635,7 +709,7 @@ export function ReservationModal({
       if (error) throw error
       console.log('[v0] Reservation cancelled successfully')
       if (currentBusiness?.notify_cancellations && selectedClient?.email) {
-        sendReservationNotification('cancellation', reservation.id, language)
+        sendReservationNotification('cancellation', reservation.id, clientEmailLanguage)
       }
       onSave?.()
       onClose()
@@ -646,7 +720,11 @@ export function ReservationModal({
     }
   }
 
-  const handleUpdateStatus = async (newStatus: 'confirmed' | 'completed' | 'no_show') => {
+  // The toast + undo action + chime for this live in dashboard-data-context's
+  // realtime subscription, not here - that fires for this exact DB change
+  // regardless of who made it, so showing a second toast here would just
+  // duplicate it every time (confusing, and two chimes back to back).
+  const handleUpdateStatus = async (newStatus: 'pending' | 'confirmed' | 'completed' | 'no_show') => {
     if (!reservation?.id) return
 
     try {
@@ -658,8 +736,9 @@ export function ReservationModal({
 
       if (error) throw error
       if (newStatus === 'confirmed' && currentBusiness?.notify_confirmations && selectedClient?.email) {
-        sendReservationNotification('approved', reservation.id, language)
+        sendReservationNotification('approved', reservation.id, clientEmailLanguage)
       }
+
       onSave?.()
       onClose()
     } catch (error) {
@@ -836,41 +915,69 @@ export function ReservationModal({
               )}
             </div>
 
-            <DialogFooter className="flex-wrap gap-2">
-              {(reservation.status === 'pending' || reservation.status === 'confirmed') && (
-                <Button
-                  variant="destructive"
-                  onClick={() => setCancelConfirmType('single')}
-                  disabled={isLoading}
-                  className="gap-2"
-                >
-                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                  {t.reservation.cancelReservation}
-                </Button>
-              )}
-              {reservation.status === 'pending' && (
-                <Button variant="outline" onClick={() => handleUpdateStatus('confirmed')} disabled={isLoading}>
-                  {t.reservation.markConfirmed}
-                </Button>
-              )}
-              {reservation.status === 'confirmed' && (
-                <Button variant="outline" onClick={() => handleUpdateStatus('completed')} disabled={isLoading}>
-                  {t.reservation.markCompleted}
-                </Button>
-              )}
-              {(reservation.status === 'pending' || reservation.status === 'confirmed') &&
-                new Date(reservation.start_time).getTime() < Date.now() && (
-                <Button variant="outline" onClick={() => handleUpdateStatus('no_show')} disabled={isLoading}>
-                  {t.reservation.markNoShow}
-                </Button>
-              )}
-              {reservation.series_id && seriesRemaining !== null && seriesRemaining > 0 && (
-                <Button variant="destructive" onClick={() => setCancelConfirmType('series')} disabled={isLoading} className="gap-2">
-                  <Repeat className="h-4 w-4" />
-                  {t.reservation.cancelSeriesRemaining}
-                </Button>
-              )}
-              <Button onClick={() => setIsEditing(true)} disabled={isLoading}>{t.reservation.editBtn}</Button>
+            <DialogFooter className="flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              {/* Destructive actions + the status dropdown grouped together
+                  on one side, Edit (the primary action) on the other - a
+                  dropdown instead of one button per status scales to any
+                  number of options without wrapping into a messy multi-row
+                  pile on narrow screens. Every status transition stays
+                  available regardless of the current one (work is
+                  unpredictable enough that staff need to correct a status
+                  days later, not just right after clicking) - only the
+                  option matching the CURRENT status is hidden, since
+                  re-applying the same status is a no-op. */}
+              <div className="flex flex-wrap gap-2">
+                {reservation.status !== 'cancelled' && (
+                  <Button
+                    variant="destructive"
+                    onClick={() => setCancelConfirmType('single')}
+                    disabled={isLoading}
+                    className="gap-2"
+                  >
+                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    {t.reservation.cancelReservation}
+                  </Button>
+                )}
+                {reservation.series_id && seriesRemaining !== null && seriesRemaining > 0 && (
+                  <Button variant="destructive" onClick={() => setCancelConfirmType('series')} disabled={isLoading} className="gap-2">
+                    <Repeat className="h-4 w-4" />
+                    {t.reservation.cancelSeriesRemaining}
+                  </Button>
+                )}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" disabled={isLoading} className="gap-2">
+                      {t.reservation.changeStatusBtn}
+                      <ChevronDown className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {reservation.status !== 'pending' && (
+                      <DropdownMenuItem onClick={() => handleUpdateStatus('pending')}>
+                        {t.reservation.markPending}
+                      </DropdownMenuItem>
+                    )}
+                    {reservation.status !== 'confirmed' && (
+                      <DropdownMenuItem onClick={() => handleUpdateStatus('confirmed')}>
+                        {t.reservation.markConfirmed}
+                      </DropdownMenuItem>
+                    )}
+                    {reservation.status !== 'completed' && (
+                      <DropdownMenuItem onClick={() => handleUpdateStatus('completed')}>
+                        {t.reservation.markCompleted}
+                      </DropdownMenuItem>
+                    )}
+                    {reservation.status !== 'no_show' && new Date(reservation.start_time).getTime() < Date.now() && (
+                      <DropdownMenuItem onClick={() => handleUpdateStatus('no_show')}>
+                        {t.reservation.markNoShow}
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              <Button onClick={() => setIsEditing(true)} disabled={isLoading} className="w-full sm:w-auto">
+                {t.reservation.editBtn}
+              </Button>
             </DialogFooter>
           </div>
         ) : (
@@ -913,30 +1020,76 @@ export function ReservationModal({
             {/* Client */}
             <div className="space-y-2">
               <Label htmlFor="client">{t.reservation.clientSelect}</Label>
-              <Select
-                value={formData.client_id}
-                onValueChange={(val) => setFormData({ ...formData, client_id: val })}
+              <Popover
+                open={clientComboOpen}
+                onOpenChange={(open) => {
+                  setClientComboOpen(open)
+                  if (!open) setClientSearch('')
+                }}
               >
-                <SelectTrigger id="client">
-                  <SelectValue placeholder={t.reservation.selectClient} />
-                </SelectTrigger>
-                <SelectContent>
-                  {clients.length === 0 ? (
-                    <SelectItem value="_empty" disabled>
-                      {t.reservation.noClients}
-                    </SelectItem>
-                  ) : (
-                    clients.filter((c) => c.is_active).map((client) => (
-                      <SelectItem key={client.id} value={client.id}>
-                        <span className="font-medium">{client.name}</span>
-                        {client.email && (
-                          <span className="ml-2 text-xs text-muted-foreground">{client.email}</span>
+                <PopoverTrigger asChild>
+                  <Button
+                    id="client"
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={clientComboOpen}
+                    className="w-full justify-between font-normal"
+                  >
+                    {selectedClient ? (
+                      <span className="flex min-w-0 items-baseline gap-2">
+                        <span className="truncate font-medium">{selectedClient.name}</span>
+                        {selectedClient.email && (
+                          <span className="truncate text-xs text-muted-foreground">{selectedClient.email}</span>
                         )}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">{t.reservation.selectClient}</span>
+                    )}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <Command shouldFilter={false}>
+                    <CommandInput
+                      placeholder={t.reservation.searchClientPlaceholder}
+                      value={clientSearch}
+                      onValueChange={setClientSearch}
+                    />
+                    <CommandList>
+                      <CommandEmpty>
+                        {activeClients.length === 0 ? t.reservation.noClients : t.reservation.noClientsFound}
+                      </CommandEmpty>
+                      <CommandGroup>
+                        {clientSearchResults.map((client) => (
+                          <CommandItem
+                            key={client.id}
+                            value={client.id}
+                            onSelect={() => {
+                              setFormData({ ...formData, client_id: client.id })
+                              setClientComboOpen(false)
+                              setClientSearch('')
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                'h-4 w-4 shrink-0',
+                                formData.client_id === client.id ? 'opacity-100' : 'opacity-0'
+                              )}
+                            />
+                            <div className="flex min-w-0 flex-col">
+                              <span className="truncate font-medium">{client.name}</span>
+                              {client.email && (
+                                <span className="truncate text-xs text-muted-foreground">{client.email}</span>
+                              )}
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
 
             {/* Service - required for a booking, optional for a visit (a
@@ -1091,17 +1244,27 @@ export function ReservationModal({
                 id="reservation-price"
                 type="number"
                 min={0}
-                step={0.01}
+                step="any"
                 value={formData.price}
                 onChange={(e) => setFormData({ ...formData, price: e.target.value !== '' ? parseFloat(e.target.value) : '' })}
+                onBlur={(e) => {
+                  if (e.target.value === '') return
+                  const rounded = Math.round(parseFloat(e.target.value) * 100) / 100
+                  setFormData({ ...formData, price: isNaN(rounded) ? '' : rounded })
+                }}
               />
             </div>
 
-            {/* Resource (optional) */}
+            {/* Resource - required when the selected service has specific
+                resources linked to it (that link is the business explicitly
+                saying "this service needs one of these"), optional when it
+                doesn't (many service types never need a resource at all). */}
             <div className="space-y-2">
               <Label htmlFor="resource">
                 {t.reservation.resourceSelect}{' '}
-                <span className="text-muted-foreground font-normal">{t.reservation.resourceOptional}</span>
+                {allowedResourceIds.length === 0 && (
+                  <span className="text-muted-foreground font-normal">{t.reservation.resourceOptional}</span>
+                )}
               </Label>
               <Select
                 value={formData.resource_id || '_none'}
@@ -1112,10 +1275,12 @@ export function ReservationModal({
                 }
               >
                 <SelectTrigger id="resource">
-                  <SelectValue placeholder={t.reservation.noResource} />
+                  <SelectValue placeholder={allowedResourceIds.length > 0 ? t.reservation.selectResource : t.reservation.noResource} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="_none">{t.reservation.noResource}</SelectItem>
+                  {allowedResourceIds.length === 0 && (
+                    <SelectItem value="_none">{t.reservation.noResource}</SelectItem>
+                  )}
                   {filteredResources.map((resource) => (
                     <SelectItem key={resource.id} value={resource.id}>
                       <span className="flex items-center gap-2">
@@ -1134,7 +1299,7 @@ export function ReservationModal({
               </Select>
               {allowedResourceIds.length > 0 && (
                 <p className="text-xs text-muted-foreground">
-                  Recursos disponibles para este servicio: {filteredResources.length}
+                  {t.reservation.resourceRequiredHint} ({filteredResources.length})
                 </p>
               )}
             </div>
@@ -1307,6 +1472,7 @@ export function ReservationModal({
                   !formData.client_id ||
                   !formData.start_time ||
                   (formData.type === 'booking' && !formData.service_id) ||
+                  (allowedResourceIds.length > 0 && !formData.resource_id) ||
                   (selectedService?.pricing_mode === 'preset' && !formData.duration_option_id) ||
                   (selectedService?.pricing_mode === 'hourly' &&
                     (formData.hours === '' ||

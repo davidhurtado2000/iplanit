@@ -133,16 +133,16 @@ export default function DashboardPage() {
 
       {/* Free Plan Usage Banner */}
       {!isPremium && (
-        <Card className="border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50">
+        <Card className="border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 dark:border-amber-900 dark:from-amber-950/40 dark:to-orange-950/30">
           <CardContent className="py-4">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-3 sm:items-center">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100">
-                  <Crown className="h-5 w-5 text-amber-600" />
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/40">
+                  <Crown className="h-5 w-5 text-amber-600 dark:text-amber-400" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-amber-900">{t.dashboard.freePlan}</p>
-                  <p className="text-xs text-amber-700">
+                  <p className="text-sm font-medium text-amber-900 dark:text-amber-200">{t.dashboard.freePlan}</p>
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
                     {todayReservations.length} {t.dashboard.reservationsWord}
                   </p>
                 </div>

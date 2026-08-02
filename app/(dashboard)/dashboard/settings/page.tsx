@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
+import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -28,16 +29,19 @@ import {
 } from '@/components/ui/dialog'
 import { PasswordStrength } from '@/components/password-strength'
 import { UpgradeModal } from '@/components/upgrade-modal'
-import { PremiumFeature } from '@/components/premium-feature'
+import { PremiumFeature, PremiumBadge } from '@/components/premium-feature'
 import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
 import { useDashboardData } from '@/context/dashboard-data-context'
 import { useTheme } from 'next-themes'
+import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { translateAuthError, withAuthLockRetry, withTimeout, AuthTimeoutError } from '@/lib/supabase/auth-errors'
 import { getPasswordChecks, isPasswordStrongEnough } from '@/lib/password'
 import { cn } from '@/lib/utils'
+import { FREE_LIMITS } from '@/lib/plan-limits'
 import {
   User,
   Building2,
@@ -82,6 +86,13 @@ const DEFAULT_BUSINESS_HOURS: { dayOfWeek: DayOfWeek; startTime: string; endTime
   { dayOfWeek: 'sunday', startTime: '09:00', endTime: '14:00', isOpen: false },
 ]
 
+interface PlanUsage {
+  reservations_this_month: number
+  clients: number
+  services: number
+  resources: number
+}
+
 // business_hours.day_of_week is 0-6 (0=Sunday), matching the convention
 // already used for reservation validation elsewhere in the app.
 const DAY_KEY_TO_NUMBER: Record<DayOfWeek, number> = {
@@ -94,6 +105,8 @@ export default function SettingsPage() {
   const { businessHours: realBusinessHours, refetchBusinessHours } = useDashboardData()
   const { language, setLanguage, t } = useLanguage()
   const { theme, setTheme } = useTheme()
+  const router = useRouter()
+  const [isPortalLoading, setIsPortalLoading] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
@@ -115,7 +128,62 @@ export default function SettingsPage() {
   const [isUploadingLogo, setIsUploadingLogo] = useState(false)
   const [logoError, setLogoError] = useState('')
   const logoInputRef = useRef<HTMLInputElement>(null)
+  const [planUsage, setPlanUsage] = useState<PlanUsage | null>(null)
   const supabase = createClient()
+
+  // Free-plan usage vs. the caps enforced in scripts/048-free-plan-limits.sql
+  // - only fetched for free accounts, since Premium has no limits to show.
+  useEffect(() => {
+    if (!currentBusiness?.id || authProfile?.plan !== 'free') {
+      setPlanUsage(null)
+      return
+    }
+    let cancelled = false
+    supabase.rpc('get_plan_usage', { p_business_id: currentBusiness.id }).then(({ data }) => {
+      if (!cancelled && data && typeof data === 'object' && !('error' in data)) {
+        setPlanUsage(data as unknown as PlanUsage)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [currentBusiness?.id, authProfile?.plan, supabase])
+
+  // Picks up the redirect back from Stripe Checkout (success_url/cancel_url
+  // in app/api/stripe/checkout) - the webhook usually updates profiles.plan
+  // before this even runs, but refreshProfile() here means the UI reflects
+  // Premium immediately instead of waiting for the next natural refetch.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const checkout = params.get('checkout')
+    if (checkout === 'success') {
+      refreshProfile()
+      toast.success(t.settings.checkoutSuccess)
+      router.replace('/dashboard/settings')
+    } else if (checkout === 'cancelled') {
+      toast(t.settings.checkoutCancelled)
+      router.replace('/dashboard/settings')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const handleManageSubscription = async () => {
+    setIsPortalLoading(true)
+    try {
+      const res = await fetch('/api/stripe/portal', { method: 'POST' })
+      const data = await res.json()
+      if (data.url) {
+        window.location.href = data.url
+        return
+      }
+      toast.error(t.settings.portalError)
+    } catch (err) {
+      console.error('[iplanit] Error opening billing portal:', err)
+      toast.error(t.settings.portalError)
+    } finally {
+      setIsPortalLoading(false)
+    }
+  }
 
   // Staff (Premium team members) can't see/edit Configuracion or manage the
   // team themselves - only the owner can. Defaults to owner when there's no
@@ -352,6 +420,8 @@ export default function SettingsPage() {
           name: business.name,
           slug: slug,
           timezone: business.timezone,
+          country: business.country,
+          currency: business.country === 'US' ? 'USD' : 'PEN',
         })
 
       if (error) throw error
@@ -704,7 +774,10 @@ export default function SettingsPage() {
               className="flex-col gap-1 py-3 data-[state=active]:bg-card data-[state=active]:shadow-sm sm:flex-row sm:gap-2 sm:py-2"
             >
               <Users className="h-5 w-5 sm:h-4 sm:w-4" />
-              <span className="text-xs sm:text-sm">{t.settings.teamTab}</span>
+              <span className="flex items-center gap-1 text-xs sm:text-sm">
+                {t.settings.teamTab}
+                <PremiumBadge />
+              </span>
             </TabsTrigger>
           )}
         </TabsList>
@@ -1114,27 +1187,27 @@ export default function SettingsPage() {
                       return (
                         <div
                           key={day.value}
-                          className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center"
+                          className="flex flex-col gap-3 rounded-lg border p-3 sm:h-16 sm:flex-row sm:items-center"
                         >
-                          <div className="flex w-28 items-center justify-between sm:justify-start">
-                            <span className="text-sm font-medium">{day.label}</span>
+                          <div className="flex h-9 w-36 shrink-0 items-center justify-between">
+                            <span className="shrink-0 whitespace-nowrap text-sm font-medium">{day.label}</span>
                             <Switch
                               checked={hours.isOpen}
                               onCheckedChange={(checked) =>
                                 updateBusinessHour(day.value, 'isOpen', checked)
                               }
-                              className="sm:ml-4"
+                              className="shrink-0"
                             />
                           </div>
-                          {hours.isOpen && (
-                            <div className="flex flex-1 items-center gap-2">
+                          {hours.isOpen ? (
+                            <div className="flex h-9 flex-1 items-center gap-2">
                               <Input
                                 type="time"
                                 value={hours.startTime}
                                 onChange={(e) =>
                                   updateBusinessHour(day.value, 'startTime', e.target.value)
                                 }
-                                className="w-full sm:w-auto"
+                                className="h-9 w-full sm:w-auto"
                               />
                               <span className="text-muted-foreground">{t.settings.to}</span>
                               <Input
@@ -1143,12 +1216,13 @@ export default function SettingsPage() {
                                 onChange={(e) =>
                                   updateBusinessHour(day.value, 'endTime', e.target.value)
                                 }
-                                className="w-full sm:w-auto"
+                                className="h-9 w-full sm:w-auto"
                               />
                             </div>
-                          )}
-                          {!hours.isOpen && (
-                            <span className="text-sm text-muted-foreground">{t.settings.closed}</span>
+                          ) : (
+                            <div className="flex h-9 flex-1 items-center">
+                              <span className="text-sm text-muted-foreground">{t.settings.closed}</span>
+                            </div>
                           )}
                         </div>
                       )
@@ -1351,17 +1425,60 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 {authProfile?.plan === 'premium' ? (
-                  <Badge>
-                    <Check className="mr-1 h-3 w-3" />
-                    {t.settings.activeStatus}
-                  </Badge>
+                  <div className="flex flex-col items-end gap-2">
+                    <Badge>
+                      <Check className="mr-1 h-3 w-3" />
+                      {t.settings.activeStatus}
+                    </Badge>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleManageSubscription}
+                      disabled={isPortalLoading}
+                    >
+                      {isPortalLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      {t.settings.manageSubscription}
+                    </Button>
+                  </div>
                 ) : (
                   <Button onClick={() => setShowUpgradeModal(true)}>{t.settings.upgradePremium}</Button>
                 )}
               </div>
 
+              {authProfile?.plan === 'free' && planUsage && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">{t.settings.usageTitle}</CardTitle>
+                    <CardDescription>{t.settings.usageDesc}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {(
+                      [
+                        ['reservations_this_month', t.upgradeModal.reservationsPerMonthLabel, FREE_LIMITS.reservationsPerMonth],
+                        ['clients', t.upgradeModal.clientsLabel, FREE_LIMITS.clients],
+                        ['services', t.upgradeModal.servicesLabel, FREE_LIMITS.services],
+                        ['resources', t.upgradeModal.resourcesLabel, FREE_LIMITS.resources],
+                      ] as const
+                    ).map(([key, label, limit]) => {
+                      const used = planUsage[key]
+                      return (
+                        <div key={key} className="space-y-1.5">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">{label}</span>
+                            <span className={cn('font-medium', used >= limit && 'text-destructive')}>
+                              {used} / {limit}
+                            </span>
+                          </div>
+                          <Progress value={Math.min(100, (used / limit) * 100)} className="h-2" />
+                        </div>
+                      )
+                    })}
+                  </CardContent>
+                </Card>
+              )}
+
               {authProfile?.plan === 'free' && (
-                <Card className="border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50">
+                <Card className="border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 dark:border-amber-900 dark:from-amber-950/40 dark:to-orange-950/30">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-base">
                       <Crown className="h-5 w-5 text-amber-500" />

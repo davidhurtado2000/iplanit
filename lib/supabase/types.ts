@@ -48,6 +48,8 @@ export interface Database {
           plan: 'free' | 'premium'
           timezone: string
           language: string
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
           created_at: string
           updated_at: string
         }
@@ -59,6 +61,8 @@ export interface Database {
           plan?: 'free' | 'premium'
           timezone?: string
           language?: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -70,6 +74,8 @@ export interface Database {
           plan?: 'free' | 'premium'
           timezone?: string
           language?: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -545,6 +551,10 @@ export interface Database {
       is_business_accessible: {
         Args: { target_business_id: string }
         Returns: boolean
+      }
+      get_plan_usage: {
+        Args: { p_business_id: string }
+        Returns: Json
       }
       business_member_role: {
         Args: { target_business_id: string }

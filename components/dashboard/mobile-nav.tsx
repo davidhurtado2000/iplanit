@@ -21,11 +21,13 @@ import {
   Loader2,
   BarChart3,
   ParkingSquare,
+  Layers,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet'
 import { UpgradeModal } from '@/components/upgrade-modal'
+import { PremiumBadge } from '@/components/premium-feature'
 
 interface MobileNavProps {
   isOpen: boolean
@@ -44,6 +46,7 @@ const NAV_ITEMS = [
   { key: 'settings' as const, href: '/dashboard/settings', icon: Settings },
   { key: 'analytics' as const, href: '/dashboard/analytics', icon: BarChart3 },
   { key: 'parking' as const, href: '/dashboard/parking', icon: ParkingSquare },
+  { key: 'resources' as const, href: '/dashboard/resources', icon: Layers },
 ]
 
 export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
@@ -60,7 +63,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
   // Sales/Cochera filtering - see sidebar.tsx for the same filter and the
   // reasoning behind it.
   const visibleNavItems = NAV_ITEMS.filter((item) => {
-    if (currentBusiness?.role === 'sales' && (item.key === 'services' || item.key === 'analytics')) return false
+    if (currentBusiness?.role === 'sales' && (item.key === 'services' || item.key === 'resources' || item.key === 'analytics')) return false
     if (item.key === 'parking' && !currentBusiness?.offers_parking) return false
     return true
   })
@@ -170,6 +173,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
                     >
                       <item.icon className="h-5 w-5 shrink-0" />
                       <span>{t.nav[item.key]}</span>
+                      {item.key === 'analytics' && <PremiumBadge className="ml-auto" />}
                     </Link>
                   )
                 })}

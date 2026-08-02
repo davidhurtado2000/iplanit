@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -8,8 +9,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Check, Crown, Zap, BarChart3, Users, Clock, Mail } from 'lucide-react'
+import { Check, Crown, Loader2, BarChart3, Users, Clock, Mail, Layers } from 'lucide-react'
+import { useLanguage } from '@/context/language-context'
+import { useBusinesses } from '@/hooks/use-businesses'
+import { FREE_LIMITS } from '@/lib/plan-limits'
+
+// Provisional flat price for every business regardless of country - David
+// still wants to discuss country-based pricing with his co-founder before
+// finalizing that, so this intentionally isn't split by business.country
+// yet (unlike SALES_WHATSAPP below, which was already confirmed).
+const PREMIUM_PRICE_USD = 35
 
 interface UpgradeModalProps {
   isOpen: boolean
@@ -17,47 +26,61 @@ interface UpgradeModalProps {
   feature?: string
 }
 
-const PREMIUM_FEATURES = [
-  {
-    icon: BarChart3,
-    title: 'Reportes y Analiticas',
-    description: 'Graficos de horas pico, servicios mas solicitados y revenue',
-  },
-  {
-    icon: Users,
-    title: 'Historial de Clientes',
-    description: 'Accede al historial completo de reservas por cliente',
-  },
-  {
-    icon: Clock,
-    title: 'Reservas Ilimitadas',
-    description: 'Sin limite de reservas mensuales',
-  },
-  {
-    icon: Mail,
-    title: 'Notificaciones Avanzadas',
-    description: 'Recordatorios automaticos por email y SMS',
-  },
-]
-
-const FREE_LIMITS = {
-  reservationsPerMonth: 50,
-  clients: 20,
-  services: 3,
-  resources: 2,
+// Routed by the business's own country so a US business's WhatsApp reaches
+// the Colorado number and everyone else reaches the Peru number - matches
+// the country-based sales conversation, not just the country-based currency
+// default (see scripts/046).
+const SALES_WHATSAPP = {
+  US: '17205469411',
+  default: '51983720200',
 }
+const SALES_EMAIL = 'davidsoftwareservicesllc@gmail.com'
 
 export function UpgradeModal({ isOpen, onClose, feature }: UpgradeModalProps) {
+  const { t } = useLanguage()
+  const { currentBusiness } = useBusinesses()
+  const m = t.upgradeModal
+  const [isRedirecting, setIsRedirecting] = useState(false)
+  const [checkoutError, setCheckoutError] = useState('')
+
+  const PREMIUM_FEATURES = [
+    { icon: BarChart3, title: m.featureAnalyticsTitle, description: m.featureAnalyticsDesc },
+    { icon: Users, title: m.featureClientHistoryTitle, description: m.featureClientHistoryDesc },
+    { icon: Clock, title: m.featureUnlimitedTitle, description: m.featureUnlimitedDesc },
+    { icon: Layers, title: m.featureUnlimitedRecordsTitle, description: m.featureUnlimitedRecordsDesc },
+    { icon: Mail, title: m.featureNotificationsTitle, description: m.featureNotificationsDesc },
+  ]
+
+  const handleSubscribe = async () => {
+    setCheckoutError('')
+    setIsRedirecting(true)
+    try {
+      const res = await fetch('/api/stripe/checkout', { method: 'POST' })
+      const data = await res.json()
+      if (data.url) {
+        window.location.href = data.url
+        return
+      }
+      setCheckoutError(m.checkoutError)
+    } catch (err) {
+      console.error('[iplanit] Error starting checkout:', err)
+      setCheckoutError(m.checkoutError)
+    } finally {
+      setIsRedirecting(false)
+    }
+  }
+
   const handleContactUs = () => {
     window.open(
-      'mailto:ventas@iPlannit.app?subject=Solicitud%20de%20Plan%20Premium&body=Hola,%20me%20interesa%20actualizar%20a%20Premium.',
+      `mailto:${SALES_EMAIL}?subject=Solicitud%20de%20Plan%20Premium&body=Hola,%20me%20interesa%20actualizar%20a%20Premium.`,
       '_blank'
     )
   }
 
   const handleWhatsApp = () => {
+    const number = currentBusiness?.country === 'US' ? SALES_WHATSAPP.US : SALES_WHATSAPP.default
     window.open(
-      'https://wa.me/51999999999?text=Hola,%20me%20interesa%20el%20Plan%20Premium%20de%20iPlannit',
+      `https://wa.me/${number}?text=Hola,%20me%20interesa%20el%20Plan%20Premium%20de%20iPlanit`,
       '_blank'
     )
   }
@@ -70,12 +93,10 @@ export function UpgradeModal({ isOpen, onClose, feature }: UpgradeModalProps) {
             <Crown className="h-7 w-7 text-white" />
           </div>
           <DialogTitle className="text-center text-xl">
-            Actualiza a Premium
+            {m.title}
           </DialogTitle>
           <DialogDescription className="text-center">
-            {feature
-              ? `La funcion "${feature}" esta disponible solo en el plan Premium.`
-              : 'Desbloquea todas las funciones y lleva tu negocio al siguiente nivel.'}
+            {feature ? m.descFeature.replace('{feature}', feature) : m.descGeneric}
           </DialogDescription>
         </DialogHeader>
 
@@ -83,27 +104,23 @@ export function UpgradeModal({ isOpen, onClose, feature }: UpgradeModalProps) {
           {/* Pricing */}
           <div className="rounded-xl border-2 border-primary/20 bg-primary/5 p-4 text-center sm:p-6">
             <div className="flex items-baseline justify-center gap-1">
-              <span className="text-3xl font-bold text-foreground sm:text-4xl">$20</span>
-              <span className="text-muted-foreground text-sm sm:text-base">/mes</span>
+              <span className="text-3xl font-bold text-foreground sm:text-4xl">${PREMIUM_PRICE_USD}</span>
+              <span className="text-muted-foreground text-sm sm:text-base">{m.perMonth}</span>
             </div>
             <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
-              Facturacion mensual
+              {m.monthlyBilling}
             </p>
-            <Badge className="mt-3 gap-1 bg-primary/10 text-primary hover:bg-primary/10">
-              <Zap className="h-3 w-3" />
-              Ahorra 20% con pago anual
-            </Badge>
           </div>
 
           {/* Features */}
           <div className="space-y-3">
             <p className="text-xs font-medium text-foreground sm:text-sm">
-              Todo lo incluido en Free, mas:
+              {m.includesFree}
             </p>
             {PREMIUM_FEATURES.map((feature) => (
               <div key={feature.title} className="flex items-start gap-3">
-                <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent/20">
-                  <Check className="h-3 w-3 text-accent" />
+                <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
+                  <Check className="h-3 w-3 text-green-600 dark:text-green-400" />
                 </div>
                 <div>
                   <p className="text-xs font-medium text-foreground sm:text-sm">
@@ -120,23 +137,23 @@ export function UpgradeModal({ isOpen, onClose, feature }: UpgradeModalProps) {
           {/* Free Plan Limits Info */}
           <div className="rounded-lg bg-muted/50 p-3 sm:p-4">
             <p className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide sm:text-xs">
-              Limites del Plan Gratuito
+              {m.freeLimitsTitle}
             </p>
             <div className="grid grid-cols-2 gap-2 text-xs sm:text-sm">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Reservas/mes:</span>
+                <span className="text-muted-foreground">{m.reservationsPerMonthLabel}</span>
                 <span className="font-medium">{FREE_LIMITS.reservationsPerMonth}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Clientes:</span>
+                <span className="text-muted-foreground">{m.clientsLabel}</span>
                 <span className="font-medium">{FREE_LIMITS.clients}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Servicios:</span>
+                <span className="text-muted-foreground">{m.servicesLabel}</span>
                 <span className="font-medium">{FREE_LIMITS.services}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Recursos:</span>
+                <span className="text-muted-foreground">{m.resourcesLabel}</span>
                 <span className="font-medium">{FREE_LIMITS.resources}</span>
               </div>
             </div>
@@ -147,27 +164,31 @@ export function UpgradeModal({ isOpen, onClose, feature }: UpgradeModalProps) {
             <Button
               className="w-full gap-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600"
               size="lg"
-              onClick={handleWhatsApp}
+              onClick={handleSubscribe}
+              disabled={isRedirecting}
             >
-              <Crown className="h-4 w-4" />
-              Solicitar Premium por WhatsApp
+              {isRedirecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Crown className="h-4 w-4" />}
+              {m.subscribeBtn}
             </Button>
-            <Button
-              variant="outline"
-              className="w-full bg-transparent"
-              onClick={handleContactUs}
-            >
-              Contactar por Email
-            </Button>
+            {checkoutError && (
+              <p className="text-center text-xs text-destructive">{checkoutError}</p>
+            )}
             <p className="text-center text-[10px] text-muted-foreground sm:text-xs">
-              Tu cuenta se activara en menos de 24 horas despues del pago.
+              {m.activationNote}
             </p>
+            <div className="flex items-center justify-center gap-3 border-t pt-3 text-xs text-muted-foreground">
+              <span>{m.questionsBeforePay}</span>
+              <button type="button" onClick={handleWhatsApp} className="underline hover:text-foreground">
+                WhatsApp
+              </button>
+              <span>·</span>
+              <button type="button" onClick={handleContactUs} className="underline hover:text-foreground">
+                {m.contactEmail}
+              </button>
+            </div>
           </div>
         </div>
       </DialogContent>
     </Dialog>
   )
 }
-
-// Exportamos los limites para usar en otras partes de la app
-export { FREE_LIMITS }

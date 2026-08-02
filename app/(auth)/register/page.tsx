@@ -66,6 +66,11 @@ export default function RegisterPage() {
   })
   const [error, setError] = useState('')
   const [acceptedTerms, setAcceptedTerms] = useState(false)
+  // Tracks whether the user touched the ES/EN toggle themselves - until they
+  // do, picking a business country below auto-picks a matching language
+  // default (US -> en, everything else -> es). Once they've made an
+  // explicit choice, country changes stop overriding it.
+  const [languageManuallySet, setLanguageManuallySet] = useState(false)
 
   const passwordChecks = getPasswordChecks(formData.password)
 
@@ -74,14 +79,20 @@ export default function RegisterPage() {
       <div className="inline-flex overflow-hidden rounded-md border text-xs font-medium">
         <button
           type="button"
-          onClick={() => setLanguage('es')}
+          onClick={() => {
+            setLanguage('es')
+            setLanguageManuallySet(true)
+          }}
           className={`px-2.5 py-1 ${language === 'es' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:bg-muted'}`}
         >
           ES
         </button>
         <button
           type="button"
-          onClick={() => setLanguage('en')}
+          onClick={() => {
+            setLanguage('en')
+            setLanguageManuallySet(true)
+          }}
           className={`border-l px-2.5 py-1 ${language === 'en' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:bg-muted'}`}
         >
           EN
@@ -341,7 +352,12 @@ export default function RegisterPage() {
                   <Label htmlFor="country">{tr.businessCountry}</Label>
                   <Select
                     value={formData.country}
-                    onValueChange={(value) => setFormData({ ...formData, country: value })}
+                    onValueChange={(value) => {
+                      setFormData({ ...formData, country: value })
+                      if (!languageManuallySet) {
+                        setLanguage(value === 'US' ? 'en' : 'es')
+                      }
+                    }}
                     disabled={isLoading}
                   >
                     <SelectTrigger>

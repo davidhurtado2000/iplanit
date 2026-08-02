@@ -29,7 +29,11 @@ export function OnboardingBanner({
   hasClients,
   hasReservations,
 }: OnboardingBannerProps) {
-  const [dismissed, setDismissed] = useState(false)
+  // "Hide" used to fully unmount this (only in-memory, reset on reload) with
+  // no way back except refreshing the page. Collapsing to a slim bar instead
+  // keeps the remaining steps one click away until they're actually done -
+  // only real completion (allCompleted below) removes it for good.
+  const [collapsed, setCollapsed] = useState(false)
   const { t } = useLanguage()
 
   const steps = [
@@ -71,11 +75,27 @@ export function OnboardingBanner({
   const progress = (completedSteps / steps.length) * 100
   const allCompleted = completedSteps === steps.length
 
-  if (dismissed || allCompleted) {
+  if (allCompleted) {
     return null
   }
 
   const nextStep = steps.find((s) => !s.completed)
+
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        onClick={() => setCollapsed(false)}
+        className="flex w-full items-center justify-between rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5 text-sm transition-colors hover:bg-primary/10"
+      >
+        <span className="flex items-center gap-2 text-muted-foreground">
+          <Sparkles className="h-4 w-4 text-primary" />
+          {t.onboarding.progress}: {completedSteps} {t.onboarding.of} {steps.length} {t.onboarding.completed}
+        </span>
+        <span className="font-medium text-primary">{t.onboarding.show}</span>
+      </button>
+    )
+  }
 
   return (
     <Card className="border-primary/20 bg-gradient-to-br from-primary/5 via-background to-primary/5">
@@ -94,7 +114,7 @@ export function OnboardingBanner({
             variant="ghost"
             size="sm"
             className="text-muted-foreground"
-            onClick={() => setDismissed(true)}
+            onClick={() => setCollapsed(true)}
           >
             {t.onboarding.hide}
           </Button>
@@ -120,7 +140,7 @@ export function OnboardingBanner({
               href={step.href}
               className={`group relative flex flex-col gap-2 rounded-lg border p-3 transition-all ${
                 step.completed
-                  ? 'border-green-200 bg-green-50/50'
+                  ? 'border-green-200 bg-green-50/50 dark:border-green-900 dark:bg-green-950/40'
                   : step.id === nextStep?.id
                   ? 'border-primary bg-primary/5 hover:bg-primary/10'
                   : 'border-muted hover:border-primary/50 hover:bg-muted/50'
@@ -128,11 +148,11 @@ export function OnboardingBanner({
             >
               <div className="flex items-center gap-2">
                 {step.completed ? (
-                  <CheckCircle2 className="h-5 w-5 text-green-600" />
+                  <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
                 ) : (
                   <step.icon className={`h-5 w-5 ${step.id === nextStep?.id ? 'text-primary' : 'text-muted-foreground'}`} />
                 )}
-                <span className={`text-sm font-medium ${step.completed ? 'text-green-700' : ''}`}>
+                <span className={`text-sm font-medium ${step.completed ? 'text-green-700 dark:text-green-400' : ''}`}>
                   {step.title}
                 </span>
               </div>

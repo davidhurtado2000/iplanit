@@ -314,24 +314,44 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         (payload) => {
           const updated = payload.new as Reservation
           const previousStatus = (payload.old as Partial<Reservation>).status
+          const reservationId = updated.id
           setReservations((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
 
           if (previousStatus === updated.status) return
 
-          const when = new Date(updated.start_time).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })
-          const cta = { label: t.dashboard.newReservationToastCta, onClick: () => router.push('/dashboard/calendar') }
-
-          if (updated.status === 'confirmed') {
-            playNotificationChime()
-            toast.success(t.dashboard.reservationConfirmedToast, { description: when, duration: 6000, action: cta })
-          } else if (updated.status === 'cancelled') {
-            playNotificationChime()
-            toast.error(t.dashboard.reservationCancelledToast, { description: when, duration: 6000, action: cta })
-          } else if (updated.status === 'completed') {
-            toast.success(t.dashboard.reservationCompletedToast, { description: when, duration: 5000, action: cta })
-          } else if (updated.status === 'no_show') {
-            toast.warning(t.dashboard.reservationNoShowToast, { description: when, duration: 6000, action: cta })
+          // Single source of truth for "a status changed, tell the user" -
+          // fires the same way whether the change came from this browser
+          // tab or a teammate's, so everyone with the dashboard open stays
+          // in sync. Offering Undo here (instead of duplicating this same
+          // toast+chime in reservation-modal.tsx's own status-change
+          // handler) avoids two toasts stacking for your own action.
+          const statusMessages: Partial<Record<Reservation['status'], string>> = {
+            pending: t.dashboard.reservationPendingToast,
+            confirmed: t.dashboard.reservationConfirmedToast,
+            cancelled: t.dashboard.reservationCancelledToast,
+            completed: t.dashboard.reservationCompletedToast,
+            no_show: t.dashboard.reservationNoShowToast,
           }
+          const message = statusMessages[updated.status]
+          if (!message) return
+
+          const when = new Date(updated.start_time).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })
+          const undoAction = previousStatus
+            ? {
+                label: t.reservation.undoBtn,
+                onClick: async () => {
+                  const { error } = await supabase
+                    .from('reservations')
+                    .update({ status: previousStatus })
+                    .eq('id', reservationId)
+                  if (!error) toast(t.reservation.statusRevertedToast)
+                },
+              }
+            : undefined
+
+          playNotificationChime()
+          const toastFn = updated.status === 'cancelled' ? toast.error : updated.status === 'no_show' ? toast.warning : toast.success
+          toastFn(message, { description: when, duration: 6500, action: undoAction })
         }
       )
       .subscribe()

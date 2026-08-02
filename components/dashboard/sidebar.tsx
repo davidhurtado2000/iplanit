@@ -23,6 +23,7 @@ import {
   Clock,
   BarChart3,
   ParkingSquare,
+  Layers,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
@@ -39,6 +40,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { UpgradeModal } from '@/components/upgrade-modal'
+import { PremiumBadge } from '@/components/premium-feature'
 import { useLanguage } from '@/context/language-context'
 
 interface SidebarProps {
@@ -50,6 +52,7 @@ const NAV_ITEMS = [
   { key: 'dashboard' as const, href: '/dashboard', icon: LayoutDashboard },
   { key: 'calendar' as const, href: '/dashboard/calendar', icon: Calendar },
   { key: 'services' as const, href: '/dashboard/services', icon: Briefcase },
+  { key: 'resources' as const, href: '/dashboard/resources', icon: Layers },
   { key: 'clients' as const, href: '/dashboard/clients', icon: Users },
   { key: 'parking' as const, href: '/dashboard/parking', icon: ParkingSquare },
   { key: 'analytics' as const, href: '/dashboard/analytics', icon: BarChart3 },
@@ -62,7 +65,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
   const [now, setNow] = useState<Date | null>(null)
   const { user, profile, loading: authLoading, signOut } = useAuth()
   const { businesses, currentBusiness, switchBusiness, loading: businessLoading } = useBusinesses()
-  const { t } = useLanguage()
+  const { t, locale } = useLanguage()
 
   useEffect(() => {
     setNow(new Date())
@@ -72,10 +75,10 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
 
   const tz = currentBusiness?.timezone || 'America/Lima'
   const localDate = now
-    ? now.toLocaleDateString('es-ES', { timeZone: tz, weekday: 'short', day: 'numeric', month: 'short' })
+    ? now.toLocaleDateString(locale, { timeZone: tz, weekday: 'short', day: 'numeric', month: 'short' })
     : null
   const localTime = now
-    ? now.toLocaleTimeString('es-ES', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: true })
+    ? now.toLocaleTimeString(locale, { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: true })
     : null
 
   const userPlan = profile?.plan || 'free'
@@ -88,7 +91,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
   // Cochera only shows once the business has actually turned it on
   // (Configuracion > Negocio) - otherwise it's just an empty section.
   const visibleNavItems = NAV_ITEMS.filter((item) => {
-    if (currentBusiness?.role === 'sales' && (item.key === 'services' || item.key === 'analytics')) return false
+    if (currentBusiness?.role === 'sales' && (item.key === 'services' || item.key === 'resources' || item.key === 'analytics')) return false
     if (item.key === 'parking' && !currentBusiness?.offers_parking) return false
     return true
   })
@@ -264,6 +267,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
               >
                 <item.icon className="h-5 w-5 shrink-0" />
                 {!isCollapsed && <span>{label}</span>}
+                {!isCollapsed && item.key === 'analytics' && <PremiumBadge className="ml-auto" />}
               </Link>
             )
 

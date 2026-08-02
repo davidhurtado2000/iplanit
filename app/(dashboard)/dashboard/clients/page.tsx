@@ -70,6 +70,8 @@ import {
   Check,
 } from 'lucide-react'
 import { PremiumButton } from '@/components/premium-feature'
+import { UpgradeModal } from '@/components/upgrade-modal'
+import { isPlanLimitReached } from '@/lib/plan-limits'
 import { toCsv, downloadCsv, parseCsv } from '@/lib/csv'
 
 const AVATAR_COLORS = [
@@ -181,6 +183,8 @@ export default function ClientsPage() {
   const PAGE_SIZE = 10
 
   const [isImportOpen, setIsImportOpen] = useState(false)
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [saveError, setSaveError] = useState('')
   const [importPreview, setImportPreview] = useState<{
     rows: ImportedClientRow[]
     duplicates: number
@@ -500,6 +504,7 @@ export default function ClientsPage() {
         documentNumber: '',
       })
     }
+    setSaveError('')
     setIsModalOpen(true)
   }
 
@@ -507,6 +512,7 @@ export default function ClientsPage() {
     e.preventDefault()
     if (!currentBusiness) return
 
+    setSaveError('')
     setSaving(true)
     try {
       const clientData = {
@@ -535,8 +541,17 @@ export default function ClientsPage() {
       }
       await refetchClients()
       setIsModalOpen(false)
-    } catch (err) {
+    } catch (err: any) {
       console.error('[v0] Error saving client:', err)
+      // PLN02 = free-plan client limit trigger (scripts/048) - only reachable
+      // here as a race-condition backstop, since handleNewClientClick already
+      // checks this before the form ever opens.
+      if (err?.code === 'PLN02') {
+        setIsModalOpen(false)
+        setShowUpgradeModal(true)
+      } else {
+        setSaveError(t.saveError)
+      }
     } finally {
       setSaving(false)
     }
@@ -562,6 +577,14 @@ export default function ClientsPage() {
   }
 
   const isPremium = profile?.plan === 'premium'
+
+  const handleNewClientClick = async () => {
+    if (!isPremium && currentBusiness && (await isPlanLimitReached(currentBusiness.id, 'clients'))) {
+      setShowUpgradeModal(true)
+      return
+    }
+    handleOpenModal()
+  }
 
   if (loading) {
     return (
@@ -614,7 +637,7 @@ export default function ClientsPage() {
             <Download className="h-4 w-4" />
             {t.clients.exportCsv}
           </PremiumButton>
-          <Button onClick={() => handleOpenModal()} className="gap-2">
+          <Button onClick={handleNewClientClick} className="gap-2">
             <Plus className="h-4 w-4" />
             {t.clients.newClient}
           </Button>
@@ -970,6 +993,8 @@ export default function ClientsPage() {
               />
             </div>
 
+            {saveError && <p className="text-sm text-destructive">{saveError}</p>}
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} disabled={saving}>
                 {t.clients.cancelBtn}
@@ -1223,6 +1248,12 @@ export default function ClientsPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        feature={t.upgradeModal.featureUnlimitedRecordsTitle}
+      />
     </div>
   )
 }

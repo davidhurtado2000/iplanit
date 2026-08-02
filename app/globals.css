@@ -1,5 +1,13 @@
 @import 'tailwindcss';
 
+/* Without this, Tailwind v4's `dark:` variant defaults to the OS-level
+   `prefers-color-scheme: dark` media query instead of following the app's
+   own Light/Dark/System toggle (next-themes sets a `.dark` class on <html>
+   via attribute="class" in app/layout.tsx). That mismatch is exactly why
+   `dark:` utilities could apply while the app was showing Light mode (or
+   vice versa) whenever the OS preference didn't match the in-app choice. */
+@custom-variant dark (&:is(.dark *));
+
 :root {
   --background: oklch(0.985 0.002 240);
   --foreground: oklch(0.15 0.02 250);
@@ -49,7 +57,15 @@
   --secondary-foreground: oklch(0.95 0.01 240);
   --muted: oklch(0.22 0.02 250);
   --muted-foreground: oklch(0.65 0.02 250);
-  --accent: oklch(0.65 0.15 165);
+  /* Unlike the other dark-mode tokens above, this kept the light-mode
+     lightness (0.65-0.7) instead of dropping it like --muted/--secondary
+     did - it rendered as a bright, saturated green "popping" out of the
+     near-black UI wherever a menu/dropdown/combobox item gets highlighted
+     (DropdownMenuItem, SelectItem, CommandItem all use bg-accent). Dropped
+     to a dark, only-faintly-tinted surface in the same lightness range as
+     --muted/--secondary so it reads as a subtle highlight instead of a
+     neon flash, while keeping a hint of the brand's teal hue (165). */
+  --accent: oklch(0.26 0.05 165);
   --accent-foreground: oklch(0.95 0.01 240);
   --destructive: oklch(0.5 0.2 25);
   --destructive-foreground: oklch(0.95 0.01 240);

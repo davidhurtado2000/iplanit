@@ -43,10 +43,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
 import { useDashboardData, type ServiceResource, type ServiceDurationOption } from '@/context/dashboard-data-context'
 import { createClient } from '@/lib/supabase/client'
+import { getResourceTypeLabel } from '@/lib/resource-display'
+import { isPlanLimitReached } from '@/lib/plan-limits'
+import { UpgradeModal } from '@/components/upgrade-modal'
 import {
   Plus,
   MoreHorizontal,
@@ -56,8 +60,6 @@ import {
   DollarSign,
   Briefcase,
   Building,
-  User,
-  Video,
   Search,
   Loader2,
   X,
@@ -90,16 +92,6 @@ interface DurationOptionForm {
   price: number | ''
 }
 
-interface Resource {
-  id: string
-  business_id: string
-  name: string
-  description: string | null
-  type: 'room' | 'person' | 'equipment' | 'virtual' | 'parking'
-  color: string
-  is_active: boolean
-}
-
 const SERVICE_COLORS = [
   '#3B82F6', '#10B981', '#F59E0B', '#8B5CF6',
   '#EF4444', '#EC4899', '#06B6D4', '#84CC16',
@@ -107,6 +99,8 @@ const SERVICE_COLORS = [
 
 export default function ServicesPage() {
   const { currentBusiness } = useBusinesses()
+  const { profile } = useAuth()
+  const isPremium = profile?.plan === 'premium'
   const { t } = useLanguage()
   const {
     services,
@@ -126,17 +120,23 @@ export default function ServicesPage() {
   const resources = allResources.filter((r) => r.type !== 'parking')
   const isUSD = currentBusiness?.currency === 'USD'
   const [saving, setSaving] = useState(false)
-  const [activeTab, setActiveTab] = useState<'services' | 'resources'>('services')
   const [isServiceModalOpen, setIsServiceModalOpen] = useState(false)
-  const [isResourceModalOpen, setIsResourceModalOpen] = useState(false)
   const [editingService, setEditingService] = useState<Service | null>(null)
-  const [editingResource, setEditingResource] = useState<Resource | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [deletingService, setDeletingService] = useState<Service | null>(null)
-  const [deletingResource, setDeletingResource] = useState<Resource | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [durationOptionsError, setDurationOptionsError] = useState('')
+  const [saveError, setSaveError] = useState('')
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const supabase = createClient()
+
+  const handleNewServiceClick = async () => {
+    if (!isPremium && currentBusiness && (await isPlanLimitReached(currentBusiness.id, 'services'))) {
+      setShowUpgradeModal(true)
+      return
+    }
+    handleOpenServiceModal()
+  }
 
   const [serviceForm, setServiceForm] = useState({
     name: '',
@@ -158,21 +158,8 @@ export default function ServicesPage() {
   const [initialFormSnapshot, setInitialFormSnapshot] = useState('')
   const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false)
 
-  const [resourceForm, setResourceForm] = useState({
-    name: '',
-    description: '',
-    type: 'room' as 'room' | 'person' | 'equipment' | 'virtual',
-    color: SERVICE_COLORS[0],
-    isActive: true,
-  })
-
-
   const filteredServices = services.filter((s) =>
     s.name.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-
-  const filteredResources = resources.filter((r) =>
-    r.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   const handleOpenServiceModal = (service?: Service) => {
@@ -234,6 +221,7 @@ export default function ServicesPage() {
     // Snapshot of the just-loaded state, compared against current form state
     // to know whether to warn before closing - see hasUnsavedChanges below.
     setInitialFormSnapshot(JSON.stringify({ form: nextForm, durationOptions: nextDurationOptions, resourceIds: nextResourceIds }))
+    setSaveError('')
     setIsServiceModalOpen(true)
   }
 
@@ -280,6 +268,7 @@ export default function ServicesPage() {
     if (!currentBusiness) return
 
     setDurationOptionsError('')
+    setSaveError('')
     if (serviceForm.pricingMode === 'preset') {
       const validOptions = durationOptions.filter((o) => o.duration !== '' && o.price !== '')
       if (validOptions.length === 0) {
@@ -393,8 +382,17 @@ export default function ServicesPage() {
 
       await Promise.all([refetchServicesAndResources(), refetchServiceResources(), refetchServiceDurationOptions()])
       setIsServiceModalOpen(false)
-    } catch (err) {
+    } catch (err: any) {
       console.error('[v0] Error saving service:', err)
+      // PLN03 = free-plan service limit trigger (scripts/048) - only
+      // reachable here as a race-condition backstop, since
+      // handleNewServiceClick already checks this before the form opens.
+      if (err?.code === 'PLN03') {
+        setIsServiceModalOpen(false)
+        setShowUpgradeModal(true)
+      } else {
+        setSaveError(t.saveError)
+      }
     } finally {
       setSaving(false)
     }
@@ -417,109 +415,6 @@ export default function ServicesPage() {
       setIsDeleting(false)
       setDeletingService(null)
     }
-  }
-
-  const handleOpenResourceModal = (resource?: Resource) => {
-    if (resource) {
-      setEditingResource(resource)
-      setResourceForm({
-        name: resource.name,
-        description: resource.description || '',
-        // Safe: `resources` (see the filter above) never includes parking
-        // spots here - those are only ever created/edited on the Cochera
-        // page, never through this modal.
-        type: resource.type as 'room' | 'person' | 'equipment' | 'virtual',
-        color: resource.color || SERVICE_COLORS[0],
-        isActive: resource.is_active,
-      })
-    } else {
-      setEditingResource(null)
-      setResourceForm({
-        name: '',
-        description: '',
-        type: 'room',
-        color: SERVICE_COLORS[0],
-        isActive: true,
-      })
-    }
-    setIsResourceModalOpen(true)
-  }
-
-  const handleSaveResource = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!currentBusiness) return
-
-    setSaving(true)
-    try {
-      const resourceData = {
-        name: resourceForm.name,
-        description: resourceForm.description || null,
-        type: resourceForm.type,
-        color: resourceForm.color,
-        is_active: resourceForm.isActive,
-        business_id: currentBusiness.id,
-      }
-
-      if (editingResource) {
-        const { error } = await supabase
-          .from('resources')
-          .update(resourceData)
-          .eq('id', editingResource.id)
-
-        if (error) throw error
-      } else {
-        const { error } = await supabase
-          .from('resources')
-          .insert(resourceData)
-
-        if (error) throw error
-      }
-      await refetchServicesAndResources()
-      setIsResourceModalOpen(false)
-    } catch (err) {
-      console.error('[v0] Error saving resource:', err)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleConfirmDeleteResource = async () => {
-    if (!deletingResource) return
-    setIsDeleting(true)
-    try {
-      const { error } = await supabase
-        .from('resources')
-        .delete()
-        .eq('id', deletingResource.id)
-
-      if (error) throw error
-      await refetchServicesAndResources()
-    } catch (err) {
-      console.error('[v0] Error deleting resource:', err)
-    } finally {
-      setIsDeleting(false)
-      setDeletingResource(null)
-    }
-  }
-
-  const getResourceIcon = (type: string) => {
-    switch (type) {
-      case 'room':
-        return Building
-      case 'person':
-        return User
-      case 'virtual':
-        return Video
-      default:
-        return Briefcase
-    }
-  }
-
-  const getResourceTypeLabel = (type: string) => {
-    if (type === 'room') return t.services.roomTypeLabel
-    if (type === 'person') return t.services.personType
-    if (type === 'virtual') return t.services.virtualType
-    return t.services.equipmentType
   }
 
   if (loading) {
@@ -565,63 +460,24 @@ export default function ServicesPage() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 border-b">
-        <button
-          type="button"
-          className={`px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === 'services'
-              ? 'border-b-2 border-primary text-primary'
-              : 'text-muted-foreground hover:text-foreground'
-          }`}
-          onClick={() => setActiveTab('services')}
-        >
-          {t.services.servicesTab} ({services.length})
-        </button>
-        <button
-          type="button"
-          className={`px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === 'resources'
-              ? 'border-b-2 border-primary text-primary'
-              : 'text-muted-foreground hover:text-foreground'
-          }`}
-          onClick={() => setActiveTab('resources')}
-        >
-          {t.services.resourcesTab} ({resources.length})
-        </button>
-      </div>
-
-      {activeTab === 'resources' && (
-        <p className="text-sm text-muted-foreground">{t.services.resourcesExplainer}</p>
-      )}
-
       {/* Search and Actions */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative max-w-sm flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder={activeTab === 'services' ? t.services.searchServices : t.services.searchResources}
+            placeholder={t.services.searchServices}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
           />
         </div>
-        <Button
-          onClick={() =>
-            activeTab === 'services'
-              ? handleOpenServiceModal()
-              : handleOpenResourceModal()
-          }
-          className="gap-2"
-        >
+        <Button onClick={handleNewServiceClick} className="gap-2">
           <Plus className="h-4 w-4" />
-          {activeTab === 'services' ? t.services.newService : t.services.newResource}
+          {t.services.newService}
         </Button>
       </div>
 
-      {/* Services Tab Content */}
-      {activeTab === 'services' && (
-        <Card>
+      <Card>
           <CardContent className="p-0">
             <Table>
               <TableHeader>
@@ -749,82 +605,6 @@ export default function ServicesPage() {
             </Table>
           </CardContent>
         </Card>
-      )}
-
-      {/* Resources Tab Content */}
-      {activeTab === 'resources' && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredResources.map((resource) => {
-            const Icon = getResourceIcon(resource.type)
-            return (
-              <Card key={resource.id}>
-                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="rounded-lg p-2"
-                      style={{ backgroundColor: `${resource.color || '#3B82F6'}20` }}
-                    >
-                      <Icon className="h-5 w-5" style={{ color: resource.color || '#3B82F6' }} />
-                    </div>
-                    <div>
-                      <CardTitle className="text-base">{resource.name}</CardTitle>
-                      <CardDescription>
-                        {getResourceTypeLabel(resource.type)}
-                      </CardDescription>
-                    </div>
-                  </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleOpenResourceModal(resource)}>
-                        <Pencil className="mr-2 h-4 w-4" />
-                        {t.services.edit}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => setDeletingResource(resource)}
-                        className="text-destructive"
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        {t.services.delete}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </CardHeader>
-                <CardContent>
-                  {resource.description && (
-                    <p className="mb-3 text-sm text-muted-foreground">
-                      {resource.description}
-                    </p>
-                  )}
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant={resource.is_active ? 'default' : 'secondary'}>
-                      {resource.is_active ? t.services.active : t.services.inactive}
-                    </Badge>
-                    {(() => {
-                      const linkedCount = serviceResources.filter((sr) => sr.resource_id === resource.id).length
-                      return linkedCount > 0 ? (
-                        <Badge variant="outline" className="text-xs">
-                          {linkedCount} {linkedCount === 1 ? 'servicio' : 'servicios'}
-                        </Badge>
-                      ) : null
-                    })()}
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
-          {filteredResources.length === 0 && (
-            <div className="col-span-full flex flex-col items-center justify-center py-12">
-              <Building className="mb-4 h-12 w-12 text-muted-foreground/50" />
-              <p className="text-muted-foreground">{t.services.notFoundResources}</p>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Service Modal */}
       <Dialog open={isServiceModalOpen} onOpenChange={handleServiceModalOpenChange}>
@@ -903,11 +683,16 @@ export default function ServicesPage() {
                     id="service-hourly-rate"
                     type="number"
                     min={0}
-                    step={0.01}
+                    step="any"
                     value={serviceForm.hourlyRate}
                     onChange={(e) =>
                       setServiceForm({ ...serviceForm, hourlyRate: e.target.value !== '' ? parseFloat(e.target.value) : '' })
                     }
+                    onBlur={(e) => {
+                      if (e.target.value === '') return
+                      const rounded = Math.round(parseFloat(e.target.value) * 100) / 100
+                      setServiceForm({ ...serviceForm, hourlyRate: isNaN(rounded) ? '' : rounded })
+                    }}
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -963,12 +748,17 @@ export default function ServicesPage() {
                       <Input
                         type="number"
                         min={0}
-                        step={0.01}
+                        step="any"
                         placeholder={`${t.services.priceLabel} (${isUSD ? '$' : 'S/.'})`}
                         value={option.price}
                         onChange={(e) =>
                           updateDurationOption(index, 'price', e.target.value !== '' ? parseFloat(e.target.value) : '')
                         }
+                        onBlur={(e) => {
+                          if (e.target.value === '') return
+                          const rounded = Math.round(parseFloat(e.target.value) * 100) / 100
+                          updateDurationOption(index, 'price', isNaN(rounded) ? '' : rounded)
+                        }}
                         className="flex-1"
                       />
                       <Button
@@ -1012,9 +802,14 @@ export default function ServicesPage() {
                       id="service-price-usd"
                       type="number"
                       min={0}
-                      step={0.01}
+                      step="any"
                       value={serviceForm.priceUsd}
                       onChange={(e) => setServiceForm({ ...serviceForm, priceUsd: e.target.value !== '' ? parseFloat(e.target.value) : '' })}
+                      onBlur={(e) => {
+                        if (e.target.value === '') return
+                        const rounded = Math.round(parseFloat(e.target.value) * 100) / 100
+                        setServiceForm({ ...serviceForm, priceUsd: isNaN(rounded) ? '' : rounded })
+                      }}
                       required
                     />
                   </div>
@@ -1025,9 +820,13 @@ export default function ServicesPage() {
                       id="service-price"
                       type="number"
                       min={0}
-                      step={0.01}
+                      step="any"
                       value={serviceForm.price}
                       onChange={(e) => setServiceForm({ ...serviceForm, price: parseFloat(e.target.value) || 0 })}
+                      onBlur={(e) => {
+                        const rounded = Math.round((parseFloat(e.target.value) || 0) * 100) / 100
+                        setServiceForm({ ...serviceForm, price: rounded })
+                      }}
                       required
                     />
                   </div>
@@ -1087,7 +886,7 @@ export default function ServicesPage() {
                         }}
                       />
                       {resource.name}
-                      <span className="text-muted-foreground text-xs">({getResourceTypeLabel(resource.type)})</span>
+                      <span className="text-muted-foreground text-xs">({getResourceTypeLabel(resource.type, t.services)})</span>
                     </label>
                   ))}
                 </div>
@@ -1123,6 +922,8 @@ export default function ServicesPage() {
               />
             </div>
 
+            {saveError && <p className="text-sm text-destructive">{saveError}</p>}
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => handleServiceModalOpenChange(false)} disabled={saving}>
                 {t.services.cancelBtn}
@@ -1130,107 +931,6 @@ export default function ServicesPage() {
               <Button type="submit" disabled={saving}>
                 {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {editingService ? t.services.saveBtn : t.services.createServiceBtn}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Resource Modal */}
-      <Dialog open={isResourceModalOpen} onOpenChange={setIsResourceModalOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {editingResource ? t.services.editResourceTitle : t.services.newResourceTitle}
-            </DialogTitle>
-            <DialogDescription>
-              {editingResource ? t.services.editResourceDesc : t.services.newResourceDesc}
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSaveResource} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="resource-name">{t.services.nameLabel}</Label>
-              <Input
-                id="resource-name"
-                value={resourceForm.name}
-                onChange={(e) => setResourceForm({ ...resourceForm, name: e.target.value })}
-                placeholder={t.services.resourceNamePlaceholder}
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="resource-description">{t.services.descLabel}</Label>
-              <Textarea
-                id="resource-description"
-                value={resourceForm.description}
-                onChange={(e) => setResourceForm({ ...resourceForm, description: e.target.value })}
-                placeholder={t.services.resourceDescPlaceholder}
-                rows={2}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>{t.services.resourceTypeLabel}</Label>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {[
-                  { value: 'room', label: t.services.roomType, icon: Building },
-                  { value: 'person', label: t.services.personType, icon: User },
-                  { value: 'equipment', label: t.services.equipmentType, icon: Briefcase },
-                  { value: 'virtual', label: t.services.virtualType, icon: Video },
-                ].map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    className={`flex flex-col items-center gap-2 rounded-lg border p-3 transition-colors ${
-                      resourceForm.type === option.value
-                        ? 'border-primary bg-primary/10'
-                        : 'hover:bg-muted'
-                    }`}
-                    onClick={() => setResourceForm({ ...resourceForm, type: option.value as 'room' | 'person' | 'equipment' | 'virtual' })}
-                  >
-                    <option.icon className="h-5 w-5" />
-                    <span className="text-xs">{option.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>{t.services.colorLabel}</Label>
-              <div className="flex gap-2">
-                {SERVICE_COLORS.map((color) => (
-                  <button
-                    key={color}
-                    type="button"
-                    className={`h-8 w-8 rounded-full border-2 transition-transform ${
-                      resourceForm.color === color
-                        ? 'scale-110 border-foreground'
-                        : 'border-transparent hover:scale-105'
-                    }`}
-                    style={{ backgroundColor: color }}
-                    onClick={() => setResourceForm({ ...resourceForm, color })}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <Label htmlFor="resource-active">{t.services.resourceActive}</Label>
-              <Switch
-                id="resource-active"
-                checked={resourceForm.isActive}
-                onCheckedChange={(checked) => setResourceForm({ ...resourceForm, isActive: checked })}
-              />
-            </div>
-
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsResourceModalOpen(false)} disabled={saving}>
-                {t.services.cancelBtn}
-              </Button>
-              <Button type="submit" disabled={saving}>
-                {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {editingResource ? t.services.saveBtn : t.services.createResourceBtn}
               </Button>
             </DialogFooter>
           </form>
@@ -1296,29 +996,11 @@ export default function ServicesPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Delete Resource Confirmation */}
-      <AlertDialog open={!!deletingResource} onOpenChange={(open) => !open && setDeletingResource(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t.services.deleteResourceTitle}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {deletingResource && `"${deletingResource.name}" — `}
-              {t.services.deleteResourceDesc}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>{t.services.cancelBtn}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleConfirmDeleteResource}
-              disabled={isDeleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isDeleting ? t.services.deleting : t.services.confirmDelete}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        feature={t.upgradeModal.featureUnlimitedRecordsTitle}
+      />
     </div>
   )
 }
