@@ -16,10 +16,12 @@ jobs:
     steps:
       - name: Call /api/cron/send-reminders
         run: |
-          # -L: iplanit.io (no www) 308-redirects to www.iplanit.io at the
-          # Vercel domain level - curl doesn't follow redirects by default,
-          # so without this every run would silently hit the redirect
-          # response instead of the actual endpoint (same root cause as the
-          # Stripe webhook delivery failures).
-          curl -L --fail-with-body -sS -X GET "https://iplanit.io/api/cron/send-reminders" \
+          # Must hit www.iplanit.io directly, not iplanit.io - the bare
+          # domain 308-redirects to www at the Vercel level, and curl drops
+          # the Authorization header on any redirect that crosses hostnames
+          # (a deliberate curl security behavior, even with -L) - so hitting
+          # the redirect target silently strips the auth header instead of
+          # just following it, which is exactly what caused every run to
+          # 401 after the first (incomplete) fix here.
+          curl --fail-with-body -sS -X GET "https://www.iplanit.io/api/cron/send-reminders" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
