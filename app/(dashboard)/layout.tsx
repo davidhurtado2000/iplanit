@@ -4,9 +4,11 @@ import React, { useState } from 'react'
 import { Sidebar } from '@/components/dashboard/sidebar'
 import { MobileNav } from '@/components/dashboard/mobile-nav'
 import { FeedbackWidget } from '@/components/dashboard/feedback-widget'
+import { DeletionScheduledScreen } from '@/components/dashboard/deletion-scheduled-screen'
 import { Toaster } from '@/components/ui/sonner'
 import { BusinessProvider } from '@/context/business-context'
 import { DashboardDataProvider } from '@/context/dashboard-data-context'
+import { useAuth } from '@/hooks/use-auth'
 import { cn } from '@/lib/utils'
 
 export default function DashboardLayout({
@@ -16,6 +18,14 @@ export default function DashboardLayout({
 }) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [isMobileOpen, setIsMobileOpen] = useState(false)
+  const { profile } = useAuth()
+
+  // Blocks the entire dashboard (not just Settings) so a scheduled deletion
+  // can't be missed by staying on whatever page was last open - see
+  // components/dashboard/deletion-scheduled-screen.tsx.
+  if (profile?.deletion_requested_at) {
+    return <DeletionScheduledScreen deletionRequestedAt={profile.deletion_requested_at} />
+  }
 
   return (
     <BusinessProvider>

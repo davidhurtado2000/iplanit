@@ -27,6 +27,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { PasswordStrength } from '@/components/password-strength'
 import { UpgradeModal } from '@/components/upgrade-modal'
 import { PremiumFeature, PremiumBadge } from '@/components/premium-feature'
@@ -63,6 +71,7 @@ import {
   Copy,
   ExternalLink,
   Link2,
+  AlertTriangle,
 } from 'lucide-react'
 
 type DayOfWeek = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday'
@@ -100,8 +109,8 @@ const DAY_KEY_TO_NUMBER: Record<DayOfWeek, number> = {
 }
 
 export default function SettingsPage() {
-  const { user, profile: authProfile, loading: authLoading, refreshProfile } = useAuth()
-  const { currentBusiness, loading: businessLoading, updateBusiness } = useBusinesses()
+  const { user, profile: authProfile, loading: authLoading, refreshProfile, signOut } = useAuth()
+  const { currentBusiness, businesses, loading: businessLoading, updateBusiness } = useBusinesses()
   const { businessHours: realBusinessHours, refetchBusinessHours } = useDashboardData()
   const { language, setLanguage, t } = useLanguage()
   const { theme, setTheme } = useTheme()
@@ -125,6 +134,10 @@ export default function SettingsPage() {
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
   const [photoError, setPhotoError] = useState('')
   const photoInputRef = useRef<HTMLInputElement>(null)
+  const [showDeleteAccountDialog, setShowDeleteAccountDialog] = useState(false)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false)
+  const [deleteAccountError, setDeleteAccountError] = useState('')
   const [isUploadingLogo, setIsUploadingLogo] = useState(false)
   const [logoError, setLogoError] = useState('')
   const logoInputRef = useRef<HTMLInputElement>(null)
@@ -182,6 +195,29 @@ export default function SettingsPage() {
       toast.error(t.settings.portalError)
     } finally {
       setIsPortalLoading(false)
+    }
+  }
+
+  const ownedBusinessesCount = businesses.filter((b) => b.role === 'owner').length
+
+  const handleConfirmDeleteAccount = async () => {
+    setDeleteAccountError('')
+    setIsDeletingAccount(true)
+    try {
+      const res = await fetch('/api/account/delete', { method: 'POST' })
+      const data = await res.json()
+      if (!data.success) throw new Error('request_failed')
+      toast.success(t.accountDeletion.requestSuccess)
+      setShowDeleteAccountDialog(false)
+      // The dashboard layout itself will show the "scheduled for deletion"
+      // screen on next load - signing out here is simplest and matches the
+      // "you're being logged out either way" framing in the success toast.
+      setTimeout(() => signOut(), 1500)
+    } catch (err) {
+      console.error('[iplanit] Error requesting account deletion:', err)
+      setDeleteAccountError(t.accountDeletion.requestError)
+    } finally {
+      setIsDeletingAccount(false)
     }
   }
 
@@ -915,6 +951,30 @@ export default function SettingsPage() {
                   <p className="text-sm text-destructive">{t.saveError}</p>
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-destructive/40">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base text-destructive">
+                <AlertTriangle className="h-4 w-4" />
+                {t.accountDeletion.dangerZoneTitle}
+              </CardTitle>
+              <CardDescription>{t.accountDeletion.dangerZoneDesc}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                variant="outline"
+                className="gap-2 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => {
+                  setDeleteConfirmText('')
+                  setDeleteAccountError('')
+                  setShowDeleteAccountDialog(true)
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+                {t.accountDeletion.deleteAccountBtn}
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -1713,6 +1773,65 @@ export default function SettingsPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={showDeleteAccountDialog}
+        onOpenChange={(open) => {
+          if (isDeletingAccount) return
+          setShowDeleteAccountDialog(open)
+          if (!open) {
+            setDeleteConfirmText('')
+            setDeleteAccountError('')
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t.accountDeletion.confirmTitle}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {ownedBusinessesCount > 0
+                ? t.accountDeletion.deleteOwnerWarning.replace('{count}', String(ownedBusinessesCount))
+                : t.accountDeletion.deleteStaffWarning}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="delete-confirm-text" className="text-sm">
+              {t.accountDeletion.typeToConfirm}
+            </Label>
+            <Input
+              id="delete-confirm-text"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder={t.accountDeletion.confirmPlaceholder}
+              disabled={isDeletingAccount}
+              autoComplete="off"
+            />
+            {deleteAccountError && (
+              <p className="text-sm text-destructive">{deleteAccountError}</p>
+            )}
+          </div>
+          <AlertDialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowDeleteAccountDialog(false)}
+              disabled={isDeletingAccount}
+            >
+              {t.accountDeletion.cancelBtn}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleConfirmDeleteAccount}
+              disabled={isDeletingAccount || deleteConfirmText !== t.accountDeletion.confirmWord}
+              className="gap-2"
+            >
+              {isDeletingAccount && <Loader2 className="h-4 w-4 animate-spin" />}
+              {t.accountDeletion.confirmBtn}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

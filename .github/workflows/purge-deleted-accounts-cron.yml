@@ -1,0 +1,17 @@
+name: Purge deleted accounts
+
+# Finalizes accounts whose 30-day grace period (scripts/051) has passed -
+# daily is plenty, this doesn't need reminders-cron's hourly precision.
+on:
+  schedule:
+    - cron: '0 10 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  purge-accounts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call /api/cron/purge-deleted-accounts
+        run: |
+          curl --fail-with-body -sS -X GET "https://www.iplanit.io/api/cron/purge-deleted-accounts" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"

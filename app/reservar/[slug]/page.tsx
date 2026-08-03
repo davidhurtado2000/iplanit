@@ -274,6 +274,7 @@ export default function PublicBookingPage() {
           parking_unavailable: tr.errorParkingUnavailable,
           invalid_hours: tr.errorGeneric,
           business_reservation_limit_reached: tr.errorBusinessAtCapacity,
+          business_unavailable: tr.errorBusinessUnavailable,
         }
         setSubmitError(messages[result.error] || tr.errorGeneric)
         return

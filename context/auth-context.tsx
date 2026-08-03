@@ -11,6 +11,7 @@ export interface Profile {
   avatar_url: string | null
   plan: string
   language: string
+  deletion_requested_at: string | null
   created_at: string
 }
 
@@ -51,6 +52,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           avatar_url: null,
           plan: 'free',
           language: 'es',
+          deletion_requested_at: null,
           created_at: new Date().toISOString(),
         })
       }

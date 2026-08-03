@@ -50,6 +50,7 @@ export interface Database {
           language: string
           stripe_customer_id: string | null
           stripe_subscription_id: string | null
+          deletion_requested_at: string | null
           created_at: string
           updated_at: string
         }
@@ -63,6 +64,7 @@ export interface Database {
           language?: string
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
+          deletion_requested_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -76,6 +78,7 @@ export interface Database {
           language?: string
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
+          deletion_requested_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -555,6 +558,27 @@ export interface Database {
       get_plan_usage: {
         Args: { p_business_id: string }
         Returns: Json
+      }
+      is_business_accepting_reservations: {
+        Args: { p_business_id: string }
+        Returns: boolean
+      }
+      get_accounts_ready_for_deletion: {
+        Args: Record<string, never>
+        Returns: { user_id: string; stripe_subscription_id: string | null }[]
+      }
+      get_reservations_needing_deletion_notice: {
+        Args: { p_user_id: string }
+        Returns: {
+          reservation_id: string
+          client_email: string | null
+          client_name: string
+          service_name: string | null
+          business_name: string
+          business_timezone: string
+          business_country: 'PE' | 'US'
+          start_time: string
+        }[]
       }
       business_member_role: {
         Args: { target_business_id: string }
