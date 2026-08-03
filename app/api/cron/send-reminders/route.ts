@@ -10,7 +10,16 @@ import type { Database } from '@/lib/supabase/types'
 // invocations when that env var is set, which is checked below so this
 // can't be hit by anyone who finds the URL.
 export async function GET(request: Request) {
-  if (request.headers.get('authorization') !== `Bearer ${process.env.CRON_SECRET}`) {
+  const authHeader = request.headers.get('authorization')
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    // TEMPORARY - pinpointing the GitHub Actions 401 without logging either
+    // actual secret value. Remove once found.
+    console.log('[iplanit][debug] cron auth mismatch', {
+      hasAuthHeader: !!authHeader,
+      authHeaderLength: authHeader?.length ?? 0,
+      hasCronSecretEnv: !!process.env.CRON_SECRET,
+      cronSecretEnvLength: process.env.CRON_SECRET?.length ?? 0,
+    })
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
 
