@@ -39,3 +39,14 @@ Supabase Dashboard -> Authentication -> Email Templates:
 Save each, then test by signing up a throwaway account and requesting a
 password reset, confirming both arrive from `cuenta@iplanit.io` with the new
 design instead of Supabase's default template.
+
+## 3. Verify the language conditional
+
+Both templates now show only the recipient's own language (Spanish or
+English) via `{{ if eq .Data.language "en" }}`, instead of showing both
+languages stacked in one email. This can't be rendered/tested locally, so
+confirm it live: sign up once with the language toggle set to Spanish and
+once set to English, and check each confirmation email shows only its own
+language (not blank, not the wrong one, not both). Do the same for password
+reset. If it ever renders broken, the safe fallback is going back to a
+single template that shows both languages together.
