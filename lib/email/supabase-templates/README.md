@@ -40,13 +40,18 @@ Save each, then test by signing up a throwaway account and requesting a
 password reset, confirming both arrive from `cuenta@iplanit.io` with the new
 design instead of Supabase's default template.
 
-## 3. Verify the language conditional
+## 3. Language: both shown together, not conditional
 
-Both templates now show only the recipient's own language (Spanish or
-English) via `{{ if eq .Data.language "en" }}`, instead of showing both
-languages stacked in one email. This can't be rendered/tested locally, so
-confirm it live: sign up once with the language toggle set to Spanish and
-once set to English, and check each confirmation email shows only its own
-language (not blank, not the wrong one, not both). Do the same for password
-reset. If it ever renders broken, the safe fallback is going back to a
-single template that shows both languages together.
+These show both languages stacked in one email (Spanish then English)
+rather than only the recipient's own language. A per-language version using
+`{{ if eq .Data.language "en" }}` was tried first and confirmed broken:
+`.Data` isn't a valid field in Supabase's auth email template context, so
+the conditional silently failed to render and Supabase fell back to its own
+generic unbranded template instead - no error anywhere, just the wrong
+email going out. Don't reintroduce a `.Data`-based conditional without a
+way to actually verify it renders (Supabase templates can't be tested
+locally). A real per-language version would need a different approach -
+e.g. sending these via a custom API route with Resend instead of Supabase's
+built-in template system, the same way reservation emails already work
+(`lib/email/templates.ts`) - which is a bigger change than editing this
+template.
