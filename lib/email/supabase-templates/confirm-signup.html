@@ -4,18 +4,26 @@
   kept here as a version-controlled copy, same reason scripts/*.sql exist
   even though those are also run manually.
 
-  Bilingual (both languages shown together) rather than a
-  {{ if eq .Data.language "en" }} conditional - confirmed by testing (on
-  the Reset Password template) that `.Data` isn't a valid field in
-  Supabase's auth email template context: the conditional version silently
-  failed to render and Supabase fell back to its own generic default
-  template instead, with no error shown anywhere. Matches the visual style
-  of lib/email/templates.ts's emailLayout() (blue header, white card, gray
-  footer) so every iPlanit email looks like the same product.
+  IMPORTANT: never write a literal curly-brace template expression inside
+  this HTML comment (or anywhere else) unless it's meant to actually
+  execute - Supabase's template parser processes the whole file as Go
+  template source, including text inside comments, before HTML rendering.
+  A parse error anywhere makes Supabase silently fall back to its own
+  default template (see "Email template not updating" in Supabase's own
+  docs), with the error only visible in the project's Auth Logs, never in
+  the dashboard editor itself - the editor always looks correct regardless.
 
-  {{ .ConfirmationURL }} already combines the Site URL + redirect
-  configured in Authentication -> URL Configuration with the confirmation
-  token - leave it exactly as-is.
+  Bilingual (both languages shown together, Spanish then English) rather
+  than showing only the recipient's own language - kept simple as the
+  safe, working baseline rather than something dependent on custom signup
+  metadata that can't be rendered/tested locally before trusting it.
+  Matches the visual style of lib/email/templates.ts's emailLayout() (blue
+  header, white card, gray footer) so every iPlanit email looks like the
+  same product.
+
+  The confirmation link variable below already combines the Site URL +
+  redirect configured in Authentication -> URL Configuration with the
+  confirmation token - leave it exactly as-is, do not modify or rename it.
 -->
 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f4f5f7; padding: 32px 16px;">
   <div style="max-width: 480px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e5e7eb;">

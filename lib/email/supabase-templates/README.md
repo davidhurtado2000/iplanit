@@ -43,15 +43,24 @@ design instead of Supabase's default template.
 ## 3. Language: both shown together, not conditional
 
 These show both languages stacked in one email (Spanish then English)
-rather than only the recipient's own language. A per-language version using
-`{{ if eq .Data.language "en" }}` was tried first and confirmed broken:
-`.Data` isn't a valid field in Supabase's auth email template context, so
-the conditional silently failed to render and Supabase fell back to its own
-generic unbranded template instead - no error anywhere, just the wrong
-email going out. Don't reintroduce a `.Data`-based conditional without a
-way to actually verify it renders (Supabase templates can't be tested
-locally). A real per-language version would need a different approach -
-e.g. sending these via a custom API route with Resend instead of Supabase's
-built-in template system, the same way reservation emails already work
-(`lib/email/templates.ts`) - which is a bigger change than editing this
-template.
+rather than only the recipient's own language, since there's no local way
+to render/test Supabase's Go-template syntax before trusting it in
+production.
+
+## 4. If a saved template ever doesn't seem to take effect
+
+Supabase's template parser processes the ENTIRE file as Go template source
+- including text inside HTML comments - before rendering. If the file
+contains ANY broken/unclosed curly-brace expression anywhere (even one
+only meant as prose, e.g. describing old syntax in a comment for
+documentation purposes), the whole template fails to parse. On a parse
+error, Supabase silently falls back to its own default template with NO
+error shown anywhere in the dashboard editor - the editor keeps showing
+your saved content looking perfectly fine, so this is easy to mistake for
+a caching/propagation issue instead of what it actually is.
+
+The only place the real error shows up is Supabase Dashboard -> your
+project -> Logs -> Auth Logs, as an event named
+`templatemailer_template_body_parse_error`. Check there first if a
+template change ever doesn't seem to be taking effect, before assuming
+it's a caching delay or an SMTP problem.
