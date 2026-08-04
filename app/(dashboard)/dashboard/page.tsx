@@ -20,12 +20,14 @@ import {
   Layers,
   BarChart3,
   Lock,
+  Eye,
 } from 'lucide-react'
 import Link from 'next/link'
 import { UpgradeModal } from '@/components/upgrade-modal'
 import { OnboardingBanner } from '@/components/dashboard/onboarding-banner'
 import { ReservationModal } from '@/components/dashboard/reservation-modal'
 import { HeroKpiCard } from '@/components/dashboard/hero-kpi-card'
+import { VISIT_BLOCK_COLOR } from '@/components/dashboard/calendar-view'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useAuth } from '@/hooks/use-auth'
 import { useLanguage } from '@/context/language-context'
@@ -270,6 +272,7 @@ export default function DashboardPage() {
                 {todayReservations.slice(0, 5).map((reservation) => {
                   const client = clientsMap[reservation.client_id]
                   const service = reservation.service_id ? servicesMap[reservation.service_id] : undefined
+                  const isVisit = reservation.type === 'visit'
                   return (
                     <button
                       key={reservation.id}
@@ -279,14 +282,19 @@ export default function DashboardPage() {
                     >
                       <div
                         className="h-9 w-1 shrink-0 rounded-full"
-                        style={{ backgroundColor: service?.color ?? 'hsl(var(--primary))' }}
+                        style={{ backgroundColor: isVisit ? VISIT_BLOCK_COLOR : service?.color ?? 'hsl(var(--primary))' }}
                       />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">
+                        <p className="flex items-center gap-1 truncate text-sm font-medium">
+                          {isVisit && <Eye className="h-3 w-3 shrink-0" />}
                           {client?.name ?? t.calendar.unknownClient}
                         </p>
                         <p className="truncate text-xs text-muted-foreground">
-                          {service?.name ?? t.calendar.unknownService}
+                          {service
+                            ? `${isVisit ? `${t.calendar.interestedInShortLabel} ` : ''}${service.name}`
+                            : isVisit
+                              ? t.reservation.noServiceVisit
+                              : t.calendar.unknownService}
                         </p>
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1">

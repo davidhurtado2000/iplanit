@@ -11,7 +11,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ChevronLeft, ChevronRight, CalendarDays, Clock, Check, CheckCheck, X, ParkingSquare, Search, Eye } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CalendarDays, ParkingSquare, Search, Eye, HelpCircle } from 'lucide-react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { CalendarView } from '@/lib/types'
 import { cn, capitalizeFirst } from '@/lib/utils'
 import { useLanguage } from '@/context/language-context'
@@ -34,7 +35,20 @@ const DEFAULT_TZ     = 'America/Lima'
 // indistinguishable from a visit, defeating the whole point. Gray also
 // reads correctly on its own: "not a real colored service", administrative
 // rather than a color a business would ever brand a paid service with.
-const VISIT_BLOCK_COLOR = '#64748b'
+export const VISIT_BLOCK_COLOR = '#64748b'
+
+// Visit blocks get a diagonal-stripe texture instead of a flat fill - the
+// same "tentative event" convention Google Calendar/Outlook use - so the
+// distinction reads as "a different kind of block" rather than just a
+// duller color. Still built on VISIT_BLOCK_COLOR alone (never a new hue),
+// so it can't collide with a service/resource's own solid color.
+function visitPatternStyle(baseColor: string) {
+  return {
+    backgroundColor: baseColor,
+    backgroundImage:
+      'repeating-linear-gradient(135deg, rgba(255,255,255,0.16) 0px, rgba(255,255,255,0.16) 5px, transparent 5px, transparent 11px)',
+  }
+}
 
 // A colored left border signals status at a glance without replacing the
 // block's own background (still the service's color, so services stay
@@ -231,19 +245,77 @@ export function CalendarViewComponent({
         )}
       </div>
 
-      {/* Explains the gray + eye-icon convention used on visit blocks below
-          - without this, there's nothing on screen saying what that color
-          means, since it's deliberately NOT one of the pickable service/
-          resource colors (see VISIT_BLOCK_COLOR above). Only reached for
-          day/week/month - list view returns early above, and already
-          spells out "Visita" in text on every row instead. */}
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <span
-          className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
-          style={{ backgroundColor: VISIT_BLOCK_COLOR }}
-        />
-        <Eye className="h-3 w-3 shrink-0" />
-        <span>{t.calendar.visitLegendLabel}</span>
+      {/* The gray+eye visit convention stays always-visible here (it's the
+          one signal with zero prior exposure anywhere else in the product -
+          see VISIT_BLOCK_COLOR above). Status colors and the parking badge
+          are already learnable elsewhere (status filter, list view text),
+          so they only need to be one click away, not permanently on
+          screen - hence the "?" popover instead of more inline rows. Only
+          reached for day/week/month - list view returns early above. */}
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1.5">
+          <span
+            className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+            style={{ backgroundColor: VISIT_BLOCK_COLOR }}
+          />
+          <Eye className="h-3 w-3 shrink-0" />
+          <span>{t.calendar.visitLegendLabel}</span>
+        </div>
+
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded-full border px-2 py-0.5 transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <HelpCircle className="h-3 w-3 shrink-0" />
+              {t.calendar.legendButtonLabel}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-64">
+            <p className="mb-2 text-sm font-semibold text-foreground">{t.calendar.legendTitle}</p>
+            <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              {t.calendar.legendStatusHeading}
+            </p>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2 text-xs text-foreground">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-amber-400" />
+                <span>{t.reservation.pending}</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-foreground">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-400" />
+                <span>{t.reservation.confirmed}</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-foreground">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-sky-400" />
+                <span>{t.reservation.completed}</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-foreground">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-red-400" />
+                <span>{t.reservation.cancelled}</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-foreground">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-orange-500" />
+                <span>{t.reservation.noShow}</span>
+              </div>
+            </div>
+            <div className="my-2.5 border-t" />
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2 text-xs text-foreground">
+                <ParkingSquare className="h-3 w-3 shrink-0" />
+                <span>{t.calendar.parkingAssigned}</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-foreground">
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: VISIT_BLOCK_COLOR }}
+                />
+                <Eye className="h-3 w-3 shrink-0" />
+                <span>{t.calendar.visitLegendLabel}</span>
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
 
       {view === 'day'   && <DayView   date={currentDate} reservations={reservations} resources={resources} selectedResourceId={selectedResourceId} clientsMap={clientsMap} servicesMap={servicesMap} resourcesMap={resourcesMap} onSelectReservation={onSelectReservation} startHour={startHour} endHour={endHour} timezone={timezone} t={t} />}
@@ -416,29 +488,18 @@ function DayView({
                         key={r.id}
                         type="button"
                         onClick={() => onSelectReservation(r)}
+                        title={getStatusLabel(r.status, t.reservation)}
                         className={cn(
-                          'absolute left-1 right-1 overflow-hidden rounded-md px-2 py-1 text-left text-white shadow-sm transition-all hover:brightness-110 hover:shadow-md',
+                          'absolute left-1 right-1 overflow-hidden rounded-lg px-2.5 py-1.5 text-left text-white shadow-sm transition-all hover:brightness-110 hover:shadow-md',
                           statusBorderClass(r.status),
                           (r.status === 'cancelled' || r.status === 'no_show') && 'opacity-45 saturate-50'
                         )}
-                        style={{ top: top + 1, height: height - 2, backgroundColor: color }}
+                        style={{
+                          top: top + 1,
+                          height: height - 2,
+                          ...(r.type === 'visit' ? visitPatternStyle(color) : { backgroundColor: color }),
+                        }}
                       >
-                        {!isShort && (
-                          <span className="absolute right-1 top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white/90 text-foreground shadow-sm">
-                            {r.status === 'pending' && <Clock className="h-2 w-2" />}
-                            {r.status === 'confirmed' && <CheckCheck className="h-2 w-2" />}
-                            {r.status === 'completed' && <Check className="h-2 w-2" />}
-                            {(r.status === 'cancelled' || r.status === 'no_show') && <X className="h-2 w-2" />}
-                          </span>
-                        )}
-                        {!isShort && r.parking_resource_id && (
-                          <span
-                            className="absolute left-1 top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white/90 text-foreground shadow-sm"
-                            title={t.calendar.parkingAssigned}
-                          >
-                            <ParkingSquare className="h-2 w-2" />
-                          </span>
-                        )}
                         {isShort ? (
                           <p className="flex items-center gap-1 text-[10px] font-semibold leading-tight truncate">
                             {r.type === 'visit' && <Eye className="h-2.5 w-2.5 shrink-0" />}
@@ -446,13 +507,23 @@ function DayView({
                           </p>
                         ) : (
                           <>
-                            <p className="flex items-center gap-1 pr-4 text-xs font-semibold leading-tight truncate">
+                            <p className="flex items-center gap-1 text-xs font-semibold leading-tight truncate">
                               {r.type === 'visit' && <Eye className="h-3 w-3 shrink-0" />}
                               {client?.name ?? '—'}
                             </p>
-                            <p className="text-[10px] leading-tight truncate opacity-90">{service?.name ?? '—'}</p>
-                            <p className="mt-0.5 text-[10px] leading-tight opacity-75">
-                              {fmt(h, m)} – {fmt(endHM.h, endHM.m)}
+                            {service && (
+                              <p className="text-[10px] leading-tight truncate opacity-80">
+                                {r.type === 'visit' ? `${t.calendar.interestedInShortLabel} ` : ''}{service.name}
+                              </p>
+                            )}
+                            <p className="mt-0.5 flex items-center gap-1 text-[10px] leading-tight opacity-70">
+                              <span>{fmt(h, m)} – {fmt(endHM.h, endHM.m)}</span>
+                              {r.parking_resource_id && (
+                                <span className="flex items-center gap-0.5" title={t.calendar.parkingAssigned}>
+                                  <span aria-hidden>·</span>
+                                  <ParkingSquare className="h-2.5 w-2.5 shrink-0" />
+                                </span>
+                              )}
                             </p>
                           </>
                         )}
@@ -551,21 +622,19 @@ function WeekView({
                   const service = servicesMap[r.service_id]
                   const { h, m } = getTzHourMin(r.start_time, timezone)
                   const fmt = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+                  const rowColor = service?.color ?? '#3B82F6'
                   return (
                     <div
                       key={r.id}
+                      title={getStatusLabel(r.status, t.reservation)}
                       className={cn(
                         'flex w-full items-center gap-1 truncate rounded px-1.5 py-0.5 text-[10px] font-medium text-white',
                         statusBorderClass(r.status),
                         (r.status === 'cancelled' || r.status === 'no_show') && 'opacity-45 saturate-50'
                       )}
-                      style={{ backgroundColor: r.type === 'visit' ? VISIT_BLOCK_COLOR : service?.color ?? '#3B82F6' }}
+                      style={r.type === 'visit' ? visitPatternStyle(VISIT_BLOCK_COLOR) : { backgroundColor: rowColor }}
                       onClick={e => { e.stopPropagation(); onSelectReservation(r) }}
                     >
-                      {r.status === 'pending' && <Clock className="h-2.5 w-2.5 shrink-0" />}
-                      {r.status === 'confirmed' && <CheckCheck className="h-2.5 w-2.5 shrink-0" />}
-                      {r.status === 'completed' && <Check className="h-2.5 w-2.5 shrink-0" />}
-                      {(r.status === 'cancelled' || r.status === 'no_show') && <X className="h-2.5 w-2.5 shrink-0" />}
                       {r.type === 'visit' && <Eye className="h-2.5 w-2.5 shrink-0" />}
                       <span className="truncate">{fmt} {client?.name ?? '—'}</span>
                     </div>
@@ -667,21 +736,19 @@ function MonthView({
                   const service = servicesMap[r.service_id]
                   const { h, m } = getTzHourMin(r.start_time, timezone)
                   const fmt = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+                  const rowColor = service?.color ?? '#3B82F6'
                   return (
                     <div
                       key={r.id}
+                      title={getStatusLabel(r.status, t.reservation)}
                       className={cn(
                         'flex w-full items-center gap-0.5 truncate rounded px-1 py-0.5 text-[9px] sm:text-[10px] text-white',
                         statusBorderClass(r.status),
                         (r.status === 'cancelled' || r.status === 'no_show') && 'opacity-45 saturate-50'
                       )}
-                      style={{ backgroundColor: r.type === 'visit' ? VISIT_BLOCK_COLOR : service?.color ?? '#3B82F6' }}
+                      style={r.type === 'visit' ? visitPatternStyle(VISIT_BLOCK_COLOR) : { backgroundColor: rowColor }}
                       onClick={e => { e.stopPropagation(); onSelectReservation(r) }}
                     >
-                      {r.status === 'pending' && <Clock className="h-2 w-2 shrink-0" />}
-                      {r.status === 'confirmed' && <CheckCheck className="h-2 w-2 shrink-0" />}
-                      {r.status === 'completed' && <Check className="h-2 w-2 shrink-0" />}
-                      {(r.status === 'cancelled' || r.status === 'no_show') && <X className="h-2 w-2 shrink-0" />}
                       {r.type === 'visit' && <Eye className="h-2 w-2 shrink-0" />}
                       <span className="truncate">{fmt}</span>
                     </div>
@@ -815,7 +882,11 @@ function ListView({
                       ) : (
                         service && <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: service.color }} />
                       )}
-                      {service?.name ?? (r.type === 'visit' ? t.reservation.typeVisit : '—')}
+                      {service
+                        ? `${r.type === 'visit' ? `${t.calendar.interestedInShortLabel} ` : ''}${service.name}`
+                        : r.type === 'visit'
+                          ? t.reservation.typeVisit
+                          : '—'}
                     </span>
                   </td>
                   <td className="p-2">

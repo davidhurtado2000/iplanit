@@ -11,7 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { CalendarViewComponent } from '@/components/dashboard/calendar-view'
+import { CalendarViewComponent, VISIT_BLOCK_COLOR } from '@/components/dashboard/calendar-view'
 import { ReservationModal } from '@/components/dashboard/reservation-modal'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
@@ -19,7 +19,7 @@ import { useDashboardData } from '@/context/dashboard-data-context'
 import { getStatusBadgeVariant, getStatusLabel } from '@/lib/reservation-status'
 import { capitalizeFirst } from '@/lib/utils'
 import type { CalendarView } from '@/lib/types'
-import { Plus, CalendarDays, CalendarRange, Calendar as CalendarIcon, Clock, ChevronDown, Building2, List } from 'lucide-react'
+import { Plus, CalendarDays, CalendarRange, Calendar as CalendarIcon, Clock, ChevronDown, Building2, List, Eye } from 'lucide-react'
 
 interface Reservation {
   id: string
@@ -284,6 +284,7 @@ export default function CalendarPage() {
                   {todayReservations.map((reservation) => {
                     const client = clientsMap[reservation.client_id]
                     const service = reservation.service_id ? servicesMap[reservation.service_id] : undefined
+                    const isVisit = reservation.type === 'visit'
                     return (
                       <button
                         key={reservation.id}
@@ -294,11 +295,12 @@ export default function CalendarPage() {
                         <div className="flex items-start gap-2">
                           <div
                             className="mt-0.5 w-1 self-stretch min-h-[40px] rounded-full"
-                            style={{ backgroundColor: service?.color ?? 'hsl(var(--primary))' }}
+                            style={{ backgroundColor: isVisit ? VISIT_BLOCK_COLOR : service?.color ?? 'hsl(var(--primary))' }}
                           />
                           <div className="flex-1 min-w-0 space-y-0.5">
                             <div className="flex items-center justify-between gap-2">
-                              <p className="text-sm font-medium truncate">
+                              <p className="flex items-center gap-1 text-sm font-medium truncate">
+                                {isVisit && <Eye className="h-3 w-3 shrink-0" />}
                                 {client?.name ?? t.calendar.unknownClient}
                               </p>
                               <Badge variant={getStatusBadgeVariant(reservation.status)} className="h-4 shrink-0 px-1.5 text-[9px]">
@@ -306,7 +308,11 @@ export default function CalendarPage() {
                               </Badge>
                             </div>
                             <p className="text-xs text-muted-foreground truncate">
-                              {service?.name ?? t.calendar.unknownService}
+                              {service
+                                ? `${isVisit ? `${t.calendar.interestedInShortLabel} ` : ''}${service.name}`
+                                : isVisit
+                                  ? t.reservation.noServiceVisit
+                                  : t.calendar.unknownService}
                             </p>
                             <span className="flex items-center gap-1 text-xs text-muted-foreground">
                               <Clock className="h-3 w-3" />
