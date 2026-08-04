@@ -1,4 +1,4 @@
-import type { Reservation, Service, BusinessHour } from '@/context/dashboard-data-context'
+import type { Reservation, Service, BusinessHour, Client } from '@/context/dashboard-data-context'
 
 export type DateRangeOption = '7d' | '30d' | '90d'
 
@@ -10,6 +10,28 @@ export function getRangeBounds(option: DateRangeOption): { from: Date; to: Date 
   const days = option === '7d' ? 7 : option === '30d' ? 30 : 90
   const from = new Date(to.getTime() - (days - 1) * DAY_MS)
   return { from, to }
+}
+
+/** The period of equal length immediately preceding [from, to] - what "vs. previous period" compares against. */
+export function getPreviousRangeBounds(from: Date, to: Date): { from: Date; to: Date } {
+  const durationMs = to.getTime() - from.getTime()
+  const prevTo = new Date(from.getTime() - 1)
+  const prevFrom = new Date(prevTo.getTime() - durationMs)
+  return { from: prevFrom, to: prevTo }
+}
+
+export interface TrendResult {
+  current: number
+  previous: number
+  /** null when there's no previous-period baseline to compare against (previous === 0) - a raw % would be meaningless (or infinite). */
+  changePct: number | null
+}
+
+export function computeTrend(current: number, previous: number): TrendResult {
+  if (previous === 0) {
+    return { current, previous, changePct: current === 0 ? 0 : null }
+  }
+  return { current, previous, changePct: Math.round(((current - previous) / previous) * 100) }
 }
 
 function isCountable(reservation: Reservation) {
@@ -221,4 +243,116 @@ export function getOccupancy(
 
   const rate = openHours > 0 ? Math.min(100, Math.round((bookedHours / openHours) * 100)) : 0
   return { bookedHours: Math.round(bookedHours), openHours: Math.round(openHours), rate }
+}
+
+export interface CancellationRateResult {
+  cancelled: number
+  total: number
+  rate: number
+}
+
+/**
+ * Share of reservations in the range that ended up cancelled. Deliberately
+ * doesn't use filterReservations/isCountable - those exclude cancelled
+ * rows on purpose (for KPIs that shouldn't count them), but this metric's
+ * whole point is measuring exactly that excluded slice.
+ */
+export function getCancellationRate(reservations: Reservation[], from: Date, to: Date): CancellationRateResult {
+  const inRange = reservations.filter((r) => r.type !== 'visit' && isInRange(r, from, to))
+  const cancelled = inRange.filter((r) => r.status === 'cancelled').length
+  const total = inRange.length
+  const rate = total > 0 ? Math.round((cancelled / total) * 100) : 0
+  return { cancelled, total, rate }
+}
+
+/**
+ * Average revenue per billable reservation (no-shows excluded from both the
+ * sum and the count, same revenue convention as getServiceBreakdown) - a
+ * cleaner "average ticket" than dividing total revenue by every booking
+ * attempt, which would understate it whenever there are no-shows.
+ */
+export function getAverageTicket(reservations: Reservation[], from: Date, to: Date): number {
+  const inRange = filterReservations(reservations, from, to).filter(
+    (r) => r.type !== 'visit' && r.service_id && r.status !== 'no_show'
+  )
+  if (inRange.length === 0) return 0
+  const revenue = inRange.reduce((sum, r) => sum + ((r.price || r.price_usd) ?? 0), 0)
+  return revenue / inRange.length
+}
+
+export interface ClientRetentionResult {
+  newClients: number
+  returningClients: number
+  /** % of this period's clients who'd already been a client before the period started. */
+  retentionRate: number
+}
+
+/**
+ * Classifies each client active in the period as new vs. returning using
+ * clients.created_at as the proxy for "when this person first became a
+ * client" (clients are created at first booking, not pre-loaded in bulk -
+ * see scripts/005-create-clients.sql) rather than scanning reservation
+ * history, which would be wrong for anyone whose first-ever booking falls
+ * outside the ±90-day window dashboard-data-context.tsx actually loads.
+ */
+export function getClientRetention(
+  reservations: Reservation[],
+  clients: Client[],
+  from: Date,
+  to: Date
+): ClientRetentionResult {
+  const inRange = filterReservations(reservations, from, to).filter((r) => r.client_id)
+  const clientIds = new Set(inRange.map((r) => r.client_id))
+
+  let newClients = 0
+  let returningClients = 0
+  for (const id of clientIds) {
+    const client = clients.find((c) => c.id === id)
+    if (!client) continue
+    const createdAt = new Date(client.created_at)
+    if (createdAt >= from && createdAt <= to) newClients++
+    else returningClients++
+  }
+
+  const total = newClients + returningClients
+  const retentionRate = total > 0 ? Math.round((returningClients / total) * 100) : 0
+  return { newClients, returningClients, retentionRate }
+}
+
+export interface TopClientRow {
+  clientId: string
+  name: string
+  count: number
+  revenue: number
+}
+
+/** Clients ranked by revenue in the period - the "who are my VIPs" list. Visits excluded, same reasoning as getServiceBreakdown. */
+export function getTopClients(
+  reservations: Reservation[],
+  clients: Client[],
+  from: Date,
+  to: Date,
+  limit = 5
+): TopClientRow[] {
+  const inRange = filterReservations(reservations, from, to).filter((r) => r.type !== 'visit' && r.client_id)
+  const byClient = new Map<string, { count: number; revenue: number }>()
+
+  for (const r of inRange) {
+    const entry = byClient.get(r.client_id) ?? { count: 0, revenue: 0 }
+    entry.count += 1
+    if (r.status !== 'no_show') {
+      entry.revenue += (r.price || r.price_usd) ?? 0
+    }
+    byClient.set(r.client_id, entry)
+  }
+
+  return Array.from(byClient.entries())
+    .map(([clientId, { count, revenue }]) => ({
+      clientId,
+      name: clients.find((c) => c.id === clientId)?.name ?? '—',
+      count,
+      revenue,
+    }))
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, limit)
 }
