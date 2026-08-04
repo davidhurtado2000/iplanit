@@ -11,15 +11,30 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ChevronLeft, ChevronRight, CalendarDays, Clock, Check, CheckCheck, X, ParkingSquare, Search } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CalendarDays, Clock, Check, CheckCheck, X, ParkingSquare, Search, Eye } from 'lucide-react'
 import type { CalendarView } from '@/lib/types'
 import { cn, capitalizeFirst } from '@/lib/utils'
+import { useLanguage } from '@/context/language-context'
+import { getStatusBadgeVariant, getStatusLabel } from '@/lib/reservation-status'
 
 // ─── Time grid constants ───────────────────────────────────────────────────
 const HOUR_HEIGHT    = 64  // px per hour
 const DEFAULT_START  = 7   // fallback 07:00
 const DEFAULT_END    = 21  // fallback 21:00
 const DEFAULT_TZ     = 'America/Lima'
+
+// A visit's block always uses this instead of its (optional, informational
+// only) service's color - color alone is what actually reads at a glance
+// across a whole day/week/month, unlike a small icon that only shows up on
+// close inspection. Matches the banner in reservation-modal.tsx's view
+// mode, so "this is a visit" means the same color everywhere. Deliberately
+// a neutral gray, NOT one of the 8 swatches in SERVICE_COLORS/
+// RESOURCE_COLORS (services/page.tsx, resources/page.tsx) - reusing one of
+// those would make a real service that happens to use that color
+// indistinguishable from a visit, defeating the whole point. Gray also
+// reads correctly on its own: "not a real colored service", administrative
+// rather than a color a business would ever brand a paid service with.
+const VISIT_BLOCK_COLOR = '#64748b'
 
 // A colored left border signals status at a glance without replacing the
 // block's own background (still the service's color, so services stay
@@ -99,6 +114,7 @@ export function CalendarViewComponent({
   timezone  = DEFAULT_TZ,
   onVisibleRangeChange,
 }: CalendarViewProps) {
+  const { t, locale } = useLanguage()
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedResourceId, setSelectedResourceId] = useState<string>('all')
 
@@ -150,16 +166,16 @@ export function CalendarViewComponent({
 
   const formatHeader = () => {
     if (view === 'day') {
-      return currentDate.toLocaleDateString('es-ES', { timeZone: timezone, weekday: 'long', day: 'numeric', month: 'long' })
+      return currentDate.toLocaleDateString(locale, { timeZone: timezone, weekday: 'long', day: 'numeric', month: 'long' })
     }
     if (view === 'week') {
       const start = new Date(currentDate)
       const diff = start.getDate() - start.getDay() + (start.getDay() === 0 ? -6 : 1)
       start.setDate(diff)
       const end = new Date(start); end.setDate(end.getDate() + 6)
-      return `${start.toLocaleDateString('es-ES', { timeZone: timezone, day: 'numeric', month: 'short' })} – ${end.toLocaleDateString('es-ES', { timeZone: timezone, day: 'numeric', month: 'short' })}`
+      return `${start.toLocaleDateString(locale, { timeZone: timezone, day: 'numeric', month: 'short' })} – ${end.toLocaleDateString(locale, { timeZone: timezone, day: 'numeric', month: 'short' })}`
     }
-    return currentDate.toLocaleDateString('es-ES', { timeZone: timezone, month: 'long', year: 'numeric' })
+    return currentDate.toLocaleDateString(locale, { timeZone: timezone, month: 'long', year: 'numeric' })
   }
 
   if (view === 'list') {
@@ -171,6 +187,8 @@ export function CalendarViewComponent({
           servicesMap={servicesMap}
           onSelectReservation={onSelectReservation}
           timezone={timezone}
+          t={t}
+          locale={locale}
         />
       </div>
     )
@@ -187,16 +205,16 @@ export function CalendarViewComponent({
           <Button variant="outline" size="icon" onClick={() => navigate(1)} className="h-8 w-8 bg-transparent">
             <ChevronRight className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="sm" onClick={goToToday}>Hoy</Button>
+          <Button variant="ghost" size="sm" onClick={goToToday}>{t.calendar.today}</Button>
         </div>
         <h2 className="text-base font-semibold sm:text-lg">{capitalizeFirst(formatHeader())}</h2>
         {view === 'day' && resources.length > 0 && (
           <Select value={selectedResourceId} onValueChange={setSelectedResourceId}>
             <SelectTrigger className="w-full bg-transparent sm:w-[200px]">
-              <SelectValue placeholder="Filtrar por recurso" />
+              <SelectValue placeholder={t.calendar.filterByResourcePlaceholder} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todos los recursos</SelectItem>
+              <SelectItem value="all">{t.calendar.allResources}</SelectItem>
               {resources.map(r => (
                 <SelectItem key={r.id} value={r.id}>
                   <span className="flex items-center gap-2">
@@ -213,9 +231,24 @@ export function CalendarViewComponent({
         )}
       </div>
 
-      {view === 'day'   && <DayView   date={currentDate} reservations={reservations} resources={resources} selectedResourceId={selectedResourceId} clientsMap={clientsMap} servicesMap={servicesMap} resourcesMap={resourcesMap} onSelectReservation={onSelectReservation} startHour={startHour} endHour={endHour} timezone={timezone} />}
-      {view === 'week'  && <WeekView  date={currentDate} reservations={reservations} clientsMap={clientsMap} servicesMap={servicesMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} />}
-      {view === 'month' && <MonthView date={currentDate} reservations={reservations} servicesMap={servicesMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} />}
+      {/* Explains the gray + eye-icon convention used on visit blocks below
+          - without this, there's nothing on screen saying what that color
+          means, since it's deliberately NOT one of the pickable service/
+          resource colors (see VISIT_BLOCK_COLOR above). Only reached for
+          day/week/month - list view returns early above, and already
+          spells out "Visita" in text on every row instead. */}
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span
+          className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+          style={{ backgroundColor: VISIT_BLOCK_COLOR }}
+        />
+        <Eye className="h-3 w-3 shrink-0" />
+        <span>{t.calendar.visitLegendLabel}</span>
+      </div>
+
+      {view === 'day'   && <DayView   date={currentDate} reservations={reservations} resources={resources} selectedResourceId={selectedResourceId} clientsMap={clientsMap} servicesMap={servicesMap} resourcesMap={resourcesMap} onSelectReservation={onSelectReservation} startHour={startHour} endHour={endHour} timezone={timezone} t={t} />}
+      {view === 'week'  && <WeekView  date={currentDate} reservations={reservations} clientsMap={clientsMap} servicesMap={servicesMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} />}
+      {view === 'month' && <MonthView date={currentDate} reservations={reservations} servicesMap={servicesMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} />}
     </div>
   )
 }
@@ -224,7 +257,7 @@ export function CalendarViewComponent({
 function DayView({
   date, reservations, resources, selectedResourceId,
   clientsMap, servicesMap, resourcesMap, onSelectReservation,
-  startHour, endHour, timezone,
+  startHour, endHour, timezone, t,
 }: {
   date: Date
   reservations: any[]
@@ -237,6 +270,7 @@ function DayView({
   startHour: number
   endHour: number
   timezone: string
+  t: ReturnType<typeof useLanguage>['t']
 }) {
   // Use business timezone so "dateStr" matches the day the user sees, not UTC midnight
   const dateStr = toDateStr(date, timezone)
@@ -271,13 +305,13 @@ function DayView({
     if (resources.length > 0) {
       cols = resources.map(r => ({ id: r.id, label: r.name, color: r.color }))
       if (dayRes.some(r => !r.resource_id)) {
-        cols.push({ id: null, label: 'Sin recurso' })
+        cols.push({ id: null, label: t.calendar.noResourceColumn })
       }
     } else {
-      cols = [{ id: null, label: 'Reservas' }]
+      cols = [{ id: null, label: t.calendar.reservationsFallbackColumn }]
     }
     return cols
-  }, [resources, selectedResourceId, resourcesMap, dayRes])
+  }, [resources, selectedResourceId, resourcesMap, dayRes, t])
 
   const getColRes = (colId: string | null) =>
     colId === null && resources.length === 0
@@ -320,7 +354,7 @@ function DayView({
           {dayRes.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
               <CalendarDays className="h-7 w-7 text-muted-foreground/30" />
-              <p className="text-sm text-muted-foreground">No hay reservas para este día</p>
+              <p className="text-sm text-muted-foreground">{t.calendar.noReservationsForDay}</p>
             </div>
           ) : (
           <div className="relative flex" style={{ height: gridHeight }}>
@@ -368,7 +402,7 @@ function DayView({
                   {colRes.map(r => {
                     const client  = clientsMap[r.client_id]
                     const service = servicesMap[r.service_id]
-                    const color   = service?.color ?? '#3B82F6'
+                    const color   = r.type === 'visit' ? VISIT_BLOCK_COLOR : service?.color ?? '#3B82F6'
                     const top     = topOffset(r.start_time, effStartHour, timezone)
                     const height  = blockHeight(r.start_time, r.end_time)
                     const isShort = height < 44
@@ -400,18 +434,22 @@ function DayView({
                         {!isShort && r.parking_resource_id && (
                           <span
                             className="absolute left-1 top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white/90 text-foreground shadow-sm"
-                            title="Cochera asignada"
+                            title={t.calendar.parkingAssigned}
                           >
                             <ParkingSquare className="h-2 w-2" />
                           </span>
                         )}
                         {isShort ? (
-                          <p className="text-[10px] font-semibold leading-tight truncate">
+                          <p className="flex items-center gap-1 text-[10px] font-semibold leading-tight truncate">
+                            {r.type === 'visit' && <Eye className="h-2.5 w-2.5 shrink-0" />}
                             {client?.name ?? '—'}
                           </p>
                         ) : (
                           <>
-                            <p className="pr-4 text-xs font-semibold leading-tight truncate">{client?.name ?? '—'}</p>
+                            <p className="flex items-center gap-1 pr-4 text-xs font-semibold leading-tight truncate">
+                              {r.type === 'visit' && <Eye className="h-3 w-3 shrink-0" />}
+                              {client?.name ?? '—'}
+                            </p>
                             <p className="text-[10px] leading-tight truncate opacity-90">{service?.name ?? '—'}</p>
                             <p className="mt-0.5 text-[10px] leading-tight opacity-75">
                               {fmt(h, m)} – {fmt(endHM.h, endHM.m)}
@@ -434,7 +472,7 @@ function DayView({
 
 // ─── Week View ─────────────────────────────────────────────────────────────
 function WeekView({
-  date, reservations, clientsMap, servicesMap, onSelectReservation, onDayClick, timezone,
+  date, reservations, clientsMap, servicesMap, onSelectReservation, onDayClick, timezone, t, locale,
 }: {
   date: Date
   reservations: any[]
@@ -443,6 +481,8 @@ function WeekView({
   onSelectReservation: (r: any) => void
   onDayClick: (d: Date) => void
   timezone: string
+  t: ReturnType<typeof useLanguage>['t']
+  locale: string
 }) {
   const weekDays = useMemo(() => {
     const start = new Date(date)
@@ -455,7 +495,20 @@ function WeekView({
 
   // Use business timezone for "today" so it matches Lima date regardless of server UTC
   const today     = toDateStr(new Date(), timezone)
-  const dayLabels = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+  // Monday-first short weekday labels in the account's own language, same
+  // Intl-driven approach as reservation-modal.tsx's dayLabels (rather than
+  // a hardcoded Spanish array) - 1970-01-05 was a Monday.
+  const dayLabels = useMemo(
+    () =>
+      Array.from({ length: 7 }, (_, i) =>
+        capitalizeFirst(
+          new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' }).format(
+            new Date(Date.UTC(1970, 0, 5 + i))
+          )
+        )
+      ),
+    [locale]
+  )
 
   return (
     <div className="rounded-lg border bg-card overflow-x-auto">
@@ -506,19 +559,20 @@ function WeekView({
                         statusBorderClass(r.status),
                         (r.status === 'cancelled' || r.status === 'no_show') && 'opacity-45 saturate-50'
                       )}
-                      style={{ backgroundColor: service?.color ?? '#3B82F6' }}
+                      style={{ backgroundColor: r.type === 'visit' ? VISIT_BLOCK_COLOR : service?.color ?? '#3B82F6' }}
                       onClick={e => { e.stopPropagation(); onSelectReservation(r) }}
                     >
                       {r.status === 'pending' && <Clock className="h-2.5 w-2.5 shrink-0" />}
                       {r.status === 'confirmed' && <CheckCheck className="h-2.5 w-2.5 shrink-0" />}
                       {r.status === 'completed' && <Check className="h-2.5 w-2.5 shrink-0" />}
                       {(r.status === 'cancelled' || r.status === 'no_show') && <X className="h-2.5 w-2.5 shrink-0" />}
+                      {r.type === 'visit' && <Eye className="h-2.5 w-2.5 shrink-0" />}
                       <span className="truncate">{fmt} {client?.name ?? '—'}</span>
                     </div>
                   )
                 })}
                 {dayRes.length > 4 && (
-                  <p className="text-[10px] text-muted-foreground pl-1">+{dayRes.length - 4} más</p>
+                  <p className="text-[10px] text-muted-foreground pl-1">+{dayRes.length - 4} {t.calendar.moreLabel}</p>
                 )}
               </div>
             </button>
@@ -531,7 +585,7 @@ function WeekView({
 
 // ─── Month View ────────────────────────────────────────────────────────────
 function MonthView({
-  date, reservations, servicesMap, onSelectReservation, onDayClick, timezone,
+  date, reservations, servicesMap, onSelectReservation, onDayClick, timezone, t, locale,
 }: {
   date: Date
   reservations: any[]
@@ -539,6 +593,8 @@ function MonthView({
   onSelectReservation: (r: any) => void
   onDayClick: (d: Date) => void
   timezone: string
+  t: ReturnType<typeof useLanguage>['t']
+  locale: string
 }) {
   const monthDays = useMemo(() => {
     const year  = date.getFullYear()
@@ -559,7 +615,17 @@ function MonthView({
   }, [date])
 
   const today     = toDateStr(new Date(), timezone)
-  const dayLabels = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+  const dayLabels = useMemo(
+    () =>
+      Array.from({ length: 7 }, (_, i) =>
+        capitalizeFirst(
+          new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' }).format(
+            new Date(Date.UTC(1970, 0, 5 + i))
+          )
+        )
+      ),
+    [locale]
+  )
 
   return (
     <div className="rounded-lg border bg-card">
@@ -609,19 +675,20 @@ function MonthView({
                         statusBorderClass(r.status),
                         (r.status === 'cancelled' || r.status === 'no_show') && 'opacity-45 saturate-50'
                       )}
-                      style={{ backgroundColor: service?.color ?? '#3B82F6' }}
+                      style={{ backgroundColor: r.type === 'visit' ? VISIT_BLOCK_COLOR : service?.color ?? '#3B82F6' }}
                       onClick={e => { e.stopPropagation(); onSelectReservation(r) }}
                     >
                       {r.status === 'pending' && <Clock className="h-2 w-2 shrink-0" />}
                       {r.status === 'confirmed' && <CheckCheck className="h-2 w-2 shrink-0" />}
                       {r.status === 'completed' && <Check className="h-2 w-2 shrink-0" />}
                       {(r.status === 'cancelled' || r.status === 'no_show') && <X className="h-2 w-2 shrink-0" />}
+                      {r.type === 'visit' && <Eye className="h-2 w-2 shrink-0" />}
                       <span className="truncate">{fmt}</span>
                     </div>
                   )
                 })}
                 {dayRes.length > 3 && (
-                  <p className="text-[9px] sm:text-[10px] text-muted-foreground pl-1">+{dayRes.length - 3} más</p>
+                  <p className="text-[9px] sm:text-[10px] text-muted-foreground pl-1">+{dayRes.length - 3} {t.calendar.moreLabel}</p>
                 )}
               </div>
             </button>
@@ -638,28 +705,16 @@ function MonthView({
 // rest of the calendar) instead of its own paginated query. ────────────────
 const LIST_PAGE_SIZE = 20
 
-const STATUS_LABELS_ES: Record<string, string> = {
-  pending: 'Pendiente',
-  confirmed: 'Confirmada',
-  completed: 'Completada',
-  cancelled: 'Cancelada',
-  no_show: 'No-show',
-}
-
-function listStatusBadgeVariant(status: string): 'default' | 'secondary' | 'destructive' {
-  if (status === 'cancelled' || status === 'no_show') return 'destructive'
-  if (status === 'pending') return 'secondary'
-  return 'default'
-}
-
 function ListView({
-  reservations, clientsMap, servicesMap, onSelectReservation, timezone,
+  reservations, clientsMap, servicesMap, onSelectReservation, timezone, t, locale,
 }: {
   reservations: any[]
   clientsMap: Record<string, Client>
   servicesMap: Record<string, Service>
   onSelectReservation: (r: any) => void
   timezone: string
+  t: ReturnType<typeof useLanguage>['t']
+  locale: string
 }) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -693,7 +748,7 @@ function ListView({
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Buscar por cliente o servicio..."
+            placeholder={t.calendar.searchByClientOrService}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -704,12 +759,12 @@ function ListView({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Todos los estados</SelectItem>
-            <SelectItem value="pending">Pendiente</SelectItem>
-            <SelectItem value="confirmed">Confirmada</SelectItem>
-            <SelectItem value="completed">Completada</SelectItem>
-            <SelectItem value="cancelled">Cancelada</SelectItem>
-            <SelectItem value="no_show">No-show</SelectItem>
+            <SelectItem value="all">{t.calendar.allStatuses}</SelectItem>
+            <SelectItem value="pending">{t.reservation.pending}</SelectItem>
+            <SelectItem value="confirmed">{t.reservation.confirmed}</SelectItem>
+            <SelectItem value="completed">{t.reservation.completed}</SelectItem>
+            <SelectItem value="cancelled">{t.reservation.cancelled}</SelectItem>
+            <SelectItem value="no_show">{t.reservation.noShow}</SelectItem>
           </SelectContent>
         </Select>
         <Select value={typeFilter} onValueChange={setTypeFilter}>
@@ -717,9 +772,9 @@ function ListView({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Todos los tipos</SelectItem>
-            <SelectItem value="booking">Reserva</SelectItem>
-            <SelectItem value="visit">Visita</SelectItem>
+            <SelectItem value="all">{t.calendar.allTypes}</SelectItem>
+            <SelectItem value="booking">{t.reservation.typeBooking}</SelectItem>
+            <SelectItem value="visit">{t.reservation.typeVisit}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -728,10 +783,10 @@ function ListView({
         <table className="w-full text-sm">
           <thead className="border-b bg-muted/40">
             <tr>
-              <th className="whitespace-nowrap p-2 text-left font-medium">Fecha</th>
-              <th className="p-2 text-left font-medium">Cliente</th>
-              <th className="p-2 text-left font-medium">Servicio</th>
-              <th className="p-2 text-left font-medium">Estado</th>
+              <th className="whitespace-nowrap p-2 text-left font-medium">{t.calendar.colDate}</th>
+              <th className="p-2 text-left font-medium">{t.calendar.colClient}</th>
+              <th className="p-2 text-left font-medium">{t.calendar.colService}</th>
+              <th className="p-2 text-left font-medium">{t.calendar.colStatus}</th>
               <th className="p-2 text-left font-medium" />
             </tr>
           </thead>
@@ -748,22 +803,24 @@ function ListView({
                 >
                   <td className="whitespace-nowrap p-2">
                     {capitalizeFirst(
-                      new Date(r.start_time).toLocaleDateString('es-ES', { timeZone: timezone, day: 'numeric', month: 'short' })
+                      new Date(r.start_time).toLocaleDateString(locale, { timeZone: timezone, day: 'numeric', month: 'short' })
                     )}{' '}
                     {String(h).padStart(2, '0')}:{String(m).padStart(2, '0')}
                   </td>
                   <td className="p-2">{client?.name ?? '—'}</td>
                   <td className="p-2">
                     <span className="flex items-center gap-1.5">
-                      {service && (
-                        <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: service.color }} />
+                      {r.type === 'visit' ? (
+                        <Eye className="h-3 w-3 shrink-0 text-slate-500" />
+                      ) : (
+                        service && <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: service.color }} />
                       )}
-                      {service?.name ?? (r.type === 'visit' ? 'Visita' : '—')}
+                      {service?.name ?? (r.type === 'visit' ? t.reservation.typeVisit : '—')}
                     </span>
                   </td>
                   <td className="p-2">
-                    <Badge variant={listStatusBadgeVariant(r.status)}>
-                      {STATUS_LABELS_ES[r.status] ?? r.status}
+                    <Badge variant={getStatusBadgeVariant(r.status)}>
+                      {getStatusLabel(r.status, t.reservation)}
                     </Badge>
                   </td>
                   <td className="p-2 text-right">
@@ -775,7 +832,7 @@ function ListView({
             {pageRows.length === 0 && (
               <tr>
                 <td colSpan={5} className="p-6 text-center text-muted-foreground">
-                  No se encontraron reservas.
+                  {t.calendar.noReservationsFound}
                 </td>
               </tr>
             )}
@@ -786,14 +843,14 @@ function ListView({
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-xs text-muted-foreground">
-            Pagina {page} de {totalPages} · {filtered.length} resultados
+            {t.calendar.pageLabel} {page} {t.calendar.ofLabel} {totalPages} · {filtered.length} {t.calendar.resultsLabel}
           </p>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-              Anterior
+              {t.calendar.previousBtn}
             </Button>
             <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
-              Siguiente
+              {t.calendar.nextBtn}
             </Button>
           </div>
         </div>

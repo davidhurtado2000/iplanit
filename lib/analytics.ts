@@ -1,12 +1,23 @@
-import type { Reservation, Service, BusinessHour, Client } from '@/context/dashboard-data-context'
+import type { Reservation, Service, BusinessHour, Client, Resource } from '@/context/dashboard-data-context'
 
-export type DateRangeOption = '7d' | '30d' | '90d'
+export type DateRangeOption = '7d' | '30d' | '90d' | 'ytd' | 'all'
 
 const DAY_MAP: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
 const DAY_MS = 24 * 60 * 60 * 1000
 
+// Floor for "all time" - well before any real iPlanit business could have
+// been created, so it's equivalent to "since the business existed" without
+// needing to plumb businesses.created_at through just for this.
+const ALL_TIME_START = new Date('2020-01-01T00:00:00Z')
+
 export function getRangeBounds(option: DateRangeOption): { from: Date; to: Date } {
   const to = new Date()
+  if (option === 'all') {
+    return { from: ALL_TIME_START, to }
+  }
+  if (option === 'ytd') {
+    return { from: new Date(to.getFullYear(), 0, 1), to }
+  }
   const days = option === '7d' ? 7 : option === '30d' ? 30 : 90
   const from = new Date(to.getTime() - (days - 1) * DAY_MS)
   return { from, to }
@@ -355,4 +366,53 @@ export function getTopClients(
     }))
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, limit)
+}
+
+export interface ResourceBreakdownRow {
+  resourceId: string
+  name: string
+  count: number
+  revenue: number
+  bookedHours: number
+}
+
+/**
+ * Reservations, revenue, and booked hours grouped by resource - the
+ * per-staff/per-room comparison that getOccupancy can't give (it's
+ * deliberately whole-business only, see its own comment: the schema has no
+ * per-resource capacity/hours, so there's no honest denominator for a
+ * per-resource occupancy %). Booked hours alone is still a fair stand-in for
+ * "how busy was this person/room" without fabricating a rate. Reservations
+ * with no resource_id (many services don't require one) are excluded, same
+ * as visits.
+ */
+export function getResourceBreakdown(
+  reservations: Reservation[],
+  resources: Pick<Resource, 'id' | 'name'>[],
+  from: Date,
+  to: Date
+): ResourceBreakdownRow[] {
+  const inRange = filterReservations(reservations, from, to).filter((r) => r.type !== 'visit' && r.resource_id)
+  const byResource = new Map<string, { count: number; revenue: number; bookedMs: number }>()
+
+  for (const r of inRange) {
+    const resourceId = r.resource_id as string
+    const entry = byResource.get(resourceId) ?? { count: 0, revenue: 0, bookedMs: 0 }
+    entry.count += 1
+    entry.bookedMs += new Date(r.end_time).getTime() - new Date(r.start_time).getTime()
+    if (r.status !== 'no_show') {
+      entry.revenue += (r.price || r.price_usd) ?? 0
+    }
+    byResource.set(resourceId, entry)
+  }
+
+  return Array.from(byResource.entries())
+    .map(([resourceId, { count, revenue, bookedMs }]) => ({
+      resourceId,
+      name: resources.find((r) => r.id === resourceId)?.name ?? '—',
+      count,
+      revenue,
+      bookedHours: Math.round((bookedMs / (1000 * 60 * 60)) * 10) / 10,
+    }))
+    .sort((a, b) => b.revenue - a.revenue)
 }

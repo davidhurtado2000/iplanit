@@ -1,13 +1,16 @@
 'use client'
 
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
+import { HeroKpiCard } from '@/components/dashboard/hero-kpi-card'
+import { cn } from '@/lib/utils'
 import {
   Dialog,
   DialogContent,
@@ -66,6 +69,22 @@ export default function ParkingPage() {
       .map((r) => r.parking_resource_id)
   )
   const occupiedCount = activeSpots.filter((s) => occupiedSpotIds.has(s.id)).length
+
+  // Instant on/off from the card, same pattern as Services/Resources.
+  const [togglingSpotId, setTogglingSpotId] = useState<string | null>(null)
+  const handleQuickToggleActive = async (spot: Resource) => {
+    setTogglingSpotId(spot.id)
+    try {
+      const { error } = await supabase.from('resources').update({ is_active: !spot.is_active }).eq('id', spot.id)
+      if (error) throw error
+      await refetchServicesAndResources()
+    } catch (err) {
+      console.error('[iplanit] Error toggling parking spot active state:', err)
+      toast.error(t.saveError)
+    } finally {
+      setTogglingSpotId(null)
+    }
+  }
 
   const handleOpenModal = (spot?: Resource) => {
     if (spot) {
@@ -172,65 +191,86 @@ export default function ParkingPage() {
         </Button>
       </div>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">{t.parking.occupancyTitle}</CardTitle>
-          <CardDescription>{t.parking.occupancyDesc}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="text-3xl font-bold">
-            {occupiedCount} / {activeSpots.length}
-          </div>
-        </CardContent>
-      </Card>
+      <HeroKpiCard
+        label={t.parking.occupancyTitle}
+        icon={ParkingSquare}
+        iconClassName="bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400"
+        value={`${occupiedCount} / ${activeSpots.length}`}
+        caption={t.parking.occupancyDesc}
+      />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {spots.map((spot) => (
-          <Card key={spot.id}>
-            <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-primary/10 p-2">
-                  <ParkingSquare className="h-5 w-5 text-primary" />
+      {spots.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed py-16 text-center">
+          <ParkingSquare className="h-10 w-10 text-muted-foreground/50" />
+          <p className="text-muted-foreground">{t.parking.noSpots}</p>
+          <Button onClick={() => handleOpenModal()} className="gap-2">
+            <Plus className="h-4 w-4" />
+            {t.parking.newSpot}
+          </Button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {spots.map((spot) => (
+            <Card
+              key={spot.id}
+              className={cn(
+                'flex h-full cursor-pointer flex-col gap-0 overflow-hidden py-0 transition-shadow hover:shadow-md',
+                !spot.is_active && 'opacity-70'
+              )}
+              onClick={() => handleOpenModal(spot)}
+            >
+              <div className="h-1.5 w-full bg-primary" />
+              <CardContent className="flex flex-1 flex-col justify-between gap-4 p-5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                      <ParkingSquare className="h-4 w-4" />
+                    </div>
+                    <h3 className="truncate font-semibold text-foreground">{spot.name}</h3>
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="-mt-1 -mr-2 shrink-0"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                      <DropdownMenuItem onClick={() => handleOpenModal(spot)}>
+                        <Pencil className="mr-2 h-4 w-4" />
+                        {t.services.edit}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setDeletingSpot(spot)} className="text-destructive">
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        {t.services.delete}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
-                <CardTitle className="text-base">{spot.name}</CardTitle>
-              </div>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
-                    <MoreHorizontal className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => handleOpenModal(spot)}>
-                    <Pencil className="mr-2 h-4 w-4" />
-                    {t.services.edit}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setDeletingSpot(spot)} className="text-destructive">
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    {t.services.delete}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-2">
-                <Badge variant={spot.is_active ? 'default' : 'secondary'}>
-                  {spot.is_active ? t.services.active : t.services.inactive}
-                </Badge>
-                {spot.is_active && occupiedSpotIds.has(spot.id) && (
-                  <Badge variant="destructive">{t.parking.occupiedNow}</Badge>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-        {spots.length === 0 && (
-          <div className="col-span-full flex flex-col items-center justify-center py-12">
-            <ParkingSquare className="mb-4 h-12 w-12 text-muted-foreground/50" />
-            <p className="text-muted-foreground">{t.parking.noSpots}</p>
-          </div>
-        )}
-      </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  {spot.is_active && occupiedSpotIds.has(spot.id) ? (
+                    <Badge variant="destructive">{t.parking.occupiedNow}</Badge>
+                  ) : (
+                    <span />
+                  )}
+                  <Switch
+                    checked={spot.is_active}
+                    disabled={togglingSpotId === spot.id}
+                    onCheckedChange={() => handleQuickToggleActive(spot)}
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={spot.is_active ? t.services.active : t.services.inactive}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent>

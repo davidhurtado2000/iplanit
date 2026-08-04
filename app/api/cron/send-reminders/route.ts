@@ -35,6 +35,7 @@ export async function GET(request: Request) {
         clientName: row.client_name,
         businessName: row.business_name,
         serviceName: row.service_name,
+        reservationType: row.reservation_type,
         startTime: row.start_time,
         timezone: row.business_timezone,
         language: row.business_country === 'US' ? 'en' : 'es',

@@ -3,13 +3,16 @@
 import React from "react"
 
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
@@ -30,14 +33,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -51,13 +46,14 @@ import { createClient } from '@/lib/supabase/client'
 import { getResourceTypeLabel } from '@/lib/resource-display'
 import { isPlanLimitReached } from '@/lib/plan-limits'
 import { UpgradeModal } from '@/components/upgrade-modal'
+import { FormSection } from '@/components/dashboard/form-section'
+import { cn } from '@/lib/utils'
 import {
   Plus,
   MoreHorizontal,
   Pencil,
   Trash2,
   Clock,
-  DollarSign,
   Briefcase,
   Building,
   Search,
@@ -161,6 +157,73 @@ export default function ServicesPage() {
   const filteredServices = services.filter((s) =>
     s.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
+
+  const durationText = (service: Service) =>
+    service.pricing_mode === 'hourly'
+      ? `${service.min_hours ?? '?'}-${service.max_hours ?? '?'} h`
+      : `${service.duration_minutes} min`
+
+  const renderServicePrice = (service: Service) => {
+    if (service.pricing_mode === 'preset') {
+      const options = serviceDurationOptions.filter((o) => o.service_id === service.id)
+      const prices = options.map((o) => (isUSD ? o.price_usd : o.price)).filter((p): p is number => p != null)
+      if (prices.length === 0) {
+        return (
+          <Badge variant="destructive" className="text-xs">
+            {t.services.noDurationOptionsWarning}
+          </Badge>
+        )
+      }
+      const min = Math.min(...prices)
+      return (
+        <span className="text-2xl font-bold text-foreground">
+          {t.services.fromPrice} {isUSD ? '$' : 'S/'} {min}
+        </span>
+      )
+    }
+    if (service.pricing_mode === 'hourly') {
+      const rate = isUSD ? service.hourly_rate_usd : service.hourly_rate
+      if (!rate) {
+        return (
+          <Badge variant="destructive" className="text-xs">
+            {t.services.noHourlyRateWarning}
+          </Badge>
+        )
+      }
+      return (
+        <span className="text-2xl font-bold text-foreground">
+          {isUSD ? '$' : 'S/'} {rate}
+          <span className="text-sm font-normal text-muted-foreground"> {t.services.perHour}</span>
+        </span>
+      )
+    }
+    const price = isUSD ? service.price_usd : service.price
+    if (!price) return <span className="text-muted-foreground">—</span>
+    return (
+      <span className="text-2xl font-bold text-foreground">
+        {isUSD ? '$' : 'S/'} {price}
+      </span>
+    )
+  }
+
+  // Instant on/off from the card, separate from the full edit modal - the
+  // active flag doesn't need the pricing/resource validation saveService
+  // does, and shouldn't need to wait for that whole flow just to pause a
+  // service.
+  const [togglingServiceId, setTogglingServiceId] = useState<string | null>(null)
+  const handleQuickToggleActive = async (service: Service) => {
+    setTogglingServiceId(service.id)
+    try {
+      const { error } = await supabase.from('services').update({ is_active: !service.is_active }).eq('id', service.id)
+      if (error) throw error
+      await refetchServicesAndResources()
+    } catch (err) {
+      console.error('[iplanit] Error toggling service active state:', err)
+      toast.error(t.saveError)
+    } finally {
+      setTogglingServiceId(null)
+    }
+  }
 
   const handleOpenServiceModal = (service?: Service) => {
     setDurationOptionsError('')
@@ -477,134 +540,92 @@ export default function ServicesPage() {
         </Button>
       </div>
 
-      <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t.services.serviceCol}</TableHead>
-                  <TableHead>{t.services.durationCol}</TableHead>
-                  <TableHead>{t.services.priceCol}</TableHead>
-                  <TableHead>{t.services.statusCol}</TableHead>
-                  <TableHead className="w-[50px]" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredServices.map((service) => (
-                  <TableRow key={service.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <div
-                          className="h-4 w-4 rounded-full"
-                          style={{ backgroundColor: service.color }}
-                        />
-                        <div>
-                          <p className="font-medium">{service.name}</p>
-                          {service.description && (
-                            <p className="text-sm text-muted-foreground">
-                              {service.description}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1 text-sm">
-                        <Clock className="h-3 w-3" />
-                        {service.pricing_mode === 'hourly'
-                          ? `${service.min_hours ?? '?'}-${service.max_hours ?? '?'} h`
-                          : `${service.duration_minutes} min`}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {service.pricing_mode === 'preset' ? (
-                        (() => {
-                          const options = serviceDurationOptions.filter((o) => o.service_id === service.id)
-                          const prices = options
-                            .map((o) => (isUSD ? o.price_usd : o.price))
-                            .filter((p): p is number => p != null)
-                          if (prices.length === 0) {
-                            return (
-                              <Badge variant="destructive" className="text-xs">
-                                {t.services.noDurationOptionsWarning}
-                              </Badge>
-                            )
-                          }
-                          const min = Math.min(...prices)
-                          return (
-                            <div className="text-sm">
-                              {t.services.fromPrice} {isUSD ? '$' : 'S/'} {min}
-                            </div>
-                          )
-                        })()
-                      ) : service.pricing_mode === 'hourly' ? (
-                        (() => {
-                          const rate = isUSD ? service.hourly_rate_usd : service.hourly_rate
-                          if (!rate) {
-                            return (
-                              <Badge variant="destructive" className="text-xs">
-                                {t.services.noHourlyRateWarning}
-                              </Badge>
-                            )
-                          }
-                          return (
-                            <div className="text-sm">
-                              {isUSD ? '$' : 'S/'} {rate} {t.services.perHour}
-                            </div>
-                          )
-                        })()
-                      ) : isUSD ? (
-                        service.price_usd ? (
-                          <div className="text-sm">$ {service.price_usd}</div>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )
-                      ) : service.price ? (
-                        <div className="text-sm">S/ {service.price}</div>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={service.is_active ? 'default' : 'secondary'}>
-                        {service.is_active ? t.services.active : t.services.inactive}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleOpenServiceModal(service)}>
-                            <Pencil className="mr-2 h-4 w-4" />
-                            {t.services.edit}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => setDeletingService(service)}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            {t.services.delete}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {filteredServices.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={5} className="py-8 text-center">
-                      <p className="text-muted-foreground">{t.services.notFoundServices}</p>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+      {filteredServices.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed py-16 text-center">
+          <Briefcase className="h-10 w-10 text-muted-foreground/50" />
+          {services.length === 0 ? (
+            <>
+              <div>
+                <p className="font-medium text-foreground">{t.services.emptyStateTitle}</p>
+                <p className="text-sm text-muted-foreground">{t.services.emptyStateDesc}</p>
+              </div>
+              <Button onClick={handleNewServiceClick} className="gap-2">
+                <Plus className="h-4 w-4" />
+                {t.services.newService}
+              </Button>
+            </>
+          ) : (
+            <p className="text-muted-foreground">{t.services.notFoundServices}</p>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredServices.map((service) => (
+            <Card
+              key={service.id}
+              className={cn(
+                'flex h-full cursor-pointer flex-col gap-0 overflow-hidden py-0 transition-shadow hover:shadow-md',
+                !service.is_active && 'opacity-70'
+              )}
+              onClick={() => handleOpenServiceModal(service)}
+            >
+              <div className="h-1.5 w-full" style={{ backgroundColor: service.color }} />
+              <CardContent className="flex flex-1 flex-col justify-between gap-4 p-5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <h3 className="truncate font-semibold text-foreground">{service.name}</h3>
+                    {service.description && (
+                      <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">{service.description}</p>
+                    )}
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="-mt-1 -mr-2 shrink-0"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                      <DropdownMenuItem onClick={() => handleOpenServiceModal(service)}>
+                        <Pencil className="mr-2 h-4 w-4" />
+                        {t.services.edit}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => setDeletingService(service)}
+                        className="text-destructive"
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        {t.services.delete}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                <div className="flex items-end justify-between gap-2">
+                  <div>
+                    {renderServicePrice(service)}
+                    <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                      <Clock className="h-3 w-3" />
+                      {durationText(service)}
+                    </div>
+                  </div>
+                  <Switch
+                    checked={service.is_active}
+                    disabled={togglingServiceId === service.id}
+                    onCheckedChange={() => handleQuickToggleActive(service)}
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={service.is_active ? t.services.active : t.services.inactive}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {/* Service Modal */}
       <Dialog open={isServiceModalOpen} onOpenChange={handleServiceModalOpenChange}>
@@ -617,29 +638,34 @@ export default function ServicesPage() {
               {editingService ? t.services.editServiceDesc : t.services.newServiceDesc}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSaveService} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="service-name">{t.services.nameLabel}</Label>
-              <Input
-                id="service-name"
-                value={serviceForm.name}
-                onChange={(e) => setServiceForm({ ...serviceForm, name: e.target.value })}
-                placeholder={t.services.namePlaceholder}
-                required
-              />
-            </div>
+          <form onSubmit={handleSaveService} className="space-y-6">
+            <FormSection title={t.services.sectionBasicInfo}>
+              <div className="space-y-2">
+                <Label htmlFor="service-name">{t.services.nameLabel}</Label>
+                <Input
+                  id="service-name"
+                  value={serviceForm.name}
+                  onChange={(e) => setServiceForm({ ...serviceForm, name: e.target.value })}
+                  placeholder={t.services.namePlaceholder}
+                  required
+                />
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="service-description">{t.services.descLabel}</Label>
-              <Textarea
-                id="service-description"
-                value={serviceForm.description}
-                onChange={(e) => setServiceForm({ ...serviceForm, description: e.target.value })}
-                placeholder={t.services.descPlaceholder}
-                rows={2}
-              />
-            </div>
+              <div className="space-y-2">
+                <Label htmlFor="service-description">{t.services.descLabel}</Label>
+                <Textarea
+                  id="service-description"
+                  value={serviceForm.description}
+                  onChange={(e) => setServiceForm({ ...serviceForm, description: e.target.value })}
+                  placeholder={t.services.descPlaceholder}
+                  rows={2}
+                />
+              </div>
+            </FormSection>
 
+            <Separator />
+
+            <FormSection title={t.services.sectionPricing}>
             <div className="space-y-2">
               <Label>{t.services.pricingModeLabel}</Label>
               <div className="grid grid-cols-3 gap-2 rounded-lg border p-1">
@@ -833,94 +859,101 @@ export default function ServicesPage() {
                 )}
               </div>
             )}
+            </FormSection>
 
-            <div className="space-y-2">
-              <Label>{t.services.bufferLabel}</Label>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="service-buffer-before" className="text-xs font-normal text-muted-foreground">
-                    {t.services.bufferBeforeLabel}
-                  </Label>
-                  <Input
-                    id="service-buffer-before"
-                    type="number"
-                    min={0}
-                    step={5}
-                    value={serviceForm.bufferBeforeMin}
-                    onChange={(e) => setServiceForm({ ...serviceForm, bufferBeforeMin: e.target.value !== '' ? parseInt(e.target.value) || 0 : '' })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="service-buffer-after" className="text-xs font-normal text-muted-foreground">
-                    {t.services.bufferAfterLabel}
-                  </Label>
-                  <Input
-                    id="service-buffer-after"
-                    type="number"
-                    min={0}
-                    step={5}
-                    value={serviceForm.bufferAfterMin}
-                    onChange={(e) => setServiceForm({ ...serviceForm, bufferAfterMin: e.target.value !== '' ? parseInt(e.target.value) || 0 : '' })}
-                  />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">{t.services.bufferHint}</p>
-            </div>
+            <Separator />
 
-            {resources.length > 0 && (
+            <FormSection title={t.services.sectionAdvanced}>
               <div className="space-y-2">
-                <Label>Recursos asociados</Label>
-                <div className="max-h-32 overflow-y-auto rounded-md border p-2 space-y-1">
-                  {resources.map((resource) => (
-                    <label key={resource.id} className="flex items-center gap-2 cursor-pointer text-sm py-1">
-                      <input
-                        type="checkbox"
-                        className="rounded"
-                        checked={selectedResourceIds.includes(resource.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedResourceIds([...selectedResourceIds, resource.id])
-                          } else {
-                            setSelectedResourceIds(selectedResourceIds.filter((id) => id !== resource.id))
-                          }
-                        }}
-                      />
-                      {resource.name}
-                      <span className="text-muted-foreground text-xs">({getResourceTypeLabel(resource.type, t.services)})</span>
-                    </label>
+                <Label>{t.services.bufferLabel}</Label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="service-buffer-before" className="text-xs font-normal text-muted-foreground">
+                      {t.services.bufferBeforeLabel}
+                    </Label>
+                    <Input
+                      id="service-buffer-before"
+                      type="number"
+                      min={0}
+                      step={5}
+                      value={serviceForm.bufferBeforeMin}
+                      onChange={(e) => setServiceForm({ ...serviceForm, bufferBeforeMin: e.target.value !== '' ? parseInt(e.target.value) || 0 : '' })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="service-buffer-after" className="text-xs font-normal text-muted-foreground">
+                      {t.services.bufferAfterLabel}
+                    </Label>
+                    <Input
+                      id="service-buffer-after"
+                      type="number"
+                      min={0}
+                      step={5}
+                      value={serviceForm.bufferAfterMin}
+                      onChange={(e) => setServiceForm({ ...serviceForm, bufferAfterMin: e.target.value !== '' ? parseInt(e.target.value) || 0 : '' })}
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">{t.services.bufferHint}</p>
+              </div>
+
+              {resources.length > 0 && (
+                <div className="space-y-2">
+                  <Label>{t.services.resourcesAssociatedLabel}</Label>
+                  <div className="max-h-32 space-y-1 overflow-y-auto rounded-md border p-2">
+                    {resources.map((resource) => (
+                      <label key={resource.id} className="flex cursor-pointer items-center gap-2 py-1 text-sm">
+                        <Checkbox
+                          checked={selectedResourceIds.includes(resource.id)}
+                          onCheckedChange={(checked) => {
+                            if (checked === true) {
+                              setSelectedResourceIds([...selectedResourceIds, resource.id])
+                            } else {
+                              setSelectedResourceIds(selectedResourceIds.filter((id) => id !== resource.id))
+                            }
+                          }}
+                        />
+                        {resource.name}
+                        <span className="text-xs text-muted-foreground">({getResourceTypeLabel(resource.type, t.services)})</span>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{t.services.resourcesAssociatedHint}</p>
+                </div>
+              )}
+            </FormSection>
+
+            <Separator />
+
+            <FormSection title={t.services.sectionAppearance}>
+              <div className="space-y-2">
+                <Label>{t.services.colorLabel}</Label>
+                <div className="flex gap-2">
+                  {SERVICE_COLORS.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      className={`h-8 w-8 rounded-full border-2 transition-transform ${
+                        serviceForm.color === color
+                          ? 'scale-110 border-foreground'
+                          : 'border-transparent hover:scale-105'
+                      }`}
+                      style={{ backgroundColor: color }}
+                      onClick={() => setServiceForm({ ...serviceForm, color })}
+                    />
                   ))}
                 </div>
-                <p className="text-xs text-muted-foreground">Si no seleccionas ninguno, el servicio estará disponible con cualquier recurso.</p>
               </div>
-            )}
 
-            <div className="space-y-2">
-              <Label>{t.services.colorLabel}</Label>
-              <div className="flex gap-2">
-                {SERVICE_COLORS.map((color) => (
-                  <button
-                    key={color}
-                    type="button"
-                    className={`h-8 w-8 rounded-full border-2 transition-transform ${
-                      serviceForm.color === color
-                        ? 'scale-110 border-foreground'
-                        : 'border-transparent hover:scale-105'
-                    }`}
-                    style={{ backgroundColor: color }}
-                    onClick={() => setServiceForm({ ...serviceForm, color })}
-                  />
-                ))}
+              <div className="flex items-center justify-between">
+                <Label htmlFor="service-active">{t.services.serviceActive}</Label>
+                <Switch
+                  id="service-active"
+                  checked={serviceForm.isActive}
+                  onCheckedChange={(checked) => setServiceForm({ ...serviceForm, isActive: checked })}
+                />
               </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <Label htmlFor="service-active">{t.services.serviceActive}</Label>
-              <Switch
-                id="service-active"
-                checked={serviceForm.isActive}
-                onCheckedChange={(checked) => setServiceForm({ ...serviceForm, isActive: checked })}
-              />
-            </div>
+            </FormSection>
 
             {saveError && <p className="text-sm text-destructive">{saveError}</p>}
 

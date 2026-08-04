@@ -345,6 +345,7 @@ export interface Database {
           resource_id: string | null
           parking_resource_id: string | null
           series_id: string | null
+          follow_up_of_reservation_id: string | null
           start_time: string
           end_time: string
           status: 'confirmed' | 'pending' | 'cancelled' | 'completed' | 'no_show'
@@ -366,6 +367,7 @@ export interface Database {
           resource_id?: string | null
           parking_resource_id?: string | null
           series_id?: string | null
+          follow_up_of_reservation_id?: string | null
           start_time: string
           end_time: string
           status?: 'confirmed' | 'pending' | 'cancelled' | 'completed' | 'no_show'
@@ -387,6 +389,7 @@ export interface Database {
           resource_id?: string | null
           parking_resource_id?: string | null
           series_id?: string | null
+          follow_up_of_reservation_id?: string | null
           start_time?: string
           end_time?: string
           status?: 'confirmed' | 'pending' | 'cancelled' | 'completed' | 'no_show'
@@ -611,7 +614,8 @@ export interface Database {
           reservation_id: string
           client_email: string | null
           client_name: string
-          service_name: string
+          service_name: string | null
+          reservation_type: 'booking' | 'visit'
           business_name: string
           business_timezone: string
           business_country: 'PE' | 'US'

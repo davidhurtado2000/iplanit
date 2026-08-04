@@ -3,7 +3,14 @@ export type EmailLanguage = 'es' | 'en'
 export interface ReservationEmailData {
   clientName: string
   businessName: string
-  serviceName: string
+  /** Null for a visit with no specific service marked as an interest (see
+   * reservation-modal.tsx - a visit's service is informational only, never
+   * required). Always set for a booking. */
+  serviceName: string | null
+  /** A visit is never "booking a service" - every template below branches
+   * on this so the copy never implies revenue/a service being delivered
+   * when there isn't one (see lib/analytics.ts for the same distinction). */
+  reservationType: 'booking' | 'visit'
   /** ISO timestamp (UTC) - formatted into the business's own timezone below. */
   startTime: string
   timezone: string
@@ -50,8 +57,9 @@ function emailLayout(language: EmailLanguage, title: string, bodyHtml: string): 
 </div>`
 }
 
-function detailsCard(rows: Array<[string, string]>): string {
+function detailsCard(rows: Array<[string, string | null | undefined]>): string {
   const rowsHtml = rows
+    .filter((row): row is [string, string] => !!row[1])
     .map(
       ([label, value]) => `
       <tr>
@@ -63,10 +71,28 @@ function detailsCard(rows: Array<[string, string]>): string {
   return `<table style="width: 100%; border-collapse: collapse; background-color: #f9fafb; border-radius: 8px; padding: 12px 16px; margin: 16px 0;"><tbody>${rowsHtml}</tbody></table>`
 }
 
-function manageButton(url: string | undefined, language: EmailLanguage): string {
+function manageButton(url: string | undefined, language: EmailLanguage, reservationType: 'booking' | 'visit'): string {
   if (!url) return ''
-  const label = language === 'es' ? 'Ver o cancelar mi reserva' : 'View or cancel my booking'
+  const label =
+    language === 'es'
+      ? reservationType === 'visit'
+        ? 'Ver o cancelar mi visita'
+        : 'Ver o cancelar mi reserva'
+      : reservationType === 'visit'
+        ? 'View or cancel my visit'
+        : 'View or cancel my booking'
   return `<a href="${url}" style="display: inline-block; margin-top: 8px; padding: 10px 18px; background-color: #2563eb; color: #ffffff; font-size: 14px; font-weight: 500; text-decoration: none; border-radius: 6px;">${label}</a>`
+}
+
+// A visit's service (if any was picked) is an interest hint, not something
+// being delivered - "Servicio"/"Service" would claim otherwise, so it gets
+// its own, deliberately softer label. Returns null (dropped by detailsCard's
+// filter) when there's nothing to show, rather than a row with an empty value.
+function serviceRow(data: ReservationEmailData): [string, string | null | undefined] {
+  if (data.reservationType === 'visit') {
+    return data.language === 'es' ? ['Interesado en', data.serviceName] : ['Interested in', data.serviceName]
+  }
+  return data.language === 'es' ? ['Servicio', data.serviceName] : ['Service', data.serviceName]
 }
 
 // Fires right when a reservation is created (still 'pending' - nobody has
@@ -76,37 +102,40 @@ function manageButton(url: string | undefined, language: EmailLanguage): string 
 // same "confirmations" toggle would be genuinely confusing to a client if
 // they both claimed "your booking is confirmed" one after the other.
 export function buildConfirmationEmail(data: ReservationEmailData): { subject: string; html: string } {
-  const { clientName, businessName, serviceName, startTime, timezone, language, manageUrl } = data
+  const { clientName, businessName, startTime, timezone, language, manageUrl, reservationType } = data
   const when = formatDateTime(startTime, timezone, language)
+  const isVisit = reservationType === 'visit'
 
   if (language === 'es') {
     return {
-      subject: `Solicitud de reserva recibida - ${businessName}`,
+      subject: isVisit ? `Solicitud de visita recibida - ${businessName}` : `Solicitud de reserva recibida - ${businessName}`,
       html: emailLayout(
         'es',
-        'Recibimos tu solicitud de reserva',
+        isVisit ? 'Recibimos tu solicitud de visita' : 'Recibimos tu solicitud de reserva',
         `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hola ${clientName},</p>
-         <p style="font-size: 14px; color: #374151; margin: 0;">Recibimos tu solicitud de reserva en <strong>${businessName}</strong>. Te avisaremos en cuanto quede confirmada.</p>
-         ${detailsCard([
-           ['Servicio', serviceName],
-           ['Fecha y hora', when],
-         ])}
-         ${manageButton(manageUrl, 'es')}`
+         <p style="font-size: 14px; color: #374151; margin: 0;">${
+           isVisit
+             ? `Recibimos tu solicitud de visita a <strong>${businessName}</strong>. Te avisaremos en cuanto quede confirmada.`
+             : `Recibimos tu solicitud de reserva en <strong>${businessName}</strong>. Te avisaremos en cuanto quede confirmada.`
+         }</p>
+         ${detailsCard([serviceRow(data), ['Fecha y hora', when]])}
+         ${manageButton(manageUrl, 'es', reservationType)}`
       ),
     }
   }
   return {
-    subject: `Booking request received - ${businessName}`,
+    subject: isVisit ? `Visit request received - ${businessName}` : `Booking request received - ${businessName}`,
     html: emailLayout(
       'en',
-      'We received your booking request',
+      isVisit ? 'We received your visit request' : 'We received your booking request',
       `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hi ${clientName},</p>
-       <p style="font-size: 14px; color: #374151; margin: 0;">We received your booking request with <strong>${businessName}</strong>. We'll let you know once it's confirmed.</p>
-       ${detailsCard([
-         ['Service', serviceName],
-         ['Date and time', when],
-       ])}
-       ${manageButton(manageUrl, 'en')}`
+       <p style="font-size: 14px; color: #374151; margin: 0;">${
+         isVisit
+           ? `We received your visit request to <strong>${businessName}</strong>. We'll let you know once it's confirmed.`
+           : `We received your booking request with <strong>${businessName}</strong>. We'll let you know once it's confirmed.`
+       }</p>
+       ${detailsCard([serviceRow(data), ['Date and time', when]])}
+       ${manageButton(manageUrl, 'en', reservationType)}`
     ),
   }
 }
@@ -115,109 +144,118 @@ export function buildConfirmationEmail(data: ReservationEmailData): { subject: s
 // the actual moment the word "confirmed" becomes true, unlike the creation
 // email above which fires while still pending.
 export function buildApprovedEmail(data: ReservationEmailData): { subject: string; html: string } {
-  const { clientName, businessName, serviceName, startTime, timezone, language, manageUrl } = data
+  const { clientName, businessName, startTime, timezone, language, manageUrl, reservationType } = data
   const when = formatDateTime(startTime, timezone, language)
+  const isVisit = reservationType === 'visit'
 
   if (language === 'es') {
     return {
-      subject: `Reserva confirmada - ${businessName}`,
+      subject: isVisit ? `Visita confirmada - ${businessName}` : `Reserva confirmada - ${businessName}`,
       html: emailLayout(
         'es',
-        'Tu reserva fue confirmada',
+        isVisit ? 'Tu visita fue confirmada' : 'Tu reserva fue confirmada',
         `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hola ${clientName},</p>
-         <p style="font-size: 14px; color: #374151; margin: 0;">Buenas noticias: tu reserva en <strong>${businessName}</strong> ya fue confirmada.</p>
-         ${detailsCard([
-           ['Servicio', serviceName],
-           ['Fecha y hora', when],
-         ])}
-         ${manageButton(manageUrl, 'es')}`
+         <p style="font-size: 14px; color: #374151; margin: 0;">${
+           isVisit
+             ? `¡Buenas noticias! Tu visita a <strong>${businessName}</strong> quedó confirmada. Te esperamos pronto.`
+             : `Buenas noticias: tu reserva en <strong>${businessName}</strong> ya fue confirmada.`
+         }</p>
+         ${detailsCard([serviceRow(data), ['Fecha y hora', when]])}
+         ${manageButton(manageUrl, 'es', reservationType)}`
       ),
     }
   }
   return {
-    subject: `Booking confirmed - ${businessName}`,
+    subject: isVisit ? `Visit confirmed - ${businessName}` : `Booking confirmed - ${businessName}`,
     html: emailLayout(
       'en',
-      'Your booking is confirmed',
+      isVisit ? 'Your visit is confirmed' : 'Your booking is confirmed',
       `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hi ${clientName},</p>
-       <p style="font-size: 14px; color: #374151; margin: 0;">Good news: your booking with <strong>${businessName}</strong> is now confirmed.</p>
-       ${detailsCard([
-         ['Service', serviceName],
-         ['Date and time', when],
-       ])}
-       ${manageButton(manageUrl, 'en')}`
+       <p style="font-size: 14px; color: #374151; margin: 0;">${
+         isVisit
+           ? `Good news! Your visit to <strong>${businessName}</strong> is confirmed. We look forward to seeing you.`
+           : `Good news: your booking with <strong>${businessName}</strong> is now confirmed.`
+       }</p>
+       ${detailsCard([serviceRow(data), ['Date and time', when]])}
+       ${manageButton(manageUrl, 'en', reservationType)}`
     ),
   }
 }
 
 export function buildCancellationEmail(data: ReservationEmailData): { subject: string; html: string } {
-  const { clientName, businessName, serviceName, startTime, timezone, language } = data
+  const { clientName, businessName, startTime, timezone, language, reservationType } = data
   const when = formatDateTime(startTime, timezone, language)
+  const isVisit = reservationType === 'visit'
 
   if (language === 'es') {
     return {
-      subject: `Reserva cancelada - ${businessName}`,
+      subject: isVisit ? `Visita cancelada - ${businessName}` : `Reserva cancelada - ${businessName}`,
       html: emailLayout(
         'es',
-        'Tu reserva fue cancelada',
+        isVisit ? 'Tu visita fue cancelada' : 'Tu reserva fue cancelada',
         `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hola ${clientName},</p>
-         <p style="font-size: 14px; color: #374151; margin: 0;">Se canceló tu reserva en <strong>${businessName}</strong>.</p>
-         ${detailsCard([
-           ['Servicio', serviceName],
-           ['Fecha y hora', when],
-         ])}
+         <p style="font-size: 14px; color: #374151; margin: 0;">${
+           isVisit
+             ? `Se canceló tu visita a <strong>${businessName}</strong>.`
+             : `Se canceló tu reserva en <strong>${businessName}</strong>.`
+         }</p>
+         ${detailsCard([serviceRow(data), ['Fecha y hora', when]])}
          <p style="font-size: 13px; color: #6b7280; margin: 16px 0 0 0;">Si esto no lo hiciste tú, contacta directamente al negocio.</p>`
       ),
     }
   }
   return {
-    subject: `Booking cancelled - ${businessName}`,
+    subject: isVisit ? `Visit cancelled - ${businessName}` : `Booking cancelled - ${businessName}`,
     html: emailLayout(
       'en',
-      'Your booking was cancelled',
+      isVisit ? 'Your visit was cancelled' : 'Your booking was cancelled',
       `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hi ${clientName},</p>
-       <p style="font-size: 14px; color: #374151; margin: 0;">Your booking with <strong>${businessName}</strong> was cancelled.</p>
-       ${detailsCard([
-         ['Service', serviceName],
-         ['Date and time', when],
-       ])}
+       <p style="font-size: 14px; color: #374151; margin: 0;">${
+         isVisit
+           ? `Your visit to <strong>${businessName}</strong> was cancelled.`
+           : `Your booking with <strong>${businessName}</strong> was cancelled.`
+       }</p>
+       ${detailsCard([serviceRow(data), ['Date and time', when]])}
        <p style="font-size: 13px; color: #6b7280; margin: 16px 0 0 0;">If you didn't do this, please contact the business directly.</p>`
     ),
   }
 }
 
 export function buildReminderEmail(data: ReservationEmailData): { subject: string; html: string } {
-  const { clientName, businessName, serviceName, startTime, timezone, language, manageUrl } = data
+  const { clientName, businessName, startTime, timezone, language, manageUrl, reservationType } = data
   const when = formatDateTime(startTime, timezone, language)
+  const isVisit = reservationType === 'visit'
 
   if (language === 'es') {
     return {
-      subject: `Recordatorio: tu reserva en ${businessName}`,
+      subject: isVisit ? `Recordatorio: tu visita a ${businessName}` : `Recordatorio: tu reserva en ${businessName}`,
       html: emailLayout(
         'es',
-        'Recordatorio de tu reserva',
+        isVisit ? 'Recordatorio de tu visita' : 'Recordatorio de tu reserva',
         `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hola ${clientName},</p>
-         <p style="font-size: 14px; color: #374151; margin: 0;">Este es un recordatorio de tu próxima reserva en <strong>${businessName}</strong>.</p>
-         ${detailsCard([
-           ['Servicio', serviceName],
-           ['Fecha y hora', when],
-         ])}
-         ${manageButton(manageUrl, 'es')}`
+         <p style="font-size: 14px; color: #374151; margin: 0;">${
+           isVisit
+             ? `Este es un recordatorio de tu próxima visita a <strong>${businessName}</strong>. ¡Te esperamos!`
+             : `Este es un recordatorio de tu próxima reserva en <strong>${businessName}</strong>.`
+         }</p>
+         ${detailsCard([serviceRow(data), ['Fecha y hora', when]])}
+         ${manageButton(manageUrl, 'es', reservationType)}`
       ),
     }
   }
   return {
-    subject: `Reminder: your booking at ${businessName}`,
+    subject: isVisit ? `Reminder: your visit to ${businessName}` : `Reminder: your booking at ${businessName}`,
     html: emailLayout(
       'en',
-      'Your booking is coming up',
+      isVisit ? 'Your visit is coming up' : 'Your booking is coming up',
       `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hi ${clientName},</p>
-       <p style="font-size: 14px; color: #374151; margin: 0;">This is a reminder about your upcoming booking with <strong>${businessName}</strong>.</p>
-       ${detailsCard([
-         ['Service', serviceName],
-         ['Date and time', when],
-       ])}
-       ${manageButton(manageUrl, 'en')}`
+       <p style="font-size: 14px; color: #374151; margin: 0;">${
+         isVisit
+           ? `This is a reminder about your upcoming visit to <strong>${businessName}</strong>. We look forward to seeing you!`
+           : `This is a reminder about your upcoming booking with <strong>${businessName}</strong>.`
+       }</p>
+       ${detailsCard([serviceRow(data), ['Date and time', when]])}
+       ${manageButton(manageUrl, 'en', reservationType)}`
     ),
   }
 }

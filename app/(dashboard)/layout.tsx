@@ -36,7 +36,7 @@ export default function DashboardLayout({
           isCollapsed ? 'lg:ml-16' : 'lg:ml-64'
         )}
       >
-        <div className="p-4 sm:p-6">{children}</div>
+        <div className="mx-auto max-w-[1600px] p-4 sm:p-6">{children}</div>
       </main>
 
       <FeedbackWidget />

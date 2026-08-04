@@ -46,7 +46,8 @@ export async function POST(request: Request) {
       start_time: string
       client_name: string
       client_email: string | null
-      service_name: string
+      service_name: string | null
+      reservation_type: 'booking' | 'visit'
       business_name: string
       business_timezone: string
       notify_confirmations: boolean
@@ -69,6 +70,7 @@ export async function POST(request: Request) {
       clientName: reservation.client_name,
       businessName: reservation.business_name,
       serviceName: reservation.service_name,
+      reservationType: reservation.reservation_type,
       startTime: reservation.start_time,
       timezone: reservation.business_timezone,
       language,

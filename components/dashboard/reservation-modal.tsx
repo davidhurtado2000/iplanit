@@ -35,11 +35,12 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Loader2 } from 'lucide-react'
-import { Calendar, Clock, User, Briefcase, Trash2, MapPin, Repeat, DollarSign, ParkingSquare, ChevronDown, ChevronsUpDown, Check } from 'lucide-react'
+import { Calendar, Clock, User, Briefcase, Trash2, MapPin, Repeat, DollarSign, ParkingSquare, ChevronDown, ChevronsUpDown, Check, Eye } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -111,6 +112,22 @@ interface ReservationModalProps {
    * reserva" vs "Nueva visita"). Not editable afterward, so visit/booking
    * counts in Reportes can't drift retroactively. */
   initialType?: 'booking' | 'visit'
+  /** Only used in create mode, set by the "Create follow-up booking" action
+   * on a visit - pre-fills the client (and the service, if the visit had
+   * one attached as an interest hint) so closing the follow-up doesn't mean
+   * re-entering who they already talked to. */
+  prefillClientId?: string
+  prefillServiceId?: string | null
+  /** Set alongside the two prefill props above - written onto the new
+   * reservation on save so a future report can compute visit -> booking
+   * conversion (scripts/050-visit-follow-up.sql). */
+  followUpOfReservationId?: string | null
+  /** Shown as a button on a visit's view - the parent owns modal/prefill
+   * state (same reason onSelectReservation etc. are callbacks, not
+   * something this component could do by itself), so this just reports
+   * "the user wants to convert this visit" and lets the parent decide how
+   * to reopen the modal in create mode. */
+  onCreateFollowUp?: (source: { clientId: string; serviceId: string | null; reservationId: string }) => void
 }
 
 export function ReservationModal({
@@ -121,6 +138,10 @@ export function ReservationModal({
   mode,
   onSave,
   initialType = 'booking',
+  prefillClientId,
+  prefillServiceId,
+  followUpOfReservationId,
+  onCreateFollowUp,
 }: ReservationModalProps) {
   const supabase = createClient()
   const { profile } = useAuth()
@@ -149,10 +170,15 @@ export function ReservationModal({
     type: 'booking' as 'booking' | 'visit',
     duration_option_id: '',
     hours: '' as number | '',
+    // Only used for a visit with no service selected (a service already
+    // carries its own duration) - was previously a silent, unchangeable
+    // 60-minute fallback with no UI at all, see effectiveDurationMinutes.
+    visitDurationMinutes: 60 as number | '',
     price: '' as number | '',
     needsParking: false,
   })
   const [parkingError, setParkingError] = useState('')
+  const [parkingAvailability, setParkingAvailability] = useState<'checking' | 'available' | 'unavailable' | null>(null)
   // Drives the available-slots grid below (see availableSlots) - kept
   // separate from formData.start_time, which only gets set once an actual
   // slot is picked. Named slotDate (not selectedDate) since that name is
@@ -253,6 +279,11 @@ export function ReservationModal({
         // Hours aren't stored directly either - same inference as the
         // duration option above, from the reservation's actual duration.
         hours: editedService?.pricing_mode === 'hourly' ? Math.round(actualDuration / 60) : '',
+        // Same inference, for a visit - shows what was actually blocked
+        // instead of resetting to 60. A visit's duration never comes from
+        // its (optional, informational-only) service, so this applies
+        // whether or not one is attached.
+        visitDurationMinutes: reservation.type === 'visit' ? actualDuration : 60,
         price: (isUSD ? reservation.price_usd : reservation.price) ?? '',
         needsParking: !!reservation.parking_resource_id,
       })
@@ -260,8 +291,8 @@ export function ReservationModal({
       setIsEditing(mode === 'edit')
     } else {
       setFormData({
-        client_id: '',
-        service_id: '',
+        client_id: prefillClientId || '',
+        service_id: prefillServiceId || '',
         resource_id: '',
         // Left empty on purpose - the slot grid below forces an explicit
         // pick instead of defaulting to a guessed time that might not even
@@ -271,6 +302,7 @@ export function ReservationModal({
         type: initialType,
         duration_option_id: '',
         hours: '',
+        visitDurationMinutes: 60,
         price: '',
         needsParking: false,
       })
@@ -283,7 +315,7 @@ export function ReservationModal({
     setRepeatDays([])
     setSessionCount(4)
     setSeriesResult(null)
-  }, [reservation, selectedDate, mode, tz, initialType, serviceDurationOptions, isUSD, services])
+  }, [reservation, selectedDate, mode, tz, initialType, serviceDurationOptions, isUSD, services, prefillClientId, prefillServiceId])
 
   // Fetch how many future sessions remain in this reservation's series (if
   // any), so the view can show "quedan N sesiones" and offer to cancel them.
@@ -350,16 +382,80 @@ export function ReservationModal({
   })()
   const selectedServiceDurationOptions = serviceDurationOptions.filter((o) => o.service_id === formData.service_id)
   const selectedDurationOption = selectedServiceDurationOptions.find((o) => o.id === formData.duration_option_id)
-  // Effective duration: a preset service without a chosen option, or an
-  // hourly service without hours entered yet, has no known duration; a
-  // fixed-duration service (or a visit's default) falls back to 60 min,
-  // same as handleSubmit/hoursError below.
+  // Effective duration: a visit's duration always comes from
+  // visitDurationMinutes, never from whatever service is picked - the
+  // service field on a visit is purely informational (which service the
+  // prospective client is interested in, see selectServiceVisit's copy),
+  // not something actually being delivered, so it must never drive how
+  // long gets blocked on the calendar. For an actual booking, a preset
+  // service without a chosen option, or an hourly service without hours
+  // entered yet, has no known duration; a fixed-duration service uses its
+  // own duration.
   const effectiveDurationMinutes =
-    selectedService?.pricing_mode === 'preset'
-      ? selectedDurationOption?.duration_minutes
-      : selectedService?.pricing_mode === 'hourly'
-        ? (formData.hours || 0) * 60 || undefined
-        : selectedService?.duration_minutes ?? 60
+    formData.type === 'visit'
+      ? formData.visitDurationMinutes || undefined
+      : selectedService?.pricing_mode === 'preset'
+        ? selectedDurationOption?.duration_minutes
+        : selectedService?.pricing_mode === 'hourly'
+          ? (formData.hours || 0) * 60 || undefined
+          : selectedService?.duration_minutes
+
+  // Checks parking as soon as a start time + duration are known, instead of
+  // only finding out at save time - same reasoning and same RPC as the
+  // public booking page's live check. The save handler below still does
+  // its own authoritative check (and the DB's exclusion constraint is the
+  // real guarantee), this is purely a UX preview.
+  useEffect(() => {
+    if (!currentBusiness?.offers_parking || !formData.start_time || !effectiveDurationMinutes) {
+      setParkingAvailability(null)
+      return
+    }
+    const startDate = parseInTimezone(formData.start_time, tz)
+    const endDate = new Date(startDate.getTime() + effectiveDurationMinutes * 60 * 1000)
+
+    // Editing a reservation that already holds a spot, without touching its
+    // time, keeps that same spot - same case the save handler special-cases
+    // below, otherwise this would wrongly flag it as unavailable against
+    // its own current occupancy.
+    const timeUnchanged =
+      mode === 'edit' &&
+      reservation &&
+      new Date(reservation.start_time).getTime() === startDate.getTime() &&
+      new Date(reservation.end_time).getTime() === endDate.getTime()
+    if (timeUnchanged && reservation?.parking_resource_id) {
+      setParkingAvailability('available')
+      return
+    }
+
+    let cancelled = false
+    setParkingAvailability('checking')
+    supabase
+      .rpc('find_available_parking_resource', {
+        p_business_id: currentBusiness.id,
+        p_start: startDate.toISOString(),
+        p_end: endDate.toISOString(),
+      })
+      .then(({ data }) => {
+        if (cancelled) return
+        const available = !!data
+        setParkingAvailability(available ? 'available' : 'unavailable')
+        if (!available) setFormData((prev) => ({ ...prev, needsParking: false }))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [
+    currentBusiness?.id,
+    currentBusiness?.offers_parking,
+    formData.start_time,
+    effectiveDurationMinutes,
+    mode,
+    reservation?.id,
+    reservation?.start_time,
+    reservation?.end_time,
+    reservation?.parking_resource_id,
+    tz,
+  ])
 
   // Busy ranges for the currently-selected resource, excluding this
   // reservation's own occupancy when editing (so its current slot doesn't
@@ -661,7 +757,7 @@ export function ReservationModal({
       if (effectiveMode === 'create') {
         const { data: created, error } = await supabase
           .from('reservations')
-          .insert([{ ...reservationData, status: 'pending' }])
+          .insert([{ ...reservationData, status: 'pending', follow_up_of_reservation_id: followUpOfReservationId || null }])
           .select('id')
           .single()
 
@@ -803,6 +899,9 @@ export function ReservationModal({
   const viewClient = clients.find((c) => c.id === reservation?.client_id)
   const viewService = services.find((s) => s.id === reservation?.service_id)
   const viewResource = resources.find((r) => r.id === reservation?.resource_id)
+  // allResources, not the parking-filtered `resources` above - a parking
+  // spot is deliberately excluded from that list (see its own filter).
+  const viewParkingSpot = allResources.find((r) => r.id === reservation?.parking_resource_id)
 
   return (
     <>
@@ -836,7 +935,10 @@ export function ReservationModal({
           <div className="space-y-4">
             <div className="grid gap-3">
               {reservation.type === 'visit' && (
-                <Badge variant="outline" className="w-fit">{t.reservation.typeVisit}</Badge>
+                <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
+                  <Eye className="h-4 w-4 shrink-0" />
+                  <span className="font-medium">{t.reservation.visitBannerText}</span>
+                </div>
               )}
               <div className="flex items-center gap-3 text-sm">
                 <User className="h-4 w-4 text-muted-foreground" />
@@ -845,7 +947,9 @@ export function ReservationModal({
               </div>
               <div className="flex items-center gap-3 text-sm">
                 <Briefcase className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">{t.reservation.serviceLabel}</span>
+                <span className="font-medium">
+                  {reservation.type === 'visit' ? t.reservation.interestedInLabel : t.reservation.serviceLabel}
+                </span>
                 <span>
                   {viewService
                     ? `${viewService.name} (${Math.round(
@@ -864,7 +968,8 @@ export function ReservationModal({
               {reservation.parking_resource_id && (
                 <div className="flex items-center gap-3 text-sm">
                   <ParkingSquare className="h-4 w-4 text-muted-foreground" />
-                  <span>{t.reservation.parkingAssigned}</span>
+                  <span className="font-medium">{t.reservation.parkingAssigned}</span>
+                  {viewParkingSpot && <span>{viewParkingSpot.name}</span>}
                 </div>
               )}
               {viewResource && (
@@ -921,68 +1026,92 @@ export function ReservationModal({
             </div>
 
             <DialogFooter className="flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              {/* Destructive actions + the status dropdown grouped together
-                  on one side, Edit (the primary action) on the other - a
-                  dropdown instead of one button per status scales to any
-                  number of options without wrapping into a messy multi-row
-                  pile on narrow screens. Every status transition stays
-                  available regardless of the current one (work is
-                  unpredictable enough that staff need to correct a status
-                  days later, not just right after clicking) - only the
-                  option matching the CURRENT status is hidden, since
-                  re-applying the same status is a no-op. */}
+              {/* One combined menu instead of a status dropdown PLUS one or
+                  two separate solid-red buttons - cancelling is a rarer
+                  action than editing, so it shouldn't visually out-weigh
+                  the primary Edit button just for living next to it. Status
+                  changes and cancellation are still both one click away,
+                  just inside the same menu instead of each claiming their
+                  own button. Every status transition stays available
+                  regardless of the current one (work is unpredictable
+                  enough that staff need to correct a status days later, not
+                  just right after clicking) - only the option matching the
+                  CURRENT status is hidden, since re-applying it is a no-op. */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" disabled={isLoading} className="gap-2">
+                    {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {t.reservation.actionsBtn}
+                    <ChevronDown className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  {reservation.status !== 'pending' && (
+                    <DropdownMenuItem onClick={() => handleUpdateStatus('pending')}>
+                      {t.reservation.markPending}
+                    </DropdownMenuItem>
+                  )}
+                  {reservation.status !== 'confirmed' && (
+                    <DropdownMenuItem onClick={() => handleUpdateStatus('confirmed')}>
+                      {t.reservation.markConfirmed}
+                    </DropdownMenuItem>
+                  )}
+                  {reservation.status !== 'completed' && (
+                    <DropdownMenuItem onClick={() => handleUpdateStatus('completed')}>
+                      {t.reservation.markCompleted}
+                    </DropdownMenuItem>
+                  )}
+                  {reservation.status !== 'no_show' && new Date(reservation.start_time).getTime() < Date.now() && (
+                    <DropdownMenuItem onClick={() => handleUpdateStatus('no_show')}>
+                      {t.reservation.markNoShow}
+                    </DropdownMenuItem>
+                  )}
+                  {(reservation.status !== 'cancelled' ||
+                    (reservation.series_id && seriesRemaining !== null && seriesRemaining > 0)) && (
+                    <DropdownMenuSeparator />
+                  )}
+                  {reservation.status !== 'cancelled' && (
+                    <DropdownMenuItem
+                      onClick={() => setCancelConfirmType('single')}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      {t.reservation.cancelReservation}
+                    </DropdownMenuItem>
+                  )}
+                  {reservation.series_id && seriesRemaining !== null && seriesRemaining > 0 && (
+                    <DropdownMenuItem
+                      onClick={() => setCancelConfirmType('series')}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <Repeat className="mr-2 h-4 w-4" />
+                      {t.reservation.cancelSeriesRemaining}
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
               <div className="flex flex-wrap gap-2">
-                {reservation.status !== 'cancelled' && (
+                {reservation.type === 'visit' && onCreateFollowUp && (
                   <Button
-                    variant="destructive"
-                    onClick={() => setCancelConfirmType('single')}
+                    variant="outline"
                     disabled={isLoading}
                     className="gap-2"
+                    onClick={() =>
+                      onCreateFollowUp({
+                        clientId: reservation.client_id,
+                        serviceId: reservation.service_id,
+                        reservationId: reservation.id,
+                      })
+                    }
                   >
-                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                    {t.reservation.cancelReservation}
+                    <Calendar className="h-4 w-4" />
+                    {t.reservation.createFollowUpBtn}
                   </Button>
                 )}
-                {reservation.series_id && seriesRemaining !== null && seriesRemaining > 0 && (
-                  <Button variant="destructive" onClick={() => setCancelConfirmType('series')} disabled={isLoading} className="gap-2">
-                    <Repeat className="h-4 w-4" />
-                    {t.reservation.cancelSeriesRemaining}
-                  </Button>
-                )}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" disabled={isLoading} className="gap-2">
-                      {t.reservation.changeStatusBtn}
-                      <ChevronDown className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    {reservation.status !== 'pending' && (
-                      <DropdownMenuItem onClick={() => handleUpdateStatus('pending')}>
-                        {t.reservation.markPending}
-                      </DropdownMenuItem>
-                    )}
-                    {reservation.status !== 'confirmed' && (
-                      <DropdownMenuItem onClick={() => handleUpdateStatus('confirmed')}>
-                        {t.reservation.markConfirmed}
-                      </DropdownMenuItem>
-                    )}
-                    {reservation.status !== 'completed' && (
-                      <DropdownMenuItem onClick={() => handleUpdateStatus('completed')}>
-                        {t.reservation.markCompleted}
-                      </DropdownMenuItem>
-                    )}
-                    {reservation.status !== 'no_show' && new Date(reservation.start_time).getTime() < Date.now() && (
-                      <DropdownMenuItem onClick={() => handleUpdateStatus('no_show')}>
-                        {t.reservation.markNoShow}
-                      </DropdownMenuItem>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <Button onClick={() => setIsEditing(true)} disabled={isLoading} className="w-full sm:w-auto">
+                  {t.reservation.editBtn}
+                </Button>
               </div>
-              <Button onClick={() => setIsEditing(true)} disabled={isLoading} className="w-full sm:w-auto">
-                {t.reservation.editBtn}
-              </Button>
             </DialogFooter>
           </div>
         ) : (
@@ -1010,7 +1139,20 @@ export function ReservationModal({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setFormData({ ...formData, type: 'visit' })}
+                  onClick={() =>
+                    // Clears fields that only make sense for a booking, in
+                    // case they were already filled in before switching -
+                    // otherwise a stale price/duration-option would ride
+                    // along invisibly into a visit that no longer shows
+                    // those fields at all.
+                    setFormData({
+                      ...formData,
+                      type: 'visit',
+                      price: '',
+                      duration_option_id: '',
+                      hours: '',
+                    })
+                  }
                   className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                     formData.type === 'visit'
                       ? 'bg-primary text-primary-foreground'
@@ -1110,7 +1252,10 @@ export function ReservationModal({
                 value={formData.service_id}
                 onValueChange={(val) => {
                   const service = services.find((s) => s.id === val)
-                  const suggestedPrice = service && service.pricing_mode === 'fixed'
+                  // A visit's service is just an interest hint (see the
+                  // label above) - never suggest a price for it, since the
+                  // price field itself doesn't even show for a visit.
+                  const suggestedPrice = formData.type !== 'visit' && service && service.pricing_mode === 'fixed'
                     ? (isUSD ? service.price_usd : service.price) ?? ''
                     : ''
                   setFormData({
@@ -1161,7 +1306,7 @@ export function ReservationModal({
                 </SelectContent>
               </Select>
 
-              {selectedService?.pricing_mode === 'preset' && (
+              {formData.type !== 'visit' && selectedService?.pricing_mode === 'preset' && (
                 <Select
                   value={formData.duration_option_id}
                   onValueChange={(val) => {
@@ -1196,7 +1341,7 @@ export function ReservationModal({
                 </Select>
               )}
 
-              {selectedService?.pricing_mode === 'hourly' && (
+              {formData.type !== 'visit' && selectedService?.pricing_mode === 'hourly' && (
                 <div className="mt-2 space-y-1">
                   <Input
                     type="number"
@@ -1224,7 +1369,27 @@ export function ReservationModal({
                 </div>
               )}
 
-              {selectedService && effectiveDurationMinutes && (
+              {formData.type === 'visit' && (
+                <div className="mt-2 space-y-1">
+                  <Label htmlFor="visit-duration" className="text-xs font-normal text-muted-foreground">
+                    {t.reservation.visitDurationLabel}
+                  </Label>
+                  <Input
+                    id="visit-duration"
+                    type="number"
+                    min={5}
+                    step={5}
+                    value={formData.visitDurationMinutes}
+                    onChange={(e) => {
+                      const minutes = e.target.value !== '' ? parseInt(e.target.value) : ''
+                      setFormData({ ...formData, visitDurationMinutes: minutes, start_time: '' })
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">{t.reservation.visitDurationHint}</p>
+                </div>
+              )}
+
+              {effectiveDurationMinutes && (
                 <p className="text-xs text-muted-foreground">
                   {t.reservation.durationInfo} {effectiveDurationMinutes} min — {t.reservation.durationEnd}{' '}
                   {formData.start_time
@@ -1240,25 +1405,31 @@ export function ReservationModal({
             {/* Price - pre-filled from the service/duration option but
                 editable for one-off quotes ("cotizaciones"); snapshotted
                 onto the reservation so later service price changes don't
-                retroactively rewrite past revenue (see lib/analytics.ts). */}
-            <div className="space-y-2">
-              <Label htmlFor="reservation-price">
-                {t.reservation.priceLabel} ({isUSD ? '$' : 'S/.'})
-              </Label>
-              <Input
-                id="reservation-price"
-                type="number"
-                min={0}
-                step="any"
-                value={formData.price}
-                onChange={(e) => setFormData({ ...formData, price: e.target.value !== '' ? parseFloat(e.target.value) : '' })}
-                onBlur={(e) => {
-                  if (e.target.value === '') return
-                  const rounded = Math.round(parseFloat(e.target.value) * 100) / 100
-                  setFormData({ ...formData, price: isNaN(rounded) ? '' : rounded })
-                }}
-              />
-            </div>
+                retroactively rewrite past revenue (see lib/analytics.ts).
+                Hidden for a visit - it never generates revenue regardless
+                of what's saved here (excluded by type, not by price), so
+                showing an editable price would just look like it charges
+                for something the system silently ignores. */}
+            {formData.type !== 'visit' && (
+              <div className="space-y-2">
+                <Label htmlFor="reservation-price">
+                  {t.reservation.priceLabel} ({isUSD ? '$' : 'S/.'})
+                </Label>
+                <Input
+                  id="reservation-price"
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={formData.price}
+                  onChange={(e) => setFormData({ ...formData, price: e.target.value !== '' ? parseFloat(e.target.value) : '' })}
+                  onBlur={(e) => {
+                    if (e.target.value === '') return
+                    const rounded = Math.round(parseFloat(e.target.value) * 100) / 100
+                    setFormData({ ...formData, price: isNaN(rounded) ? '' : rounded })
+                  }}
+                />
+              </div>
+            )}
 
             {/* Resource - required when the selected service has specific
                 resources linked to it (that link is the business explicitly
@@ -1446,18 +1617,35 @@ export function ReservationModal({
 
             {/* Parking (only shown if the business offers it) */}
             {currentBusiness?.offers_parking && (
-              <div className="flex items-center justify-between rounded-lg border p-3">
-                <div className="flex items-center gap-2">
-                  <ParkingSquare className="h-4 w-4 text-muted-foreground" />
-                  <Label htmlFor="needs-parking" className="cursor-pointer">
-                    {t.reservation.needsParkingLabel}
-                  </Label>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between rounded-lg border p-3">
+                  <div className="flex items-center gap-2">
+                    <ParkingSquare className="h-4 w-4 text-muted-foreground" />
+                    <Label htmlFor="needs-parking" className="cursor-pointer">
+                      {t.reservation.needsParkingLabel}
+                    </Label>
+                  </div>
+                  <Switch
+                    id="needs-parking"
+                    checked={formData.needsParking}
+                    disabled={parkingAvailability === 'unavailable'}
+                    onCheckedChange={(checked) => setFormData({ ...formData, needsParking: checked })}
+                  />
                 </div>
-                <Switch
-                  id="needs-parking"
-                  checked={formData.needsParking}
-                  onCheckedChange={(checked) => setFormData({ ...formData, needsParking: checked })}
-                />
+                {parkingAvailability === 'checking' && (
+                  <p className="pl-1 text-xs text-muted-foreground">{t.reservation.checkingParkingAvailability}</p>
+                )}
+                {parkingAvailability === 'available' && (
+                  <p className="flex items-center gap-1 pl-1 text-xs text-emerald-600 dark:text-emerald-400">
+                    <Check className="h-3 w-3 shrink-0" />
+                    {t.reservation.parkingAvailableAtSlot}
+                  </p>
+                )}
+                {parkingAvailability === 'unavailable' && (
+                  <p className="pl-1 text-xs text-amber-600 dark:text-amber-400">
+                    {t.reservation.parkingUnavailableAtSlot}
+                  </p>
+                )}
               </div>
             )}
 

@@ -4,7 +4,7 @@ import React from "react"
 
 import { useState, useMemo, useEffect, useRef, type ChangeEvent } from 'react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -46,6 +46,7 @@ import { useLanguage } from '@/context/language-context'
 import { useDashboardData, type Reservation } from '@/context/dashboard-data-context'
 import { createClient } from '@/lib/supabase/client'
 import { getStatusBadgeVariant, getStatusLabel } from '@/lib/reservation-status'
+import { cn } from '@/lib/utils'
 import {
   Plus,
   MoreHorizontal,
@@ -70,6 +71,7 @@ import {
   Check,
 } from 'lucide-react'
 import { PremiumButton } from '@/components/premium-feature'
+import { HeroKpiCard } from '@/components/dashboard/hero-kpi-card'
 import { UpgradeModal } from '@/components/upgrade-modal'
 import { isPlanLimitReached } from '@/lib/plan-limits'
 import { toCsv, downloadCsv, parseCsv } from '@/lib/csv'
@@ -610,6 +612,23 @@ export default function ClientsPage() {
     )
   }
 
+  // Shared between the table's empty row and the mobile card list below -
+  // same "no clients at all" vs. "no results for this search" distinction
+  // either way.
+  const emptyState =
+    clients.length === 0 ? (
+      <>
+        <p className="font-medium text-foreground">{t.clients.emptyStateTitle}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{t.clients.emptyStateDesc}</p>
+        <Button onClick={handleNewClientClick} className="mt-4 gap-2">
+          <Plus className="h-4 w-4" />
+          {t.clients.newClient}
+        </Button>
+      </>
+    ) : (
+      <p className="text-muted-foreground">{t.clients.notFound}</p>
+    )
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -646,49 +665,31 @@ export default function ClientsPage() {
 
       {/* Stats */}
       <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {t.clients.totalClients}
-            </CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{clients.length}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {t.clients.newThisMonth}
-            </CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {clients.filter((c) => {
-                const created = new Date(c.created_at)
-                const now = new Date()
-                return (
-                  created.getMonth() === now.getMonth() &&
-                  created.getFullYear() === now.getFullYear()
-                )
-              }).length}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {t.clients.inactiveClients}
-            </CardTitle>
-            <UserX className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{inactiveClientsCount}</div>
-            <p className="mt-1 text-xs text-muted-foreground">{t.clients.inactiveClientsHint}</p>
-          </CardContent>
-        </Card>
+        <HeroKpiCard
+          label={t.clients.totalClients}
+          icon={Users}
+          iconClassName="bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400"
+          value={clients.length}
+        />
+        <HeroKpiCard
+          label={t.clients.newThisMonth}
+          icon={Calendar}
+          iconClassName="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+          value={
+            clients.filter((c) => {
+              const created = new Date(c.created_at)
+              const now = new Date()
+              return created.getMonth() === now.getMonth() && created.getFullYear() === now.getFullYear()
+            }).length
+          }
+        />
+        <HeroKpiCard
+          label={t.clients.inactiveClients}
+          icon={UserX}
+          iconClassName="bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
+          value={inactiveClientsCount}
+          caption={t.clients.inactiveClientsHint}
+        />
       </div>
 
       {/* Search */}
@@ -702,9 +703,15 @@ export default function ClientsPage() {
         />
       </div>
 
-      {/* Clients Table */}
+      {/* Clients Table - full table from sm up; a stacked card list below
+          that instead of letting 6 columns force horizontal scroll on a
+          phone (unlike Services, this list benefits from staying tabular
+          on larger screens - sortable columns + pagination are a table
+          affordance, so this is a responsive table, not a full switch to
+          cards). */}
       <Card>
         <CardContent className="p-0">
+          <div className="hidden sm:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -719,7 +726,7 @@ export default function ClientsPage() {
                   </button>
                 </TableHead>
                 <TableHead>{t.clients.contactCol}</TableHead>
-                <TableHead>{t.clients.documentCol}</TableHead>
+                <TableHead className="hidden lg:table-cell">{t.clients.documentCol}</TableHead>
                 <TableHead>
                   <button
                     type="button"
@@ -752,7 +759,11 @@ export default function ClientsPage() {
                   (Date.now() - new Date(info.last_reservation_at).getTime()) / 86400000 >
                     INACTIVE_DAYS_THRESHOLD
                 return (
-                  <TableRow key={client.id}>
+                  <TableRow
+                    key={client.id}
+                    className="cursor-pointer"
+                    onClick={() => handleViewDetails(client)}
+                  >
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <Avatar>
@@ -774,10 +785,15 @@ export default function ClientsPage() {
                     </TableCell>
                     <TableCell>
                       <div className="space-y-1">
-                        <div className="flex items-center gap-1 text-sm">
-                          <Mail className="h-3 w-3 text-muted-foreground" />
-                          {client.email}
-                        </div>
+                        {client.email && (
+                          <div className="flex items-center gap-1 text-sm">
+                            <Mail className="h-3 w-3 text-muted-foreground" />
+                            {client.email}
+                          </div>
+                        )}
+                        {!client.email && !client.phone && (
+                          <span className="text-sm text-muted-foreground">-</span>
+                        )}
                         {client.phone && (
                           <div className="flex items-center gap-1 text-sm">
                             <Phone className="h-3 w-3 text-muted-foreground" />
@@ -796,7 +812,7 @@ export default function ClientsPage() {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm">
+                    <TableCell className="hidden text-sm lg:table-cell">
                       {client.document_number ? (
                         <div>
                           {client.document_type && (
@@ -813,7 +829,8 @@ export default function ClientsPage() {
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-1">
                         <Badge variant="secondary">
-                          {clientReservationCount} {t.clients.reservationsWord}
+                          {clientReservationCount}{' '}
+                          {clientReservationCount === 1 ? t.clients.reservationWordSingular : t.clients.reservationsWord}
                         </Badge>
                         {!!info?.no_show_count && (
                           <Badge variant="destructive" title={`${info.no_show_count} ${t.clients.noShowCount}`}>
@@ -838,11 +855,11 @@ export default function ClientsPage() {
                     <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
+                          <Button variant="ghost" size="icon" onClick={(e) => e.stopPropagation()}>
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                           <DropdownMenuItem onClick={() => handleViewDetails(client)}>
                             <FileText className="mr-2 h-4 w-4" />
                             {t.clients.viewDetailsBtn}
@@ -866,14 +883,105 @@ export default function ClientsPage() {
               })}
               {filteredClients.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-8 text-center">
+                  <TableCell colSpan={6} className="py-12 text-center">
                     <Users className="mx-auto mb-2 h-8 w-8 text-muted-foreground/50" />
-                    <p className="text-muted-foreground">{t.clients.notFound}</p>
+                    {emptyState}
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
+          </div>
+
+          {/* Mobile card list - same data/pagination/handlers as the table
+              above, just laid out as stacked rows instead of columns so
+              nothing needs horizontal scroll on a phone. Document number is
+              left out here (same as the table hides it below lg) - it's in
+              the detail view for whoever needs it. */}
+          <div className="divide-y sm:hidden">
+            {paginatedClients.map((client) => {
+              const info = reservationCounts.get(client.id)
+              const clientReservationCount = info?.reservation_count ?? 0
+              const isInactive =
+                !info?.last_reservation_at ||
+                (Date.now() - new Date(info.last_reservation_at).getTime()) / 86400000 > INACTIVE_DAYS_THRESHOLD
+              return (
+                <div
+                  key={client.id}
+                  className="flex cursor-pointer items-start gap-3 p-4"
+                  onClick={() => handleViewDetails(client)}
+                >
+                  <Avatar>
+                    <AvatarFallback style={{ backgroundColor: getAvatarColor(client.id), color: '#fff' }}>
+                      {getInitials(client.name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium">{client.name}</p>
+                    <p className="truncate text-sm text-muted-foreground">
+                      {client.email || client.phone || '-'}
+                    </p>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                      <Badge variant="secondary" className="text-xs">
+                        {clientReservationCount} {t.clients.reservationsWord}
+                      </Badge>
+                      {!!info?.no_show_count && (
+                        <Badge variant="destructive" className="text-xs">
+                          {info.no_show_count} {t.clients.noShow}
+                        </Badge>
+                      )}
+                    </div>
+                    <p
+                      className={cn(
+                        'mt-1 text-xs',
+                        isInactive ? 'text-amber-600 dark:text-amber-500' : 'text-muted-foreground'
+                      )}
+                    >
+                      {info?.last_reservation_at
+                        ? new Date(info.last_reservation_at).toLocaleDateString(locale, {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                          })
+                        : t.clients.neverVisited}
+                    </p>
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="-mt-1 -mr-2 shrink-0"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                      <DropdownMenuItem onClick={() => handleViewDetails(client)}>
+                        <FileText className="mr-2 h-4 w-4" />
+                        {t.clients.viewDetailsBtn}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleOpenModal(client)}>
+                        <Pencil className="mr-2 h-4 w-4" />
+                        {t.clients.editBtn}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleDelete(client.id)} className="text-destructive">
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        {t.clients.deleteBtn}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              )
+            })}
+            {filteredClients.length === 0 && (
+              <div className="px-4 py-12 text-center">
+                <Users className="mx-auto mb-2 h-8 w-8 text-muted-foreground/50" />
+                {emptyState}
+              </div>
+            )}
+          </div>
 
           {/* Pagination */}
           {filteredClients.length > PAGE_SIZE && (

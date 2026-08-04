@@ -98,6 +98,11 @@ export default function CalendarPage() {
   const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null)
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view'>('create')
   const [modalInitialType, setModalInitialType] = useState<'booking' | 'visit'>('booking')
+  const [followUpPrefill, setFollowUpPrefill] = useState<{
+    clientId: string
+    serviceId: string | null
+    reservationId: string
+  } | null>(null)
 
   // Build view options with translated labels
   const VIEW_OPTIONS = VIEW_CONFIG.map(({ value, icon }) => ({
@@ -110,6 +115,7 @@ export default function CalendarPage() {
     setSelectedReservation(null)
     setModalMode('create')
     setModalInitialType('booking')
+    setFollowUpPrefill(null)
     setIsModalOpen(true)
   }
 
@@ -117,18 +123,30 @@ export default function CalendarPage() {
     setSelectedReservation(null)
     setModalMode('create')
     setModalInitialType('visit')
+    setFollowUpPrefill(null)
     setIsModalOpen(true)
   }
 
   const handleSelectReservation = (reservation: Reservation) => {
     setSelectedReservation(reservation)
     setModalMode('view')
+    setFollowUpPrefill(null)
     setIsModalOpen(true)
+  }
+
+  // Switches the already-open modal from viewing the visit straight into a
+  // prefilled create form - no close/reopen needed, same Dialog instance.
+  const handleCreateFollowUp = (source: { clientId: string; serviceId: string | null; reservationId: string }) => {
+    setSelectedReservation(null)
+    setModalMode('create')
+    setModalInitialType('booking')
+    setFollowUpPrefill(source)
   }
 
   const handleCloseModal = () => {
     setIsModalOpen(false)
     setSelectedReservation(null)
+    setFollowUpPrefill(null)
   }
 
   const handleVisibleRangeChange = useCallback(
@@ -328,6 +346,10 @@ export default function CalendarPage() {
         mode={modalMode}
         onSave={refetchReservations}
         initialType={modalInitialType}
+        prefillClientId={followUpPrefill?.clientId}
+        prefillServiceId={followUpPrefill?.serviceId}
+        followUpOfReservationId={followUpPrefill?.reservationId}
+        onCreateFollowUp={handleCreateFollowUp}
       />
     </div>
   )

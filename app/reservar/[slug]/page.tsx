@@ -26,7 +26,7 @@ import {
 import { createClient } from '@/lib/supabase/client'
 import { Confetti } from '@/components/confetti'
 import { useLanguage } from '@/context/language-context'
-import { capitalizeFirst } from '@/lib/utils'
+import { capitalizeFirst, cn } from '@/lib/utils'
 import { parseInTimezone } from '@/lib/timezone'
 import { generateAvailableSlots, isDayClosed } from '@/lib/availability'
 import { sendReservationNotification } from '@/lib/email/notify'
@@ -128,6 +128,7 @@ export default function PublicBookingPage() {
 
   const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '', documentNumber: '', notes: '' })
   const [needsParking, setNeedsParking] = useState(false)
+  const [parkingAvailability, setParkingAvailability] = useState<'checking' | 'available' | 'unavailable' | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [manageReservationId, setManageReservationId] = useState<string | null>(null)
@@ -204,6 +205,39 @@ export default function PublicBookingPage() {
     }
     loadSlots()
   }, [step, business, selectedService, selectedResourceId, selectedDate, businessHours, effectiveDurationMinutes])
+
+  // Checks parking as soon as a slot is picked, instead of only finding out
+  // after the client fills the whole contact form and hits submit -
+  // find_available_parking_resource (scripts/035-parking.sql) is the exact
+  // same read-only check create_public_reservation itself uses as a
+  // pre-flight, already granted to anon, so this is safe to call directly
+  // for a live preview. The database's own exclusion constraint is still
+  // the real guarantee against a race condition at submit time - this is
+  // purely a UX improvement, not a new source of truth.
+  useEffect(() => {
+    if (!business?.offers_parking || !selectedSlot || !effectiveDurationMinutes) {
+      setParkingAvailability(null)
+      return
+    }
+    let cancelled = false
+    setParkingAvailability('checking')
+    const endTime = new Date(selectedSlot.getTime() + effectiveDurationMinutes * 60000)
+    supabase
+      .rpc('find_available_parking_resource', {
+        p_business_id: business.id,
+        p_start: selectedSlot.toISOString(),
+        p_end: endTime.toISOString(),
+      })
+      .then(({ data }) => {
+        if (cancelled) return
+        const available = !!data
+        setParkingAvailability(available ? 'available' : 'unavailable')
+        if (!available) setNeedsParking(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [business?.id, business?.offers_parking, selectedSlot, effectiveDurationMinutes])
 
   const goToResourceOrDatetime = (svc: PublicService) => {
     if (svc.resources.length > 1) {
@@ -774,15 +808,36 @@ export default function PublicBookingPage() {
                   </div>
 
                   {business.offers_parking && (
-                    <label className="flex items-center gap-2 rounded-lg border p-3 text-sm">
-                      <Checkbox
-                        checked={needsParking}
-                        onCheckedChange={(checked) => setNeedsParking(checked === true)}
-                        disabled={submitting}
-                      />
-                      <ParkingSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      {tr.needsParkingLabel}
-                    </label>
+                    <div className="space-y-1.5">
+                      <label
+                        className={cn(
+                          'flex items-center gap-2 rounded-lg border p-3 text-sm',
+                          parkingAvailability === 'unavailable' && 'opacity-60'
+                        )}
+                      >
+                        <Checkbox
+                          checked={needsParking}
+                          onCheckedChange={(checked) => setNeedsParking(checked === true)}
+                          disabled={submitting || parkingAvailability === 'unavailable'}
+                        />
+                        <ParkingSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        {tr.needsParkingLabel}
+                      </label>
+                      {parkingAvailability === 'checking' && (
+                        <p className="pl-1 text-xs text-muted-foreground">{tr.checkingParkingAvailability}</p>
+                      )}
+                      {parkingAvailability === 'available' && (
+                        <p className="flex items-center gap-1 pl-1 text-xs text-emerald-600 dark:text-emerald-400">
+                          <Check className="h-3 w-3 shrink-0" />
+                          {tr.parkingAvailableAtSlot}
+                        </p>
+                      )}
+                      {parkingAvailability === 'unavailable' && (
+                        <p className="pl-1 text-xs text-amber-600 dark:text-amber-400">
+                          {tr.parkingUnavailableAtSlot}
+                        </p>
+                      )}
+                    </div>
                   )}
 
                   <Button type="submit" className="w-full gap-2" disabled={submitting || !contactForm.name}>

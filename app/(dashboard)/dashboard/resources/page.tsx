@@ -3,8 +3,9 @@
 import React from "react"
 
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -43,6 +44,7 @@ import { createClient } from '@/lib/supabase/client'
 import { getResourceIcon, getResourceTypeLabel } from '@/lib/resource-display'
 import { isPlanLimitReached } from '@/lib/plan-limits'
 import { UpgradeModal } from '@/components/upgrade-modal'
+import { cn } from '@/lib/utils'
 import {
   Plus,
   MoreHorizontal,
@@ -116,6 +118,26 @@ export default function ResourcesPage() {
   const filteredResources = resources.filter((r) =>
     r.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
+
+  // Instant on/off from the card, same reasoning as Services' equivalent -
+  // toggling active status doesn't need the full edit modal.
+  const [togglingResourceId, setTogglingResourceId] = useState<string | null>(null)
+  const handleQuickToggleActive = async (resource: Resource) => {
+    setTogglingResourceId(resource.id)
+    try {
+      const { error } = await supabase
+        .from('resources')
+        .update({ is_active: !resource.is_active })
+        .eq('id', resource.id)
+      if (error) throw error
+      await refetchServicesAndResources()
+    } catch (err) {
+      console.error('[iplanit] Error toggling resource active state:', err)
+      toast.error(t.saveError)
+    } finally {
+      setTogglingResourceId(null)
+    }
+  }
 
   const handleOpenResourceModal = (resource?: Resource) => {
     if (resource) {
@@ -269,77 +291,113 @@ export default function ResourcesPage() {
       </div>
 
       {/* Resources Grid */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {filteredResources.map((resource) => {
-          const Icon = getResourceIcon(resource.type)
-          return (
-            <Card key={resource.id}>
-              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
-                <div className="flex items-center gap-3">
-                  <div
-                    className="rounded-lg p-2"
-                    style={{ backgroundColor: `${resource.color || '#3B82F6'}20` }}
-                  >
-                    <Icon className="h-5 w-5" style={{ color: resource.color || '#3B82F6' }} />
-                  </div>
-                  <div>
-                    <CardTitle className="text-base">{resource.name}</CardTitle>
-                    <CardDescription>
-                      {getResourceTypeLabel(resource.type, t.services)}
-                    </CardDescription>
-                  </div>
-                </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-8 w-8">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => handleOpenResourceModal(resource)}>
-                      <Pencil className="mr-2 h-4 w-4" />
-                      {t.services.edit}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => setDeletingResource(resource)}
-                      className="text-destructive"
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      {t.services.delete}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </CardHeader>
-              <CardContent>
-                {resource.description && (
-                  <p className="mb-3 text-sm text-muted-foreground">
-                    {resource.description}
-                  </p>
-                )}
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant={resource.is_active ? 'default' : 'secondary'}>
-                    {resource.is_active ? t.services.active : t.services.inactive}
-                  </Badge>
-                  {(() => {
-                    const linkedCount = serviceResources.filter((sr) => sr.resource_id === resource.id).length
-                    return linkedCount > 0 ? (
-                      <Badge variant="outline" className="text-xs">
-                        {linkedCount} {linkedCount === 1 ? 'servicio' : 'servicios'}
-                      </Badge>
-                    ) : null
-                  })()}
-                </div>
-              </CardContent>
-            </Card>
-          )
-        })}
-        {filteredResources.length === 0 && (
-          <div className="col-span-full flex flex-col items-center justify-center py-12">
-            <Building className="mb-4 h-12 w-12 text-muted-foreground/50" />
+      {filteredResources.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed py-16 text-center">
+          <Building className="h-10 w-10 text-muted-foreground/50" />
+          {resources.length === 0 ? (
+            <>
+              <div>
+                <p className="font-medium text-foreground">{t.services.resourceEmptyStateTitle}</p>
+                <p className="text-sm text-muted-foreground">{t.services.resourceEmptyStateDesc}</p>
+              </div>
+              <Button onClick={handleNewResourceClick} className="gap-2">
+                <Plus className="h-4 w-4" />
+                {t.services.newResource}
+              </Button>
+            </>
+          ) : (
             <p className="text-muted-foreground">{t.services.notFoundResources}</p>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredResources.map((resource) => {
+            const Icon = getResourceIcon(resource.type)
+            const linkedCount = serviceResources.filter((sr) => sr.resource_id === resource.id).length
+            const resourceColor = resource.color || '#3B82F6'
+            return (
+              <Card
+                key={resource.id}
+                className={cn(
+                  'flex h-full cursor-pointer flex-col gap-0 overflow-hidden py-0 transition-shadow hover:shadow-md',
+                  !resource.is_active && 'opacity-70'
+                )}
+                onClick={() => handleOpenResourceModal(resource)}
+              >
+                <div className="h-1.5 w-full" style={{ backgroundColor: resourceColor }} />
+                <CardContent className="flex flex-1 flex-col justify-between gap-4 p-5">
+                  <div className="space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div
+                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+                          style={{ backgroundColor: `${resourceColor}20`, color: resourceColor }}
+                        >
+                          <Icon className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="truncate font-semibold text-foreground">{resource.name}</h3>
+                          <p className="text-xs text-muted-foreground">
+                            {getResourceTypeLabel(resource.type, t.services)}
+                          </p>
+                        </div>
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="-mt-1 -mr-2 shrink-0"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenuItem onClick={() => handleOpenResourceModal(resource)}>
+                            <Pencil className="mr-2 h-4 w-4" />
+                            {t.services.edit}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => setDeletingResource(resource)}
+                            className="text-destructive"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            {t.services.delete}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                    {resource.description && (
+                      <p className="line-clamp-2 text-sm text-muted-foreground">{resource.description}</p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2">
+                    {linkedCount > 0 ? (
+                      <Badge variant="outline" className="text-xs">
+                        {linkedCount}{' '}
+                        {linkedCount === 1
+                          ? t.services.resourceLinkedServiceSingular
+                          : t.services.resourceLinkedServicesPlural}
+                      </Badge>
+                    ) : (
+                      <span />
+                    )}
+                    <Switch
+                      checked={resource.is_active}
+                      disabled={togglingResourceId === resource.id}
+                      onCheckedChange={() => handleQuickToggleActive(resource)}
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label={resource.is_active ? t.services.active : t.services.inactive}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
+      )}
 
       {/* Resource Modal */}
       <Dialog open={isResourceModalOpen} onOpenChange={setIsResourceModalOpen}>

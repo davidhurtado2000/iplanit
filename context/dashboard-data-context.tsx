@@ -23,6 +23,11 @@ export interface Reservation {
    * one was requested/assigned. */
   parking_resource_id: string | null
   series_id: string | null
+  /** Set when this booking was created via the "Create follow-up booking"
+   * action on a visit (scripts/050-visit-follow-up.sql) - lets a future
+   * report compute visit -> booking conversion without guessing from
+   * client + rough timing alone. Null for everything else. */
+  follow_up_of_reservation_id: string | null
   start_time: string
   end_time: string
   status: 'confirmed' | 'pending' | 'cancelled' | 'completed' | 'no_show'

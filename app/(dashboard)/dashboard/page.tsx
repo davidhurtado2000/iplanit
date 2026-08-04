@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Calendar,
   TrendingUp,
@@ -15,11 +16,16 @@ import {
   CalendarDays,
   Crown,
   Plus,
+  Briefcase,
+  Layers,
+  BarChart3,
+  Lock,
 } from 'lucide-react'
 import Link from 'next/link'
 import { UpgradeModal } from '@/components/upgrade-modal'
 import { OnboardingBanner } from '@/components/dashboard/onboarding-banner'
 import { ReservationModal } from '@/components/dashboard/reservation-modal'
+import { HeroKpiCard } from '@/components/dashboard/hero-kpi-card'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useAuth } from '@/hooks/use-auth'
 import { useLanguage } from '@/context/language-context'
@@ -31,7 +37,11 @@ export default function DashboardPage() {
   const { user, profile, loading: authLoading } = useAuth()
   const { currentBusiness } = useBusinesses()
   const { t, locale } = useLanguage()
-  const { reservations, services, clients, loading: dataLoading, refetchReservations } = useDashboardData()
+  const { reservations, services, clients, resources: allResources, loading: dataLoading, refetchReservations } = useDashboardData()
+  // Parking spots aren't a real "resource" a client ever picks - same
+  // exclusion as Services/Resources pages, so the count matches what those
+  // pages themselves show.
+  const resources = allResources.filter((r) => r.type !== 'parking')
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null)
@@ -70,18 +80,49 @@ export default function DashboardPage() {
 
   const servicesCount = services.length
   const clientsCount = clients.length
+  const resourcesCount = resources.length
+
+  // Teaser number for the (possibly locked) Analytics card - real analytics
+  // computation lives in lib/analytics.ts, this is deliberately simpler
+  // since it's just meant to make the card worth a glance, not duplicate
+  // that page. Month boundaries are forgiving enough that skipping the
+  // timezone-exact date math used for "today" elsewhere on this page isn't
+  // worth the extra complexity here.
+  const monthReservationsCount = useMemo(() => {
+    if (!currentBusiness) return 0
+    const now = new Date()
+    return reservations.filter((r) => {
+      const d = new Date(r.start_time)
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && r.status !== 'cancelled'
+    }).length
+  }, [reservations, currentBusiness?.id])
 
   const clientsMap = useMemo(() => Object.fromEntries(clients.map((c) => [c.id, c])), [clients])
   const servicesMap = useMemo(() => Object.fromEntries(services.map((s) => [s.id, s])), [services])
 
+  const [followUpPrefill, setFollowUpPrefill] = useState<{
+    clientId: string
+    serviceId: string | null
+    reservationId: string
+  } | null>(null)
+
   const handleSelectReservation = (reservation: Reservation) => {
     setSelectedReservation(reservation)
+    setFollowUpPrefill(null)
     setIsModalOpen(true)
+  }
+
+  // Switches the already-open modal from viewing the visit straight into a
+  // prefilled create form - see the same handler in calendar/page.tsx.
+  const handleCreateFollowUp = (source: { clientId: string; serviceId: string | null; reservationId: string }) => {
+    setSelectedReservation(null)
+    setFollowUpPrefill(source)
   }
 
   const handleCloseModal = () => {
     setIsModalOpen(false)
     setSelectedReservation(null)
+    setFollowUpPrefill(null)
   }
 
   if (loading) {
@@ -182,26 +223,31 @@ export default function DashboardPage() {
                 )}
               </CardDescription>
             </div>
-            <div className="flex items-baseline gap-2">
-              <div className="text-3xl font-bold">{todayReservations.length}</div>
-              {reservationsDelta !== 0 && (
-                <span
-                  className={`flex items-center gap-0.5 text-xs font-medium ${
-                    reservationsDelta > 0 ? 'text-green-600' : 'text-muted-foreground'
-                  }`}
-                >
-                  {reservationsDelta > 0 ? (
-                    <TrendingUp className="h-3 w-3" />
-                  ) : (
-                    <TrendingDown className="h-3 w-3" />
-                  )}
-                  {reservationsDelta > 0 ? '+' : ''}
-                  {reservationsDelta}
-                </span>
-              )}
-              {reservationsDelta === 0 && (
-                <Minus className="h-3 w-3 text-muted-foreground" />
-              )}
+            <div className="flex flex-col items-end gap-0.5">
+              <div className="flex items-baseline gap-2">
+                <div className="text-3xl font-bold">{todayReservations.length}</div>
+                {reservationsDelta !== 0 && (
+                  <span
+                    className={`flex items-center gap-0.5 text-xs font-medium ${
+                      reservationsDelta > 0 ? 'text-green-600' : 'text-muted-foreground'
+                    }`}
+                  >
+                    {reservationsDelta > 0 ? (
+                      <TrendingUp className="h-3 w-3" />
+                    ) : (
+                      <TrendingDown className="h-3 w-3" />
+                    )}
+                    {reservationsDelta > 0 ? '+' : ''}
+                    {reservationsDelta}
+                  </span>
+                )}
+                {reservationsDelta === 0 && (
+                  <Minus className="h-3 w-3 text-muted-foreground" />
+                )}
+              </div>
+              <span className="text-[10px] text-muted-foreground">
+                {reservationsDelta === 0 ? t.dashboard.sameAsYesterday : t.dashboard.vsYesterday}
+              </span>
             </div>
           </CardHeader>
           <CardContent>
@@ -303,49 +349,109 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Quick Actions */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Users className="h-5 w-5" />
-              {t.dashboard.clientsCard}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="mb-4 text-sm text-muted-foreground">
-              {t.dashboard.manageClients}
-            </p>
-            <Button asChild className="w-full" size="sm" variant="outline">
-              <Link href="/dashboard/clients">{t.dashboard.viewClients}</Link>
-            </Button>
-          </CardContent>
-        </Card>
+      {/* Quick Actions - the count each links to (already computed above for
+          the onboarding banner) turns these into an actual at-a-glance stat
+          instead of just repeating what the sidebar nav already says.
+          Services/Resources/Analytics are hidden for the "sales" role, same
+          restriction the sidebar itself already applies to those 3 pages -
+          no point linking somewhere that role can't open. */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link href="/dashboard/clients" className="block">
+              <HeroKpiCard
+                label={t.dashboard.clientsCard}
+                icon={Users}
+                iconClassName="bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400"
+                value={clientsCount}
+                caption={t.dashboard.manageClients}
+                className="cursor-pointer transition-shadow hover:shadow-md"
+              />
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent>{t.dashboard.clickToSeeMore}</TooltipContent>
+        </Tooltip>
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Clock className="h-5 w-5" />
-              {t.dashboard.servicesCard}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="mb-4 text-sm text-muted-foreground">
-              {t.dashboard.configureServices}
-            </p>
-            <Button asChild className="w-full" size="sm" variant="outline">
-              <Link href="/dashboard/services">{t.dashboard.viewServices}</Link>
-            </Button>
-          </CardContent>
-        </Card>
+        {currentBusiness?.role !== 'sales' && (
+          <>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Link href="/dashboard/services" className="block">
+                  <HeroKpiCard
+                    label={t.dashboard.servicesCard}
+                    icon={Briefcase}
+                    iconClassName="bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-400"
+                    value={servicesCount}
+                    caption={t.dashboard.configureServices}
+                    className="cursor-pointer transition-shadow hover:shadow-md"
+                  />
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent>{t.dashboard.clickToSeeMore}</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Link href="/dashboard/resources" className="block">
+                  <HeroKpiCard
+                    label={t.dashboard.resourcesCard}
+                    icon={Layers}
+                    iconClassName="bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
+                    value={resourcesCount}
+                    caption={t.dashboard.manageResources}
+                    className="cursor-pointer transition-shadow hover:shadow-md"
+                  />
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent>{t.dashboard.clickToSeeMore}</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {isPremium ? (
+                  <Link href="/dashboard/analytics" className="block">
+                    <HeroKpiCard
+                      label={t.dashboard.analyticsCard}
+                      icon={BarChart3}
+                      iconClassName="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                      value={monthReservationsCount}
+                      caption={t.dashboard.reservationsThisMonth}
+                      className="cursor-pointer transition-shadow hover:shadow-md"
+                    />
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowUpgradeModal(true)}
+                    className="block w-full text-left"
+                  >
+                    <HeroKpiCard
+                      label={t.dashboard.analyticsCard}
+                      icon={BarChart3}
+                      iconClassName="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                      value={<Lock className="h-6 w-6 text-muted-foreground" />}
+                      caption={t.dashboard.unlockAnalyticsDesc}
+                      className="cursor-pointer transition-shadow hover:shadow-md"
+                    />
+                  </button>
+                )}
+              </TooltipTrigger>
+              <TooltipContent>{isPremium ? t.dashboard.clickToSeeMore : t.dashboard.clickToUnlock}</TooltipContent>
+            </Tooltip>
+          </>
+        )}
       </div>
 
       <ReservationModal
         isOpen={isModalOpen}
         onClose={handleCloseModal}
         reservation={selectedReservation}
-        mode="view"
+        mode={followUpPrefill ? 'create' : 'view'}
         onSave={refetchReservations}
+        prefillClientId={followUpPrefill?.clientId}
+        prefillServiceId={followUpPrefill?.serviceId}
+        followUpOfReservationId={followUpPrefill?.reservationId}
+        onCreateFollowUp={handleCreateFollowUp}
       />
 
       {/* Upgrade Modal */}

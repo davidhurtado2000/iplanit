@@ -30,6 +30,7 @@ import {
 import { PasswordStrength } from '@/components/password-strength'
 import { UpgradeModal } from '@/components/upgrade-modal'
 import { PremiumFeature, PremiumBadge } from '@/components/premium-feature'
+import { FormSection } from '@/components/dashboard/form-section'
 import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
@@ -48,7 +49,6 @@ import {
   Clock,
   Bell,
   CreditCard,
-  Shield,
   Globe,
   Save,
   Crown,
@@ -790,103 +790,105 @@ export default function SettingsPage() {
               <CardDescription>{t.settings.profileDesc}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="flex items-center gap-4">
-                <div className="relative">
-                  <Avatar className="h-20 w-20">
-                    <AvatarImage src={authProfile?.avatar_url || undefined} alt={profileForm.name} />
-                    <AvatarFallback className="text-xl">
-                      {getInitials(profileForm.name)}
-                    </AvatarFallback>
-                  </Avatar>
-                  {isUploadingPhoto && (
-                    <div className="absolute inset-0 flex items-center justify-center rounded-full bg-background/70">
-                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                    </div>
-                  )}
+              <FormSection title={t.settings.sectionPhotoAndPersonal}>
+                <div className="flex items-center gap-4">
+                  <div className="relative">
+                    <Avatar className="h-20 w-20">
+                      <AvatarImage src={authProfile?.avatar_url || undefined} alt={profileForm.name} />
+                      <AvatarFallback className="text-xl">
+                        {getInitials(profileForm.name)}
+                      </AvatarFallback>
+                    </Avatar>
+                    {isUploadingPhoto && (
+                      <div className="absolute inset-0 flex items-center justify-center rounded-full bg-background/70">
+                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <input
+                      ref={photoInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handlePhotoChange}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={isUploadingPhoto}
+                      onClick={() => photoInputRef.current?.click()}
+                    >
+                      {isUploadingPhoto ? t.settings.photoUploading : t.settings.changePhoto}
+                    </Button>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t.settings.photoHint}
+                    </p>
+                    {photoError && (
+                      <p className="mt-1 text-xs text-destructive">{photoError}</p>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <input
-                    ref={photoInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handlePhotoChange}
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={isUploadingPhoto}
-                    onClick={() => photoInputRef.current?.click()}
-                  >
-                    {isUploadingPhoto ? t.settings.photoUploading : t.settings.changePhoto}
-                  </Button>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t.settings.photoHint}
-                  </p>
-                  {photoError && (
-                    <p className="mt-1 text-xs text-destructive">{photoError}</p>
-                  )}
-                </div>
-              </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="profile-name">{t.settings.fullName}</Label>
-                  <Input
-                    id="profile-name"
-                    value={profileForm.name}
-                    onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
-                  />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="profile-name">{t.settings.fullName}</Label>
+                    <Input
+                      id="profile-name"
+                      value={profileForm.name}
+                      onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="profile-email">{t.settings.emailLabel}</Label>
+                    <Input
+                      id="profile-email"
+                      type="email"
+                      value={profileForm.email}
+                      disabled
+                      placeholder="tu@email.com"
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t.settings.emailHint}
+                    </p>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="profile-email">{t.settings.emailLabel}</Label>
-                  <Input
-                    id="profile-email"
-                    type="email"
-                    value={profileForm.email}
-                    disabled
-                    placeholder="tu@email.com"
-                  />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t.settings.emailHint}
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="profile-language">{t.language.label}</Label>
-                <Select value={language} onValueChange={(value) => setLanguage(value as 'es' | 'en')}>
-                  <SelectTrigger className="w-full sm:w-[200px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="es">{t.language.es}</SelectItem>
-                    <SelectItem value="en">{t.language.en}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="profile-theme">{t.theme.label}</Label>
-                <Select value={mounted ? theme : undefined} onValueChange={(value) => setTheme(value)}>
-                  <SelectTrigger className="w-full sm:w-[200px]" id="profile-theme">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="light">{t.theme.light}</SelectItem>
-                    <SelectItem value="dark">{t.theme.dark}</SelectItem>
-                    <SelectItem value="system">{t.theme.system}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              </FormSection>
 
               <Separator />
 
-              <div className="space-y-4">
-                <h4 className="flex items-center gap-2 font-medium">
-                  <Shield className="h-4 w-4" />
-                  {t.settings.securityTitle}
-                </h4>
+              <FormSection title={t.settings.sectionPreferences}>
+                <div className="space-y-2">
+                  <Label htmlFor="profile-language">{t.language.label}</Label>
+                  <Select value={language} onValueChange={(value) => setLanguage(value as 'es' | 'en')}>
+                    <SelectTrigger className="w-full sm:w-[200px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="es">{t.language.es}</SelectItem>
+                      <SelectItem value="en">{t.language.en}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="profile-theme">{t.theme.label}</Label>
+                  <Select value={mounted ? theme : undefined} onValueChange={(value) => setTheme(value)}>
+                    <SelectTrigger className="w-full sm:w-[200px]" id="profile-theme">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="light">{t.theme.light}</SelectItem>
+                      <SelectItem value="dark">{t.theme.dark}</SelectItem>
+                      <SelectItem value="system">{t.theme.system}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </FormSection>
+
+              <Separator />
+
+              <FormSection title={t.settings.securityTitle}>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <Button variant="outline" onClick={() => setShowPasswordDialog(true)}>
                     {t.settings.changePassword}
@@ -895,7 +897,7 @@ export default function SettingsPage() {
                     {t.settings.lastUpdated}
                   </p>
                 </div>
-              </div>
+              </FormSection>
 
               <Separator />
 
@@ -930,206 +932,216 @@ export default function SettingsPage() {
                   <CardDescription>{t.settings.businessDesc}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <div className="flex items-center gap-4">
-                    <div className="relative">
-                      <Avatar className="h-20 w-20 rounded-lg">
-                        <AvatarImage src={currentBusiness.logo_url || undefined} alt={business.name} />
-                        <AvatarFallback className="rounded-lg text-xl">
-                          <Building2 className="h-8 w-8 text-muted-foreground" />
-                        </AvatarFallback>
-                      </Avatar>
-                      {isUploadingLogo && (
-                        <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-background/70">
-                          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                        </div>
-                      )}
+                  <FormSection title={t.settings.sectionBasicInfo}>
+                    <div className="flex items-center gap-4">
+                      <div className="relative">
+                        <Avatar className="h-20 w-20 rounded-lg">
+                          <AvatarImage src={currentBusiness.logo_url || undefined} alt={business.name} />
+                          <AvatarFallback className="rounded-lg text-xl">
+                            <Building2 className="h-8 w-8 text-muted-foreground" />
+                          </AvatarFallback>
+                        </Avatar>
+                        {isUploadingLogo && (
+                          <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-background/70">
+                            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <input
+                          ref={logoInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleLogoChange}
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={isUploadingLogo}
+                          onClick={() => logoInputRef.current?.click()}
+                        >
+                          {isUploadingLogo ? t.settings.logoUploading : t.settings.changeLogo}
+                        </Button>
+                        <p className="mt-1 text-xs text-muted-foreground">{t.settings.logoHint}</p>
+                        {logoError && (
+                          <p className="mt-1 text-xs text-destructive">{logoError}</p>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <input
-                        ref={logoInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={handleLogoChange}
-                      />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={isUploadingLogo}
-                        onClick={() => logoInputRef.current?.click()}
-                      >
-                        {isUploadingLogo ? t.settings.logoUploading : t.settings.changeLogo}
-                      </Button>
-                      <p className="mt-1 text-xs text-muted-foreground">{t.settings.logoHint}</p>
-                      {logoError && (
-                        <p className="mt-1 text-xs text-destructive">{logoError}</p>
-                      )}
-                    </div>
-                  </div>
 
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="business-name">{t.settings.businessName}</Label>
-                      <Input
-                        id="business-name"
-                        value={business.name}
-                        onChange={(e) => setBusiness({ ...business, name: e.target.value })}
-                      />
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="business-name">{t.settings.businessName}</Label>
+                        <Input
+                          id="business-name"
+                          value={business.name}
+                          onChange={(e) => setBusiness({ ...business, name: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="business-country">{t.settings.businessCountry}</Label>
+                        <Select
+                          value={business.country}
+                          onValueChange={(value: 'PE' | 'US') => setBusiness({ ...business, country: value })}
+                        >
+                          <SelectTrigger id="business-country">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="PE">{t.settings.countryPE}</SelectItem>
+                            <SelectItem value="US">{t.settings.countryUS}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
+
                     <div className="space-y-2">
-                      <Label htmlFor="business-country">{t.settings.businessCountry}</Label>
+                      <Label htmlFor="business-currency">{t.settings.businessCurrency}</Label>
                       <Select
-                        value={business.country}
-                        onValueChange={(value: 'PE' | 'US') => setBusiness({ ...business, country: value })}
+                        value={business.currency}
+                        onValueChange={(value: 'PEN' | 'USD') => setBusiness({ ...business, currency: value })}
                       >
-                        <SelectTrigger id="business-country">
+                        <SelectTrigger id="business-currency" className="w-full sm:w-[220px]">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="PE">{t.settings.countryPE}</SelectItem>
-                          <SelectItem value="US">{t.settings.countryUS}</SelectItem>
+                          <SelectItem value="PEN">{t.settings.currencyPEN}</SelectItem>
+                          <SelectItem value="USD">{t.settings.currencyUSD}</SelectItem>
                         </SelectContent>
                       </Select>
+                      <p className="text-xs text-muted-foreground">{t.settings.businessCurrencyHint}</p>
                     </div>
-                  </div>
+                  </FormSection>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="business-currency">{t.settings.businessCurrency}</Label>
-                    <Select
-                      value={business.currency}
-                      onValueChange={(value: 'PEN' | 'USD') => setBusiness({ ...business, currency: value })}
-                    >
-                      <SelectTrigger id="business-currency" className="w-full sm:w-[220px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="PEN">{t.settings.currencyPEN}</SelectItem>
-                        <SelectItem value="USD">{t.settings.currencyUSD}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">{t.settings.businessCurrencyHint}</p>
-                  </div>
+                  <Separator />
 
-                  <div className="space-y-2">
-                    <Label htmlFor="business-slug">{t.settings.slugLabel}</Label>
-                    <Input
-                      id="business-slug"
-                      value={business.slug}
-                      onChange={(e) => {
-                        setSlugError('')
-                        setBusiness({ ...business, slug: e.target.value })
-                      }}
-                      placeholder="mi-negocio"
-                      className={slugError ? 'border-destructive focus-visible:ring-destructive' : ''}
-                    />
-                    {slugError ? (
-                      <p className="text-xs text-destructive">{slugError}</p>
-                    ) : (
-                      <p className="truncate text-xs text-muted-foreground">
-                        {typeof window !== 'undefined' ? window.location.origin : ''}/reservar/
-                        {business.slug
-                          .toLowerCase()
-                          .trim()
-                          .replace(/\s+/g, '-')
-                          .replace(/[^a-z0-9-]/g, '') || '...'}
-                      </p>
-                    )}
-                  </div>
+                  <FormSection title={t.settings.sectionBookingSettings}>
+                    <div className="space-y-2">
+                      <Label htmlFor="business-slug">{t.settings.slugLabel}</Label>
+                      <Input
+                        id="business-slug"
+                        value={business.slug}
+                        onChange={(e) => {
+                          setSlugError('')
+                          setBusiness({ ...business, slug: e.target.value })
+                        }}
+                        placeholder="mi-negocio"
+                        className={slugError ? 'border-destructive focus-visible:ring-destructive' : ''}
+                      />
+                      {slugError ? (
+                        <p className="text-xs text-destructive">{slugError}</p>
+                      ) : (
+                        <p className="truncate text-xs text-muted-foreground">
+                          {typeof window !== 'undefined' ? window.location.origin : ''}/reservar/
+                          {business.slug
+                            .toLowerCase()
+                            .trim()
+                            .replace(/\s+/g, '-')
+                            .replace(/[^a-z0-9-]/g, '') || '...'}
+                        </p>
+                      )}
+                    </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="business-tax-id">
-                      {business.country === 'US' ? t.settings.einLabel : t.settings.rucLabel}
-                    </Label>
-                    <Input
-                      id="business-tax-id"
-                      value={business.tax_id}
-                      onChange={(e) => setBusiness({ ...business, tax_id: e.target.value })}
-                      placeholder={business.country === 'US' ? '12-3456789' : '20123456789'}
-                      maxLength={20}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="business-cancellation-policy">{t.settings.cancellationPolicyLabel}</Label>
-                    <Input
-                      id="business-cancellation-policy"
-                      type="number"
-                      min={0}
-                      step={1}
-                      value={business.cancellation_policy_hours}
-                      onChange={(e) =>
-                        setBusiness({ ...business, cancellation_policy_hours: parseInt(e.target.value) || 0 })
-                      }
-                      className="w-full sm:w-[140px]"
-                    />
-                    <p className="text-xs text-muted-foreground">{t.settings.cancellationPolicyHint}</p>
-                  </div>
-
-                  <div className="flex items-center justify-between rounded-lg border p-3">
-                    <div>
-                      <Label htmlFor="business-offers-parking" className="cursor-pointer">
-                        {t.settings.offersParkingLabel}
+                    <div className="space-y-2">
+                      <Label htmlFor="business-tax-id">
+                        {business.country === 'US' ? t.settings.einLabel : t.settings.rucLabel}
                       </Label>
-                      <p className="text-xs text-muted-foreground">{t.settings.offersParkingDesc}</p>
+                      <Input
+                        id="business-tax-id"
+                        value={business.tax_id}
+                        onChange={(e) => setBusiness({ ...business, tax_id: e.target.value })}
+                        placeholder={business.country === 'US' ? '12-3456789' : '20123456789'}
+                        maxLength={20}
+                      />
                     </div>
-                    <Switch
-                      id="business-offers-parking"
-                      checked={business.offers_parking}
-                      onCheckedChange={(checked) => setBusiness({ ...business, offers_parking: checked })}
-                    />
-                  </div>
 
-                  <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
-                      <Label htmlFor="business-timezone">{t.settings.timezone}</Label>
-                      <Select
-                        value={business.timezone}
-                        onValueChange={(value) => setBusiness({ ...business, timezone: value })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {TIMEZONES.map((tz) => (
-                            <SelectItem key={tz.value} value={tz.value}>
-                              {tz.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="business-address">{t.settings.address}</Label>
+                      <Label htmlFor="business-cancellation-policy">{t.settings.cancellationPolicyLabel}</Label>
                       <Input
-                        id="business-address"
-                        value={business.address}
-                        onChange={(e) => setBusiness({ ...business, address: e.target.value })}
-                        placeholder={t.settings.addressPlaceholder}
+                        id="business-cancellation-policy"
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={business.cancellation_policy_hours}
+                        onChange={(e) =>
+                          setBusiness({ ...business, cancellation_policy_hours: parseInt(e.target.value) || 0 })
+                        }
+                        className="w-full sm:w-[140px]"
                       />
+                      <p className="text-xs text-muted-foreground">{t.settings.cancellationPolicyHint}</p>
                     </div>
-                  </div>
 
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="business-phone">{t.settings.phone}</Label>
-                      <Input
-                        id="business-phone"
-                        value={business.phone}
-                        onChange={(e) => setBusiness({ ...business, phone: e.target.value })}
-                        placeholder={t.settings.phonePlaceholder}
+                    <div className="flex items-center justify-between rounded-lg border p-3">
+                      <div>
+                        <Label htmlFor="business-offers-parking" className="cursor-pointer">
+                          {t.settings.offersParkingLabel}
+                        </Label>
+                        <p className="text-xs text-muted-foreground">{t.settings.offersParkingDesc}</p>
+                      </div>
+                      <Switch
+                        id="business-offers-parking"
+                        checked={business.offers_parking}
+                        onCheckedChange={(checked) => setBusiness({ ...business, offers_parking: checked })}
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="business-email">{t.settings.contactEmail}</Label>
-                      <Input
-                        id="business-email"
-                        type="email"
-                        value={business.email}
-                        onChange={(e) => setBusiness({ ...business, email: e.target.value })}
-                        placeholder={t.settings.contactEmailPlaceholder}
-                      />
+                  </FormSection>
+
+                  <Separator />
+
+                  <FormSection title={t.settings.sectionContact}>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="business-timezone">{t.settings.timezone}</Label>
+                        <Select
+                          value={business.timezone}
+                          onValueChange={(value) => setBusiness({ ...business, timezone: value })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {TIMEZONES.map((tz) => (
+                              <SelectItem key={tz.value} value={tz.value}>
+                                {tz.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="business-address">{t.settings.address}</Label>
+                        <Input
+                          id="business-address"
+                          value={business.address}
+                          onChange={(e) => setBusiness({ ...business, address: e.target.value })}
+                          placeholder={t.settings.addressPlaceholder}
+                        />
+                      </div>
                     </div>
-                  </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="business-phone">{t.settings.phone}</Label>
+                        <Input
+                          id="business-phone"
+                          value={business.phone}
+                          onChange={(e) => setBusiness({ ...business, phone: e.target.value })}
+                          placeholder={t.settings.phonePlaceholder}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="business-email">{t.settings.contactEmail}</Label>
+                        <Input
+                          id="business-email"
+                          type="email"
+                          value={business.email}
+                          onChange={(e) => setBusiness({ ...business, email: e.target.value })}
+                          placeholder={t.settings.contactEmailPlaceholder}
+                        />
+                      </div>
+                    </div>
+                  </FormSection>
 
                   <Separator />
 
@@ -1144,7 +1156,7 @@ export default function SettingsPage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Link2 className="h-5 w-5" />
+                    <Link2 className="h-5 w-5 text-primary" />
                     {t.settings.bookingLinkTitle}
                   </CardTitle>
                   <CardDescription>{t.settings.bookingLinkDesc}</CardDescription>
@@ -1174,7 +1186,7 @@ export default function SettingsPage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Clock className="h-5 w-5" />
+                    <Clock className="h-5 w-5 text-primary" />
                     {t.settings.hoursTitle}
                   </CardTitle>
                   <CardDescription>{t.settings.hoursDesc}</CardDescription>
@@ -1263,7 +1275,7 @@ export default function SettingsPage() {
                     id="new-biz-name"
                     value={business.name}
                     onChange={(e) => setBusiness({ ...business, name: e.target.value })}
-                    placeholder="Ej: Mi Clínica Dental"
+                    placeholder={t.settings.businessNamePlaceholder}
                   />
                 </div>
 
@@ -1446,12 +1458,13 @@ export default function SettingsPage() {
               </div>
 
               {authProfile?.plan === 'free' && planUsage && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">{t.settings.usageTitle}</CardTitle>
-                    <CardDescription>{t.settings.usageDesc}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
+                <>
+                  <Separator />
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-foreground">{t.settings.usageTitle}</h3>
+                      <p className="text-sm text-muted-foreground">{t.settings.usageDesc}</p>
+                    </div>
                     {(
                       [
                         ['reservations_this_month', t.upgradeModal.reservationsPerMonthLabel, FREE_LIMITS.reservationsPerMonth],
@@ -1473,19 +1486,18 @@ export default function SettingsPage() {
                         </div>
                       )
                     })}
-                  </CardContent>
-                </Card>
+                  </div>
+                </>
               )}
 
               {authProfile?.plan === 'free' && (
-                <Card className="border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 dark:border-amber-900 dark:from-amber-950/40 dark:to-orange-950/30">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <Crown className="h-5 w-5 text-amber-500" />
+                <>
+                  <Separator />
+                  <div className="space-y-3 rounded-lg border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 p-4 dark:border-amber-900 dark:from-amber-950/40 dark:to-orange-950/30">
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                      <Crown className="h-4 w-4 text-amber-500" />
                       {t.settings.premiumFeaturesTitle}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
+                    </h3>
                     <ul className="space-y-2">
                       {t.settings.premiumFeaturesList.map((feature) => (
                         <li key={feature} className="flex items-center gap-2 text-sm">
@@ -1494,8 +1506,8 @@ export default function SettingsPage() {
                         </li>
                       ))}
                     </ul>
-                  </CardContent>
-                </Card>
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>
@@ -1508,7 +1520,7 @@ export default function SettingsPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Users className="h-5 w-5" />
+                  <Users className="h-5 w-5 text-primary" />
                   {t.settings.team.title}
                 </CardTitle>
                 <CardDescription>{t.settings.team.desc}</CardDescription>
