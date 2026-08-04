@@ -215,11 +215,16 @@ export function ReservationModal({
     ? resources.filter((r) => allowedResourceIds.includes(r.id) && r.is_active)
     : resources.filter((r) => r.is_active)
 
-  // Reset resource_id when service changes and selected resource is no longer available
+  // When the selected service requires a resource, default to the first
+  // available one instead of leaving the field empty (a required field
+  // with only one real choice - or none picked yet - shouldn't force a
+  // manual click just to see what's there). Still resets/reselects if the
+  // previously chosen resource isn't valid for the newly selected service.
   useEffect(() => {
-    if (formData.resource_id && allowedResourceIds.length > 0 && !allowedResourceIds.includes(formData.resource_id)) {
-      setFormData((prev) => ({ ...prev, resource_id: '' }))
-    }
+    if (allowedResourceIds.length === 0) return
+    if (formData.resource_id && allowedResourceIds.includes(formData.resource_id)) return
+    const firstAvailable = resources.find((r) => allowedResourceIds.includes(r.id) && r.is_active)
+    setFormData((prev) => ({ ...prev, resource_id: firstAvailable?.id || '' }))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.service_id])
 
@@ -1267,7 +1272,14 @@ export function ReservationModal({
                 )}
               </Label>
               <Select
-                value={formData.resource_id || '_none'}
+                // "_none" is a real SelectItem only when the resource is
+                // optional - when it's required, that item doesn't exist in
+                // the list below, so passing "_none" as the value here would
+                // make Radix think something is selected (non-empty value)
+                // and render a blank trigger instead of the placeholder.
+                // Leaving the value undefined in that case lets Radix show
+                // the placeholder correctly until the user actually picks one.
+                value={formData.resource_id || (allowedResourceIds.length === 0 ? '_none' : undefined)}
                 onValueChange={(val) =>
                   // Changing the resource changes which bookings count as
                   // "busy", which can invalidate whatever slot was picked.
