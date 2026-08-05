@@ -7,6 +7,10 @@ import { useAuthContext } from './auth-context'
 interface Business {
   id: string
   owner_id: string
+  /** Groups sibling sedes under the same owner (scripts/053-organizations-
+   * and-sedes.sql) - a single-sede business is simply "an org of one".
+   * Always populated (NOT NULL at the DB level). */
+  organization_id: string
   name: string
   slug: string | null
   timezone: string

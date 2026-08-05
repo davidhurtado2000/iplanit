@@ -63,7 +63,9 @@ import { toTzLocalInput, parseInTimezone, toDateStr } from '@/lib/timezone'
 import { generateAvailableSlots, isDayClosed } from '@/lib/availability'
 import { sendReservationNotification } from '@/lib/email/notify'
 import { isPlanLimitReached, meetsPlan } from '@/lib/plan-limits'
+import { formatDuration } from '@/lib/duration'
 import { UpgradeModal } from '@/components/upgrade-modal'
+import { DurationInput } from '@/components/dashboard/duration-input'
 
 interface Client {
   id: string
@@ -957,9 +959,11 @@ export function ReservationModal({
                 </span>
                 <span>
                   {viewService
-                    ? `${viewService.name} (${Math.round(
-                        (new Date(reservation.end_time).getTime() - new Date(reservation.start_time).getTime()) / 60000
-                      )} min)`
+                    ? `${viewService.name} (${formatDuration(
+                        Math.round(
+                          (new Date(reservation.end_time).getTime() - new Date(reservation.start_time).getTime()) / 60000
+                        )
+                      )})`
                     : t.reservation.noServiceVisit}
                 </span>
               </div>
@@ -1299,7 +1303,7 @@ export function ReservationModal({
                                 : ''
                             }`}
                           {service.pricing_mode === 'fixed' &&
-                            `${service.duration_minutes} min${
+                            `${formatDuration(service.duration_minutes)}${
                               (isUSD ? service.price_usd : service.price)
                                 ? ` · ${isUSD ? '$' : 'S/'} ${isUSD ? service.price_usd : service.price}`
                                 : ''
@@ -1335,7 +1339,7 @@ export function ReservationModal({
                     ) : (
                       selectedServiceDurationOptions.map((option) => (
                         <SelectItem key={option.id} value={option.id}>
-                          {option.duration_minutes} min
+                          {formatDuration(option.duration_minutes)}
                           {(isUSD ? option.price_usd : option.price)
                             ? ` · ${isUSD ? '$' : 'S/'} ${isUSD ? option.price_usd : option.price}`
                             : ''}
@@ -1379,16 +1383,10 @@ export function ReservationModal({
                   <Label htmlFor="visit-duration" className="text-xs font-normal text-muted-foreground">
                     {t.reservation.visitDurationLabel}
                   </Label>
-                  <Input
+                  <DurationInput
                     id="visit-duration"
-                    type="number"
-                    min={5}
-                    step={5}
                     value={formData.visitDurationMinutes}
-                    onChange={(e) => {
-                      const minutes = e.target.value !== '' ? parseInt(e.target.value) : ''
-                      setFormData({ ...formData, visitDurationMinutes: minutes, start_time: '' })
-                    }}
+                    onChange={(minutes) => setFormData({ ...formData, visitDurationMinutes: minutes, start_time: '' })}
                   />
                   <p className="text-xs text-muted-foreground">{t.reservation.visitDurationHint}</p>
                 </div>
@@ -1396,7 +1394,7 @@ export function ReservationModal({
 
               {effectiveDurationMinutes && (
                 <p className="text-xs text-muted-foreground">
-                  {t.reservation.durationInfo} {effectiveDurationMinutes} min — {t.reservation.durationEnd}{' '}
+                  {t.reservation.durationInfo} {formatDuration(effectiveDurationMinutes)} — {t.reservation.durationEnd}{' '}
                   {formData.start_time
                     ? new Date(
                         new Date(formData.start_time).getTime() +

@@ -50,6 +50,34 @@ function visitPatternStyle(baseColor: string) {
   }
 }
 
+// Vista expandida (scripts/053-organizations-and-sedes.sql) sede indicator
+// for the compact views (Week/Month/List).
+function sedeAbbr(name: string): string {
+  return name.trim().slice(0, 2).toUpperCase()
+}
+
+// Subtle per-sede tint palette, deliberately separate from
+// SERVICE_COLORS/RESOURCE_COLORS (services/page.tsx, resources/page.tsx) -
+// those are bold, user-picked colors that fill an actual reservation
+// block; these are a soft wash reserved for sede header/badge chrome only,
+// never a block fill, so the two systems can never be confused for one
+// another the way VISIT_BLOCK_COLOR once collided with a service color.
+// Same light/dark pairing convention already used for HeroKpiCard icons
+// elsewhere in the dashboard.
+const SEDE_TINTS = [
+  { bg: 'bg-blue-50 dark:bg-blue-950/40', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-900' },
+  { bg: 'bg-violet-50 dark:bg-violet-950/40', text: 'text-violet-700 dark:text-violet-300', border: 'border-violet-200 dark:border-violet-900' },
+  { bg: 'bg-amber-50 dark:bg-amber-950/40', text: 'text-amber-700 dark:text-amber-300', border: 'border-amber-200 dark:border-amber-900' },
+  { bg: 'bg-emerald-50 dark:bg-emerald-950/40', text: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-200 dark:border-emerald-900' },
+  { bg: 'bg-pink-50 dark:bg-pink-950/40', text: 'text-pink-700 dark:text-pink-300', border: 'border-pink-200 dark:border-pink-900' },
+  { bg: 'bg-cyan-50 dark:bg-cyan-950/40', text: 'text-cyan-700 dark:text-cyan-300', border: 'border-cyan-200 dark:border-cyan-900' },
+]
+
+function sedeTint(colorIndex: number | undefined) {
+  if (colorIndex === undefined) return null
+  return SEDE_TINTS[colorIndex % SEDE_TINTS.length]
+}
+
 // A colored left border signals status at a glance without replacing the
 // block's own background (still the service's color, so services stay
 // visually identifiable) - shared by every calendar render mode below.
@@ -93,7 +121,7 @@ function blockHeight(startStr: string, endStr: string) {
 }
 
 // ─── Interfaces ────────────────────────────────────────────────────────────
-interface Resource { id: string; name: string; type: 'room' | 'person' | 'equipment' | 'virtual' | 'parking'; color: string }
+interface Resource { id: string; name: string; type: 'room' | 'person' | 'equipment' | 'virtual' | 'parking'; color: string; business_id?: string }
 interface Client   { id: string; name: string }
 interface Service  { id: string; name: string; duration_minutes: number; color: string }
 
@@ -111,6 +139,15 @@ interface CalendarViewProps {
   timezone?: string
   /** Fires whenever the visible date range changes (navigation or view switch). */
   onVisibleRangeChange?: (from: Date, to: Date) => void
+  /** Sede name per business_id - only passed while "vista expandida" is on
+   * (scripts/053-organizations-and-sedes.sql). When present, blocks/columns
+   * belonging to a business other than the currently active one get a
+   * small sede label so they're not mistaken for the active sede's own. */
+  businessNameById?: Record<string, string>
+  /** Stable per-sede tint index (see SEDE_TINTS), same key set as
+   * businessNameById - kept as a separate prop so the parent only decides
+   * ordering/assignment, not the actual palette. */
+  businessColorIndexById?: Record<string, number>
 }
 
 // ─── Main component ────────────────────────────────────────────────────────
@@ -127,6 +164,8 @@ export function CalendarViewComponent({
   endHour   = DEFAULT_END,
   timezone  = DEFAULT_TZ,
   onVisibleRangeChange,
+  businessNameById,
+  businessColorIndexById,
 }: CalendarViewProps) {
   const { t, locale } = useLanguage()
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -203,6 +242,8 @@ export function CalendarViewComponent({
           timezone={timezone}
           t={t}
           locale={locale}
+          businessNameById={businessNameById}
+          businessColorIndexById={businessColorIndexById}
         />
       </div>
     )
@@ -313,14 +354,20 @@ export function CalendarViewComponent({
                 <Eye className="h-3 w-3 shrink-0" />
                 <span>{t.calendar.visitLegendLabel}</span>
               </div>
+              {businessNameById && (
+                <div className="flex items-center gap-2 text-xs text-foreground">
+                  <span className="shrink-0 rounded border px-0.5 text-[8px] font-bold leading-none">SD</span>
+                  <span>{t.calendar.legendSedeLabel}</span>
+                </div>
+              )}
             </div>
           </PopoverContent>
         </Popover>
       </div>
 
-      {view === 'day'   && <DayView   date={currentDate} reservations={reservations} resources={resources} selectedResourceId={selectedResourceId} clientsMap={clientsMap} servicesMap={servicesMap} resourcesMap={resourcesMap} onSelectReservation={onSelectReservation} startHour={startHour} endHour={endHour} timezone={timezone} t={t} />}
-      {view === 'week'  && <WeekView  date={currentDate} reservations={reservations} clientsMap={clientsMap} servicesMap={servicesMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} />}
-      {view === 'month' && <MonthView date={currentDate} reservations={reservations} servicesMap={servicesMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} />}
+      {view === 'day'   && <DayView   date={currentDate} reservations={reservations} resources={resources} selectedResourceId={selectedResourceId} clientsMap={clientsMap} servicesMap={servicesMap} resourcesMap={resourcesMap} onSelectReservation={onSelectReservation} startHour={startHour} endHour={endHour} timezone={timezone} t={t} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
+      {view === 'week'  && <WeekView  date={currentDate} reservations={reservations} clientsMap={clientsMap} servicesMap={servicesMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
+      {view === 'month' && <MonthView date={currentDate} reservations={reservations} servicesMap={servicesMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
     </div>
   )
 }
@@ -329,7 +376,7 @@ export function CalendarViewComponent({
 function DayView({
   date, reservations, resources, selectedResourceId,
   clientsMap, servicesMap, resourcesMap, onSelectReservation,
-  startHour, endHour, timezone, t,
+  startHour, endHour, timezone, t, businessNameById, businessColorIndexById,
 }: {
   date: Date
   reservations: any[]
@@ -343,6 +390,8 @@ function DayView({
   endHour: number
   timezone: string
   t: ReturnType<typeof useLanguage>['t']
+  businessNameById?: Record<string, string>
+  businessColorIndexById?: Record<string, number>
 }) {
   // Use business timezone so "dateStr" matches the day the user sees, not UTC midnight
   const dateStr = toDateStr(date, timezone)
@@ -367,15 +416,27 @@ function DayView({
 
   // Build columns
   const columns = useMemo(() => {
-    let cols: Array<{ id: string | null; label: string; color?: string }> = []
+    let cols: Array<{ id: string | null; label: string; color?: string; sedeLabel?: string; sedeColorIndex?: number }> = []
 
     if (selectedResourceId !== 'all') {
       const res = resourcesMap[selectedResourceId]
-      return [{ id: selectedResourceId, label: res?.name ?? selectedResourceId, color: res?.color }]
+      return [{
+        id: selectedResourceId,
+        label: res?.name ?? selectedResourceId,
+        color: res?.color,
+        sedeLabel: res?.business_id ? businessNameById?.[res.business_id] : undefined,
+        sedeColorIndex: res?.business_id ? businessColorIndexById?.[res.business_id] : undefined,
+      }]
     }
 
     if (resources.length > 0) {
-      cols = resources.map(r => ({ id: r.id, label: r.name, color: r.color }))
+      cols = resources.map(r => ({
+        id: r.id,
+        label: r.name,
+        color: r.color,
+        sedeLabel: r.business_id ? businessNameById?.[r.business_id] : undefined,
+        sedeColorIndex: r.business_id ? businessColorIndexById?.[r.business_id] : undefined,
+      }))
       if (dayRes.some(r => !r.resource_id)) {
         cols.push({ id: null, label: t.calendar.noResourceColumn })
       }
@@ -383,7 +444,27 @@ function DayView({
       cols = [{ id: null, label: t.calendar.reservationsFallbackColumn }]
     }
     return cols
-  }, [resources, selectedResourceId, resourcesMap, dayRes, t])
+  }, [resources, selectedResourceId, resourcesMap, dayRes, t, businessNameById, businessColorIndexById])
+
+  // Groups consecutive columns that share the same sede into one spanning
+  // header cell instead of repeating a (sometimes long) business name on
+  // every single resource column - relies on `resources` already being
+  // grouped by business (see calendar/page.tsx's org-wide fetch, sorted by
+  // business before being passed down) so consecutive-same-label columns
+  // really do form one contiguous run per sede, not fragments.
+  const columnGroups = useMemo(() => {
+    const groups: Array<{ sedeLabel?: string; sedeColorIndex?: number; count: number }> = []
+    for (const col of columns) {
+      const last = groups[groups.length - 1]
+      if (last && last.sedeLabel === col.sedeLabel) {
+        last.count++
+      } else {
+        groups.push({ sedeLabel: col.sedeLabel, sedeColorIndex: col.sedeColorIndex, count: 1 })
+      }
+    }
+    return groups
+  }, [columns])
+  const hasSedeGroups = columns.some(c => c.sedeLabel)
 
   const getColRes = (colId: string | null) =>
     colId === null && resources.length === 0
@@ -401,23 +482,53 @@ function DayView({
         <div style={{ minWidth: totalWidth }}>
 
           {/* Column headers (sticky top) */}
-          <div className="sticky top-0 z-30 flex border-b bg-card">
-            <div className="flex-shrink-0 border-r bg-muted/40" style={{ width: GUTTER }} />
-            {columns.map(col => (
-              <div
-                key={String(col.id)}
-                className="flex flex-shrink-0 items-center justify-center gap-1.5 border-r last:border-r-0 px-3 py-2.5 text-center text-xs font-semibold bg-muted/40"
-                style={{ width: COL_WIDTH, color: col.color || undefined }}
-              >
-                {col.color && (
-                  <span
-                    className="h-2 w-2 shrink-0 rounded-full"
-                    style={{ backgroundColor: col.color }}
-                  />
-                )}
-                <span className={col.color ? '' : 'text-muted-foreground'}>{col.label}</span>
+          <div className="sticky top-0 z-30 bg-card">
+            {/* Sede group row - one wide cell spanning every consecutive
+                column that belongs to the same sede, instead of repeating
+                the (often long) business name on each narrow column. Only
+                rendered at all in vista expandida. */}
+            {hasSedeGroups && (
+              <div className="flex border-b">
+                <div className="flex-shrink-0 border-r bg-muted/40" style={{ width: GUTTER }} />
+                {columnGroups.map((group, i) => {
+                  const tint = sedeTint(group.sedeColorIndex)
+                  return (
+                    <div
+                      key={i}
+                      className={cn(
+                        'flex min-w-0 flex-shrink-0 items-center justify-center border-r px-2 py-1.5 text-center',
+                        tint ? tint.bg : 'bg-card'
+                      )}
+                      style={{ width: group.count * COL_WIDTH }}
+                    >
+                      {group.sedeLabel && (
+                        <span className={cn('min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide', tint ? tint.text : 'text-foreground')}>
+                          {group.sedeLabel}
+                        </span>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
-            ))}
+            )}
+            <div className="flex border-b">
+              <div className="flex-shrink-0 border-r bg-muted/40" style={{ width: GUTTER }} />
+              {columns.map(col => (
+                <div
+                  key={String(col.id)}
+                  className="flex min-w-0 flex-shrink-0 items-center justify-center gap-1.5 border-r last:border-r-0 px-3 py-2.5 text-center text-xs font-semibold bg-muted/40"
+                  style={{ width: COL_WIDTH, color: col.color || undefined }}
+                >
+                  {col.color && (
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: col.color }}
+                    />
+                  )}
+                  <span className={cn('min-w-0 truncate', col.color ? '' : 'text-muted-foreground')}>{col.label}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Time grid — skipped entirely when the day is empty so the
@@ -543,7 +654,7 @@ function DayView({
 
 // ─── Week View ─────────────────────────────────────────────────────────────
 function WeekView({
-  date, reservations, clientsMap, servicesMap, onSelectReservation, onDayClick, timezone, t, locale,
+  date, reservations, clientsMap, servicesMap, onSelectReservation, onDayClick, timezone, t, locale, businessNameById, businessColorIndexById,
 }: {
   date: Date
   reservations: any[]
@@ -554,6 +665,8 @@ function WeekView({
   timezone: string
   t: ReturnType<typeof useLanguage>['t']
   locale: string
+  businessNameById?: Record<string, string>
+  businessColorIndexById?: Record<string, number>
 }) {
   const weekDays = useMemo(() => {
     const start = new Date(date)
@@ -635,6 +748,18 @@ function WeekView({
                       style={r.type === 'visit' ? visitPatternStyle(VISIT_BLOCK_COLOR) : { backgroundColor: rowColor }}
                       onClick={e => { e.stopPropagation(); onSelectReservation(r) }}
                     >
+                      {businessNameById?.[r.business_id] && (
+                        <span
+                          className={cn(
+                            'shrink-0 rounded px-0.5 text-[8px] font-bold leading-none',
+                            sedeTint(businessColorIndexById?.[r.business_id])?.bg ?? 'bg-white/20',
+                            sedeTint(businessColorIndexById?.[r.business_id])?.text ?? 'text-white'
+                          )}
+                          title={businessNameById[r.business_id]}
+                        >
+                          {sedeAbbr(businessNameById[r.business_id])}
+                        </span>
+                      )}
                       {r.type === 'visit' && <Eye className="h-2.5 w-2.5 shrink-0" />}
                       <span className="truncate">{fmt} {client?.name ?? '—'}</span>
                     </div>
@@ -654,7 +779,7 @@ function WeekView({
 
 // ─── Month View ────────────────────────────────────────────────────────────
 function MonthView({
-  date, reservations, servicesMap, onSelectReservation, onDayClick, timezone, t, locale,
+  date, reservations, servicesMap, onSelectReservation, onDayClick, timezone, t, locale, businessNameById, businessColorIndexById,
 }: {
   date: Date
   reservations: any[]
@@ -664,6 +789,8 @@ function MonthView({
   timezone: string
   t: ReturnType<typeof useLanguage>['t']
   locale: string
+  businessNameById?: Record<string, string>
+  businessColorIndexById?: Record<string, number>
 }) {
   const monthDays = useMemo(() => {
     const year  = date.getFullYear()
@@ -749,6 +876,18 @@ function MonthView({
                       style={r.type === 'visit' ? visitPatternStyle(VISIT_BLOCK_COLOR) : { backgroundColor: rowColor }}
                       onClick={e => { e.stopPropagation(); onSelectReservation(r) }}
                     >
+                      {businessNameById?.[r.business_id] && (
+                        <span
+                          className={cn(
+                            'shrink-0 rounded px-0.5 text-[7px] font-bold leading-none',
+                            sedeTint(businessColorIndexById?.[r.business_id])?.bg ?? 'bg-white/20',
+                            sedeTint(businessColorIndexById?.[r.business_id])?.text ?? 'text-white'
+                          )}
+                          title={businessNameById[r.business_id]}
+                        >
+                          {sedeAbbr(businessNameById[r.business_id])}
+                        </span>
+                      )}
                       {r.type === 'visit' && <Eye className="h-2 w-2 shrink-0" />}
                       <span className="truncate">{fmt}</span>
                     </div>
@@ -773,7 +912,7 @@ function MonthView({
 const LIST_PAGE_SIZE = 20
 
 function ListView({
-  reservations, clientsMap, servicesMap, onSelectReservation, timezone, t, locale,
+  reservations, clientsMap, servicesMap, onSelectReservation, timezone, t, locale, businessNameById, businessColorIndexById,
 }: {
   reservations: any[]
   clientsMap: Record<string, Client>
@@ -782,6 +921,8 @@ function ListView({
   timezone: string
   t: ReturnType<typeof useLanguage>['t']
   locale: string
+  businessNameById?: Record<string, string>
+  businessColorIndexById?: Record<string, number>
 }) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -853,6 +994,9 @@ function ListView({
               <th className="whitespace-nowrap p-2 text-left font-medium">{t.calendar.colDate}</th>
               <th className="p-2 text-left font-medium">{t.calendar.colClient}</th>
               <th className="p-2 text-left font-medium">{t.calendar.colService}</th>
+              {businessNameById && (
+                <th className="p-2 text-left font-medium">{t.calendar.sedeColumnLabel}</th>
+              )}
               <th className="p-2 text-left font-medium">{t.calendar.colStatus}</th>
               <th className="p-2 text-left font-medium" />
             </tr>
@@ -889,6 +1033,24 @@ function ListView({
                           : '—'}
                     </span>
                   </td>
+                  {businessNameById && (
+                    <td className="p-2">
+                      {businessNameById[r.business_id] ? (
+                        <span
+                          className={cn(
+                            'inline-flex items-center rounded-full border px-2 py-0.5 text-xs',
+                            sedeTint(businessColorIndexById?.[r.business_id])?.bg,
+                            sedeTint(businessColorIndexById?.[r.business_id])?.text,
+                            sedeTint(businessColorIndexById?.[r.business_id])?.border
+                          )}
+                        >
+                          {businessNameById[r.business_id]}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                  )}
                   <td className="p-2">
                     <Badge variant={getStatusBadgeVariant(r.status)}>
                       {getStatusLabel(r.status, t.reservation)}
@@ -902,7 +1064,7 @@ function ListView({
             })}
             {pageRows.length === 0 && (
               <tr>
-                <td colSpan={5} className="p-6 text-center text-muted-foreground">
+                <td colSpan={businessNameById ? 6 : 5} className="p-6 text-center text-muted-foreground">
                   {t.calendar.noReservationsFound}
                 </td>
               </tr>

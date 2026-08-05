@@ -1,8 +1,9 @@
 'use client'
 
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -18,6 +19,7 @@ import { useLanguage } from '@/context/language-context'
 import { useDashboardData } from '@/context/dashboard-data-context'
 import { getStatusBadgeVariant, getStatusLabel } from '@/lib/reservation-status'
 import { capitalizeFirst } from '@/lib/utils'
+import { createClient } from '@/lib/supabase/client'
 import type { CalendarView } from '@/lib/types'
 import { Plus, CalendarDays, CalendarRange, Calendar as CalendarIcon, Clock, ChevronDown, Building2, List, Eye } from 'lucide-react'
 
@@ -53,6 +55,7 @@ interface Service {
 
 interface Resource {
   id: string
+  business_id: string
   name: string
   type: 'room' | 'person' | 'equipment' | 'virtual' | 'parking'
   color: string
@@ -65,6 +68,8 @@ interface BusinessHour {
   is_closed: boolean
 }
 
+const supabase = createClient()
+
 const VIEW_CONFIG: { value: CalendarView; icon: React.ElementType }[] = [
   { value: 'day', icon: CalendarDays },
   { value: 'week', icon: CalendarRange },
@@ -73,7 +78,7 @@ const VIEW_CONFIG: { value: CalendarView; icon: React.ElementType }[] = [
 ]
 
 export default function CalendarPage() {
-  const { currentBusiness } = useBusinesses()
+  const { currentBusiness, businesses, switchBusiness } = useBusinesses()
   const { t, locale } = useLanguage()
   const {
     reservations,
@@ -93,6 +98,77 @@ export default function CalendarPage() {
   // be an always-empty column, since no reservation ever sets resource_id
   // to a parking spot.
   const resources = allResources.filter((r) => r.type !== 'parking')
+
+  // "Vista expandida" (scripts/053-organizations-and-sedes.sql) - optional,
+  // off by default, same on/off pattern as Analytics' "todas las sedes"
+  // toggle. Only ever visible for orgs with >1 sede, which already implies
+  // Premium (multi-sede itself is Premium-gated at creation).
+  const orgBusinessIds = useMemo(
+    () => businesses.filter((b) => b.organization_id === currentBusiness?.organization_id).map((b) => b.id),
+    [businesses, currentBusiness?.organization_id]
+  )
+  const hasMultipleSedes = orgBusinessIds.length > 1
+  const [expandedMode, setExpandedMode] = useState(false)
+  const [visibleRange, setVisibleRange] = useState<{ from: Date; to: Date } | null>(null)
+  const [orgData, setOrgData] = useState<{
+    reservations: Reservation[]
+    resources: Resource[]
+    services: Service[]
+    clients: Client[]
+  } | null>(null)
+
+  const businessNameById = useMemo(
+    () => Object.fromEntries(businesses.filter((b) => orgBusinessIds.includes(b.id)).map((b) => [b.id, b.name])),
+    [businesses, orgBusinessIds]
+  )
+  // Stable index per sede (position in orgBusinessIds) - calendar-view.tsx
+  // owns the actual tint palette, this just decides which sede gets which
+  // slot, consistently across Day/Week/Month/List.
+  const businessColorIndexById = useMemo(
+    () => Object.fromEntries(orgBusinessIds.map((id, i) => [id, i])),
+    [orgBusinessIds]
+  )
+
+  useEffect(() => {
+    if (!expandedMode || !hasMultipleSedes || !currentBusiness || !visibleRange) {
+      setOrgData(null)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      const [{ data: res }, { data: rsc }, { data: svc }, { data: cli }] = await Promise.all([
+        supabase
+          .from('reservations')
+          .select('*')
+          .in('business_id', orgBusinessIds)
+          .gte('start_time', visibleRange.from.toISOString())
+          .lte('start_time', visibleRange.to.toISOString()),
+        supabase.from('resources').select('*').in('business_id', orgBusinessIds).neq('type', 'parking'),
+        supabase.from('services').select('*').in('business_id', orgBusinessIds),
+        supabase.from('clients').select('*').eq('organization_id', currentBusiness.organization_id),
+      ])
+      if (!cancelled) {
+        // Grouped by sede (in the same order as orgBusinessIds, which
+        // mirrors the sidebar switcher) so DayView's column-grouping into
+        // one spanning header per sede sees each sede's resources as a
+        // single contiguous run, not fragments interleaved with another
+        // sede's - Postgres/Supabase gives no ordering guarantee otherwise.
+        const sortByBusiness = (a: { business_id: string }, b: { business_id: string }) =>
+          orgBusinessIds.indexOf(a.business_id) - orgBusinessIds.indexOf(b.business_id)
+        setOrgData({
+          reservations: (res || []) as Reservation[],
+          resources: ((rsc || []) as Resource[]).sort(sortByBusiness),
+          services: (svc || []) as Service[],
+          clients: (cli || []) as Client[],
+        })
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expandedMode, hasMultipleSedes, orgBusinessIds.join(','), visibleRange, currentBusiness?.organization_id])
+
   const [view, setView] = useState<CalendarView>('day')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null)
@@ -128,6 +204,15 @@ export default function CalendarPage() {
   }
 
   const handleSelectReservation = (reservation: Reservation) => {
+    // In vista expandida, a clicked block can belong to a sede other than
+    // the currently active one - switching first (same mechanism the
+    // sidebar switcher itself uses) means the modal, which reads
+    // everything from currentBusiness via useDashboardData()/useBusinesses(),
+    // opens already looking at the right sede's own data. Deliberately not
+    // threading a business override through the modal itself - see plan.
+    if (reservation.business_id !== currentBusiness?.id) {
+      switchBusiness(reservation.business_id)
+    }
     setSelectedReservation(reservation)
     setModalMode('view')
     setFollowUpPrefill(null)
@@ -152,6 +237,7 @@ export default function CalendarPage() {
   const handleVisibleRangeChange = useCallback(
     (from: Date, to: Date) => {
       ensureReservationsInRange(from, to)
+      setVisibleRange({ from, to })
     },
     [ensureReservationsInRange]
   )
@@ -175,15 +261,24 @@ export default function CalendarPage() {
     )
   }
 
+  // Swaps every downstream read to the org-wide data in one place when
+  // vista expandida is on - same single-swap-point pattern as Analytics'
+  // "todas las sedes" toggle.
+  const isExpanded = expandedMode && hasMultipleSedes && orgData !== null
+  const effectiveReservations = isExpanded ? orgData!.reservations : reservations
+  const effectiveResources = isExpanded ? orgData!.resources : resources
+  const effectiveServices = isExpanded ? orgData!.services : services
+  const effectiveClients = isExpanded ? orgData!.clients : clients
+
   // Build lookup maps for display
-  const clientsMap = Object.fromEntries(clients.map((c) => [c.id, c]))
-  const servicesMap = Object.fromEntries(services.map((s) => [s.id, s]))
-  const resourcesMap = Object.fromEntries(resources.map((r) => [r.id, r]))
+  const clientsMap = Object.fromEntries(effectiveClients.map((c) => [c.id, c]))
+  const servicesMap = Object.fromEntries(effectiveServices.map((s) => [s.id, s]))
+  const resourcesMap = Object.fromEntries(effectiveResources.map((r) => [r.id, r]))
 
   // Use the business timezone so "today" is correct regardless of UTC offset
   const tz = currentBusiness?.timezone || 'America/Lima'
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date())
-  const todayReservations = reservations.filter((r) => {
+  const todayReservations = effectiveReservations.filter((r) => {
     const localDate = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(r.start_time))
     return localDate === today && r.status !== 'cancelled'
   })
@@ -233,6 +328,18 @@ export default function CalendarPage() {
         </div>
       </div>
 
+      {hasMultipleSedes && (
+        <div className="flex flex-col gap-1 rounded-lg border bg-muted/30 px-3 py-2 sm:flex-row sm:items-center sm:gap-3">
+          <div className="flex items-center gap-2">
+            <Switch checked={expandedMode} onCheckedChange={setExpandedMode} id="expanded-mode-toggle" />
+            <label htmlFor="expanded-mode-toggle" className="cursor-pointer text-sm font-medium">
+              {t.calendar.expandedModeLabel}
+            </label>
+          </div>
+          {expandedMode && <p className="text-xs text-muted-foreground">{t.calendar.expandedModeHint}</p>}
+        </div>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-[1fr_280px] lg:gap-6">
         {/* Calendar */}
         <div className="relative">
@@ -245,8 +352,8 @@ export default function CalendarPage() {
             view={view}
             onSelectReservation={handleSelectReservation}
             onViewChange={setView}
-            reservations={reservations}
-            resources={resources}
+            reservations={effectiveReservations}
+            resources={effectiveResources}
             clientsMap={clientsMap}
             servicesMap={servicesMap}
             resourcesMap={resourcesMap}
@@ -254,6 +361,8 @@ export default function CalendarPage() {
             endHour={calendarEndHour}
             timezone={tz}
             onVisibleRangeChange={handleVisibleRangeChange}
+            businessNameById={isExpanded ? businessNameById : undefined}
+            businessColorIndexById={isExpanded ? businessColorIndexById : undefined}
           />
         </div>
 

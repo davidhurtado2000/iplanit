@@ -29,8 +29,9 @@ import {
 } from '@/components/ui/dialog'
 import { PasswordStrength } from '@/components/password-strength'
 import { UpgradeModal } from '@/components/upgrade-modal'
-import { PremiumFeature, PremiumBadge } from '@/components/premium-feature'
+import { PremiumFeature, PremiumBadge, PremiumButton } from '@/components/premium-feature'
 import { FormSection } from '@/components/dashboard/form-section'
+import { TimeSelect } from '@/components/dashboard/time-select'
 import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
@@ -103,7 +104,7 @@ const DAY_KEY_TO_NUMBER: Record<DayOfWeek, number> = {
 
 export default function SettingsPage() {
   const { user, profile: authProfile, loading: authLoading, refreshProfile } = useAuth()
-  const { currentBusiness, loading: businessLoading, updateBusiness } = useBusinesses()
+  const { currentBusiness, businesses, loading: businessLoading, updateBusiness, fetchBusinesses, switchBusiness } = useBusinesses()
   const { businessHours: realBusinessHours, refetchBusinessHours } = useDashboardData()
   const { language, setLanguage, t } = useLanguage()
   const { theme, setTheme } = useTheme()
@@ -228,6 +229,7 @@ export default function SettingsPage() {
   // business yet (the "create your business" flow).
   const isOwner = currentBusiness ? currentBusiness.role === 'owner' : true
   const plan = (authProfile?.plan ?? 'free') as 'free' | 'pro' | 'premium'
+  const sedes = businesses.filter((b) => b.organization_id === currentBusiness?.organization_id)
 
   // Team State
   const [teamMembers, setTeamMembers] = useState<
@@ -275,6 +277,13 @@ export default function SettingsPage() {
     offers_parking: false,
   })
   const [slugError, setSlugError] = useState('')
+
+  // Sedes state (scripts/053-organizations-and-sedes.sql) - Premium-only,
+  // gated via the same PremiumButton pattern used everywhere else.
+  const [isSedeDialogOpen, setIsSedeDialogOpen] = useState(false)
+  const [isCreatingSede, setIsCreatingSede] = useState(false)
+  const [sedeError, setSedeError] = useState('')
+  const [newSede, setNewSede] = useState({ name: '', timezone: 'America/Lima', country: 'PE' as 'PE' | 'US' })
 
   // Business Hours State
   const [businessHours, setBusinessHours] = useState(DEFAULT_BUSINESS_HOURS)
@@ -453,11 +462,23 @@ export default function SettingsPage() {
 
     setIsCreatingBusiness(true)
     try {
+      // Only reachable when the signup completed with zero businesses (no
+      // business_name at signup, so handle_new_user() never created one -
+      // and therefore never created an organization either). Bootstrap one
+      // here, same pattern handle_new_user() uses server-side.
+      const { data: org, error: orgError } = await supabase
+        .from('organizations')
+        .insert({ owner_id: user.id, name: business.name })
+        .select('id')
+        .single()
+      if (orgError) throw orgError
+
       const slug = business.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
       const { error } = await supabase
         .from('businesses')
         .insert({
           owner_id: user.id,
+          organization_id: org.id,
           name: business.name,
           slug: slug,
           timezone: business.timezone,
@@ -471,6 +492,52 @@ export default function SettingsPage() {
       console.error('[v0] Error creating business:', err)
     } finally {
       setIsCreatingBusiness(false)
+    }
+  }
+
+  // Adds a sede to the CURRENT business's organization (scripts/053) -
+  // unlike handleCreateBusiness above, this is the Premium multi-location
+  // path, gated by the create_sede RPC itself (sede_requires_premium /
+  // sede_limit_reached). Lands on the new sede via switchBusiness() rather
+  // than a reload - dashboard-data-context already re-fetches everything
+  // reactively on currentBusiness.id change.
+  const handleCreateSede = async () => {
+    if (!currentBusiness || !newSede.name.trim()) return
+
+    setIsCreatingSede(true)
+    setSedeError('')
+    try {
+      const { data, error } = await supabase.rpc('create_sede', {
+        p_business_id: currentBusiness.id,
+        p_name: newSede.name.trim(),
+        p_timezone: newSede.timezone,
+        p_country: newSede.country,
+      })
+      if (error) throw error
+
+      const result = data as { success?: boolean; error?: string; business_id?: string }
+      if (result.error) {
+        const key = (
+          {
+            sede_requires_premium: 'errorRequiresPremium',
+            sede_limit_reached: 'errorLimitReached',
+            no_existing_business: 'errorNoExistingBusiness',
+            name_required: 'errorNameRequired',
+          } as const
+        )[result.error] ?? 'errorGeneric'
+        setSedeError(t.settings.sedes[key])
+        return
+      }
+
+      await fetchBusinesses()
+      if (result.business_id) switchBusiness(result.business_id)
+      setIsSedeDialogOpen(false)
+      setNewSede({ name: '', timezone: 'America/Lima', country: 'PE' })
+    } catch (err) {
+      console.error('[iplanit] Error creating sede:', err)
+      setSedeError(t.settings.sedes.errorGeneric)
+    } finally {
+      setIsCreatingSede(false)
     }
   }
 
@@ -757,6 +824,17 @@ export default function SettingsPage() {
     )
   }
 
+  // Quick "same hours every day" - only touches start/end time, never
+  // isOpen, so a day deliberately marked closed stays closed (it just
+  // picks up the same times in the background in case it's reopened later).
+  const [bulkStartTime, setBulkStartTime] = useState('09:00')
+  const [bulkEndTime, setBulkEndTime] = useState('18:00')
+  const applyHoursToAllDays = () => {
+    setBusinessHours(
+      businessHours.map((h) => ({ ...h, startTime: bulkStartTime, endTime: bulkEndTime }))
+    )
+  }
+
   return (
     <div className="space-y-6">
       {authLoading || businessLoading ? (
@@ -967,6 +1045,34 @@ export default function SettingsPage() {
         <TabsContent value="business" className="space-y-6">
           {currentBusiness ? (
             <>
+              {isOwner && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>{t.settings.sedes.sectionTitle}</CardTitle>
+                    <CardDescription>{t.settings.sedes.sectionDesc}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {sedes.map((b) => (
+                      <div key={b.id} className="flex items-center justify-between rounded-lg border p-3">
+                        <span className="text-sm font-medium">{b.name}</span>
+                        {b.id === currentBusiness.id && (
+                          <Badge variant="outline">{t.settings.sedes.currentBadge}</Badge>
+                        )}
+                      </div>
+                    ))}
+                    <PremiumButton
+                      requiredPlan="premium"
+                      variant="outline"
+                      featureName={t.settings.sedes.featureName}
+                      onClick={() => setIsSedeDialogOpen(true)}
+                      className="gap-2"
+                    >
+                      <Plus className="h-4 w-4" />
+                      {t.settings.sedes.addBtn}
+                    </PremiumButton>
+                  </CardContent>
+                </Card>
+              )}
               <Card>
                 <CardHeader>
                   <CardTitle>{t.settings.businessTitle}</CardTitle>
@@ -1233,14 +1339,26 @@ export default function SettingsPage() {
                   <CardDescription>{t.settings.hoursDesc}</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3">
+                  <div className="mb-4 flex flex-col gap-2 rounded-lg border bg-muted/30 p-3 sm:flex-row sm:items-center">
+                    <span className="shrink-0 text-sm font-medium">{t.settings.applyToAllLabel}</span>
+                    <div className="flex flex-1 flex-wrap items-center gap-2">
+                      <TimeSelect value={bulkStartTime} onChange={setBulkStartTime} className="h-9 w-[140px]" />
+                      <span className="text-sm text-muted-foreground">{t.settings.to}</span>
+                      <TimeSelect value={bulkEndTime} onChange={setBulkEndTime} className="h-9 w-[140px]" />
+                      <Button type="button" variant="outline" size="sm" onClick={applyHoursToAllDays}>
+                        {t.settings.applyToAllBtn}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="divide-y rounded-lg border">
                     {DAYS.map((day) => {
                       const hours = businessHours.find((h) => h.dayOfWeek === day.value)
                       if (!hours) return null
                       return (
                         <div
                           key={day.value}
-                          className="flex flex-col gap-3 rounded-lg border p-3 sm:h-16 sm:flex-row sm:items-center"
+                          className="flex flex-col gap-3 p-3 sm:h-16 sm:flex-row sm:items-center"
                         >
                           <div className="flex h-9 w-36 shrink-0 items-center justify-between">
                             <span className="shrink-0 whitespace-nowrap text-sm font-medium">{day.label}</span>
@@ -1254,22 +1372,16 @@ export default function SettingsPage() {
                           </div>
                           {hours.isOpen ? (
                             <div className="flex h-9 flex-1 items-center gap-2">
-                              <Input
-                                type="time"
+                              <TimeSelect
                                 value={hours.startTime}
-                                onChange={(e) =>
-                                  updateBusinessHour(day.value, 'startTime', e.target.value)
-                                }
-                                className="h-9 w-full sm:w-auto"
+                                onChange={(value) => updateBusinessHour(day.value, 'startTime', value)}
+                                className="h-9 w-full sm:w-[140px]"
                               />
                               <span className="text-muted-foreground">{t.settings.to}</span>
-                              <Input
-                                type="time"
+                              <TimeSelect
                                 value={hours.endTime}
-                                onChange={(e) =>
-                                  updateBusinessHour(day.value, 'endTime', e.target.value)
-                                }
-                                className="h-9 w-full sm:w-auto"
+                                onChange={(value) => updateBusinessHour(day.value, 'endTime', value)}
+                                className="h-9 w-full sm:w-[140px]"
                               />
                             </div>
                           ) : (
@@ -1878,6 +1990,77 @@ export default function SettingsPage() {
         onClose={() => setShowUpgradeModal(false)}
         requiredPlan={upgradeModalPlan}
       />
+
+      <Dialog
+        open={isSedeDialogOpen}
+        onOpenChange={(open) => {
+          setIsSedeDialogOpen(open)
+          if (!open) setSedeError('')
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t.settings.sedes.dialogTitle}</DialogTitle>
+            <DialogDescription>{t.settings.sedes.dialogDesc}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="sede-name">{t.settings.sedes.nameLabel}</Label>
+              <Input
+                id="sede-name"
+                value={newSede.name}
+                onChange={(e) => setNewSede({ ...newSede, name: e.target.value })}
+                placeholder={t.settings.sedes.namePlaceholder}
+              />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="sede-country">{t.settings.businessCountry}</Label>
+                <Select
+                  value={newSede.country}
+                  onValueChange={(value: 'PE' | 'US') => setNewSede({ ...newSede, country: value })}
+                >
+                  <SelectTrigger id="sede-country">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PE">{t.settings.countryPE}</SelectItem>
+                    <SelectItem value="US">{t.settings.countryUS}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="sede-timezone">{t.settings.timezone}</Label>
+                <Select
+                  value={newSede.timezone}
+                  onValueChange={(value) => setNewSede({ ...newSede, timezone: value })}
+                >
+                  <SelectTrigger id="sede-timezone">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TIMEZONES.map((tz) => (
+                      <SelectItem key={tz.value} value={tz.value}>
+                        {tz.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {sedeError && <p className="text-sm text-destructive">{sedeError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsSedeDialogOpen(false)}>
+              {t.settings.sedes.cancelBtn}
+            </Button>
+            <Button onClick={handleCreateSede} disabled={isCreatingSede || !newSede.name.trim()} className="gap-2">
+              {isCreatingSede && <Loader2 className="h-4 w-4 animate-spin" />}
+              {t.settings.sedes.createBtn}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={showPasswordDialog}

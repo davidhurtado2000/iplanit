@@ -11,10 +11,18 @@ import { Badge } from '@/components/ui/badge'
 import { PremiumFeature } from '@/components/premium-feature'
 import { HeroKpiCard } from '@/components/dashboard/hero-kpi-card'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { CalendarDays, DollarSign, Gauge, Users, Building2, Download, ArrowUp, ArrowDown } from 'lucide-react'
 import { useBusinesses } from '@/hooks/use-businesses'
-import { useDashboardData } from '@/context/dashboard-data-context'
+import {
+  useDashboardData,
+  type Reservation,
+  type Client,
+  type Service,
+  type Resource,
+} from '@/context/dashboard-data-context'
 import { useLanguage } from '@/context/language-context'
+import { createClient } from '@/lib/supabase/client'
 import { toCsv, downloadCsv } from '@/lib/csv'
 import { getStatusLabel } from '@/lib/reservation-status'
 import { cn } from '@/lib/utils'
@@ -37,6 +45,8 @@ import {
   type DateRangeOption,
   type TrendResult,
 } from '@/lib/analytics'
+
+const supabase = createClient()
 
 /** Small colored delta pill next to a KPI's headline number - hidden while there's no previous-period baseline to compare against. `invert` flips the color logic for KPIs where going up is bad (no-show/cancellation rate). */
 function TrendBadge({ trend, invert = false }: { trend: TrendResult; invert?: boolean }) {
@@ -98,12 +108,12 @@ function SectionHeading({ children }: { children: ReactNode }) {
 }
 
 export default function AnalyticsPage() {
-  const { currentBusiness, loading: businessLoading } = useBusinesses()
+  const { currentBusiness, businesses, loading: businessLoading } = useBusinesses()
   const {
-    reservations,
-    clients,
-    services,
-    resources,
+    reservations: businessReservations,
+    clients: businessClients,
+    services: businessServices,
+    resources: businessResources,
     businessHours,
     loading: dataLoading,
     ensureReservationsInRange,
@@ -117,9 +127,37 @@ export default function AnalyticsPage() {
   const [serviceFilter, setServiceFilter] = useState('all')
   const [resourceFilter, setResourceFilter] = useState('all')
 
+  // "Todas las sedes" (scripts/053-organizations-and-sedes.sql) - only
+  // meaningful once the org has more than one business. reservations/
+  // services/resources stay per-sede (business_id in (...)); clients are
+  // now a single org-wide row per person (organization_id), not one per
+  // sede, so they're fetched by organization_id instead.
+  const orgBusinessIds = useMemo(
+    () => businesses.filter((b) => b.organization_id === currentBusiness?.organization_id).map((b) => b.id),
+    [businesses, currentBusiness?.organization_id]
+  )
+  const hasMultipleSedes = orgBusinessIds.length > 1
+  const [allSedes, setAllSedes] = useState(false)
+  const [orgData, setOrgData] = useState<{
+    reservations: Reservation[]
+    clients: Client[]
+    services: Service[]
+    resources: Resource[]
+  } | null>(null)
+
   const timezone = currentBusiness?.timezone || 'America/Lima'
   const currencySymbol = currentBusiness?.currency === 'USD' ? '$' : 'S/'
   const loading = businessLoading || dataLoading
+
+  // Every metric below reads from these instead of the raw
+  // business-scoped data directly, so flipping the "todas las sedes"
+  // toggle swaps the entire page's data in one place. getOccupancy still
+  // uses businessHours from the CURRENT sede only, even in all-sedes mode -
+  // a known approximation, not solved here.
+  const reservations = allSedes && orgData ? orgData.reservations : businessReservations
+  const clients = allSedes && orgData ? orgData.clients : businessClients
+  const services = allSedes && orgData ? orgData.services : businessServices
+  const resources = allSedes && orgData ? orgData.resources : businessResources
 
   // Parking spots are never a reservation's resource_id (see the same
   // exclusion in reservation-modal.tsx) - listing them here would be a
@@ -158,6 +196,46 @@ export default function AnalyticsPage() {
       ensureReservationsInRange(prevFrom, to)
     }
   }, [range, from, to, prevFrom, ensureReservationsInRange])
+
+  // Org-wide fetch for "todas las sedes" - only runs when the toggle is on
+  // and there's actually more than one sede. reservations/services/
+  // resources scoped by business_id in (...) since each row belongs to
+  // exactly one sede; clients scoped by organization_id since a client is
+  // now a single org-wide row, not one per sede.
+  const orgBusinessIdsKey = orgBusinessIds.join(',')
+  useEffect(() => {
+    if (!allSedes || !hasMultipleSedes || !currentBusiness) {
+      setOrgData(null)
+      return
+    }
+    let cancelled = false
+    const rangeFrom = range === 'all' ? from : prevFrom
+    ;(async () => {
+      const [{ data: res }, { data: cli }, { data: svc }, { data: rsc }] = await Promise.all([
+        supabase
+          .from('reservations')
+          .select('*')
+          .in('business_id', orgBusinessIds)
+          .gte('start_time', rangeFrom.toISOString())
+          .lte('start_time', to.toISOString()),
+        supabase.from('clients').select('*').eq('organization_id', currentBusiness.organization_id),
+        supabase.from('services').select('*').in('business_id', orgBusinessIds),
+        supabase.from('resources').select('*').in('business_id', orgBusinessIds),
+      ])
+      if (!cancelled) {
+        setOrgData({
+          reservations: (res || []) as Reservation[],
+          clients: (cli || []) as Client[],
+          services: (svc || []) as Service[],
+          resources: (rsc || []) as Resource[],
+        })
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allSedes, hasMultipleSedes, orgBusinessIdsKey, range, from, to, prevFrom, currentBusiness?.organization_id])
 
   const dailyDemand = useMemo(
     () => getDailyDemand(filteredReservations, from, to, timezone, locale),
@@ -366,6 +444,14 @@ export default function AnalyticsPage() {
               <SelectItem value="all">{tr.rangeAll}</SelectItem>
             </SelectContent>
           </Select>
+          {hasMultipleSedes && (
+            <div className="flex items-center gap-2 rounded-lg border px-3 py-2">
+              <Switch checked={allSedes} onCheckedChange={setAllSedes} id="all-sedes-toggle" />
+              <label htmlFor="all-sedes-toggle" className="cursor-pointer text-sm">
+                {tr.allSedesToggle}
+              </label>
+            </div>
+          )}
         </div>
       </div>
 

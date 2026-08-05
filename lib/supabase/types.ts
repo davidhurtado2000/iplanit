@@ -81,10 +81,35 @@ export interface Database {
         }
         Relationships: []
       }
+      organizations: {
+        Row: {
+          id: string
+          owner_id: string
+          name: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          owner_id: string
+          name: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          owner_id?: string
+          name?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       businesses: {
         Row: {
           id: string
           owner_id: string
+          organization_id: string
           name: string
           slug: string | null
           description: string | null
@@ -112,6 +137,7 @@ export interface Database {
         Insert: {
           id?: string
           owner_id: string
+          organization_id: string
           name: string
           slug?: string | null
           description?: string | null
@@ -139,6 +165,7 @@ export interface Database {
         Update: {
           id?: string
           owner_id?: string
+          organization_id?: string
           name?: string
           slug?: string | null
           description?: string | null
@@ -298,6 +325,7 @@ export interface Database {
         Row: {
           id: string
           business_id: string
+          organization_id: string
           name: string
           email: string | null
           phone: string | null
@@ -311,6 +339,12 @@ export interface Database {
         Insert: {
           id?: string
           business_id: string
+          // Optional despite being NOT NULL in the DB - check_client_limit()
+          // (scripts/053) derives it from business_id when omitted, which
+          // covers the dashboard's own "new client" form and CSV import
+          // (neither sets this explicitly). Only create_public_reservation
+          // sets it directly.
+          organization_id?: string
           name: string
           email?: string | null
           phone?: string | null
@@ -324,6 +358,7 @@ export interface Database {
         Update: {
           id?: string
           business_id?: string
+          organization_id?: string
           name?: string
           email?: string | null
           phone?: string | null
@@ -553,6 +588,14 @@ export interface Database {
       }
       is_business_accessible: {
         Args: { target_business_id: string }
+        Returns: boolean
+      }
+      create_sede: {
+        Args: { p_business_id: string; p_name: string; p_timezone?: string | null; p_country?: string }
+        Returns: Json
+      }
+      is_organization_accessible: {
+        Args: { target_organization_id: string }
         Returns: boolean
       }
       get_plan_usage: {

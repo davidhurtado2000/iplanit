@@ -51,6 +51,10 @@ export type ClientDocumentType = 'dni' | 'ruc' | 'ein' | 'passport' | 'other'
 export interface Client {
   id: string
   business_id: string
+  /** Groups a client across every sede of the same org (scripts/053) -
+   * business_id above stays as provenance only (the sede this client
+   * record was first created at), no longer the matching/RLS scope. */
+  organization_id: string
   name: string
   email: string | null
   phone: string | null

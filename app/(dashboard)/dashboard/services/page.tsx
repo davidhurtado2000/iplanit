@@ -46,6 +46,8 @@ import { getResourceTypeLabel } from '@/lib/resource-display'
 import { isPlanLimitReached } from '@/lib/plan-limits'
 import { UpgradeModal } from '@/components/upgrade-modal'
 import { FormSection } from '@/components/dashboard/form-section'
+import { DurationInput } from '@/components/dashboard/duration-input'
+import { formatDuration } from '@/lib/duration'
 import { cn } from '@/lib/utils'
 import {
   Plus,
@@ -58,6 +60,7 @@ import {
   Search,
   Loader2,
   X,
+  Copy,
 } from 'lucide-react'
 
 interface Service {
@@ -158,7 +161,7 @@ export default function ServicesPage() {
   const durationText = (service: Service) =>
     service.pricing_mode === 'hourly'
       ? `${service.min_hours ?? '?'}-${service.max_hours ?? '?'} h`
-      : `${service.duration_minutes} min`
+      : formatDuration(service.duration_minutes)
 
   const renderServicePrice = (service: Service) => {
     if (service.pricing_mode === 'preset') {
@@ -281,6 +284,47 @@ export default function ServicesPage() {
     // Snapshot of the just-loaded state, compared against current form state
     // to know whether to warn before closing - see hasUnsavedChanges below.
     setInitialFormSnapshot(JSON.stringify({ form: nextForm, durationOptions: nextDurationOptions, resourceIds: nextResourceIds }))
+    setSaveError('')
+    setIsServiceModalOpen(true)
+  }
+
+  // Prefills a NEW service's form from an existing one (create mode, not
+  // edit - editingService stays null) so duplicating a service is just
+  // "tweak a couple fields and save" instead of retyping everything.
+  const handleDuplicateService = (service: Service) => {
+    setDurationOptionsError('')
+    setEditingService(null)
+    const nextForm: typeof serviceForm = {
+      name: `${service.name}${t.services.duplicateSuffix}`,
+      description: service.description || '',
+      duration: service.duration_minutes,
+      price: service.price || 0,
+      priceUsd: service.price_usd ?? '',
+      color: service.color,
+      isActive: service.is_active,
+      pricingMode: service.pricing_mode,
+      hourlyRate: (isUSD ? service.hourly_rate_usd : service.hourly_rate) ?? '',
+      minHours: service.min_hours ?? 1,
+      maxHours: service.max_hours ?? 8,
+      bufferBeforeMin: service.buffer_before_min ?? 0,
+      bufferAfterMin: service.buffer_after_min ?? 0,
+    }
+    const nextDurationOptions: DurationOptionForm[] = serviceDurationOptions
+      .filter((o) => o.service_id === service.id)
+      .map((o) => ({
+        duration: o.duration_minutes,
+        price: (isUSD ? o.price_usd : o.price) ?? '',
+      }))
+    const nextResourceIds = serviceResources
+      .filter((sr) => sr.service_id === service.id)
+      .map((sr) => sr.resource_id)
+
+    setServiceForm(nextForm)
+    setDurationOptions(nextDurationOptions)
+    setSelectedResourceIds(nextResourceIds)
+    setInitialFormSnapshot(
+      JSON.stringify({ form: nextForm, durationOptions: nextDurationOptions, resourceIds: nextResourceIds })
+    )
     setSaveError('')
     setIsServiceModalOpen(true)
   }
@@ -591,6 +635,10 @@ export default function ServicesPage() {
                         <Pencil className="mr-2 h-4 w-4" />
                         {t.services.edit}
                       </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleDuplicateService(service)}>
+                        <Copy className="mr-2 h-4 w-4" />
+                        {t.services.duplicate}
+                      </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => setDeletingService(service)}
                         className="text-destructive"
@@ -756,18 +804,11 @@ export default function ServicesPage() {
                 <div className="space-y-2">
                   {durationOptions.map((option, index) => (
                     <div key={index} className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        min={5}
-                        step={5}
-                        placeholder={t.services.durationLabel}
+                      <DurationInput
                         value={option.duration}
-                        onChange={(e) =>
-                          updateDurationOption(index, 'duration', e.target.value !== '' ? parseInt(e.target.value) : '')
-                        }
+                        onChange={(minutes) => updateDurationOption(index, 'duration', minutes)}
                         className="flex-1"
                       />
-                      <span className="text-xs text-muted-foreground">min</span>
                       <Input
                         type="number"
                         min={0}
@@ -808,14 +849,10 @@ export default function ServicesPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="service-duration">{t.services.durationLabel}</Label>
-                  <Input
+                  <DurationInput
                     id="service-duration"
-                    type="number"
-                    min={5}
-                    step={5}
                     value={serviceForm.duration}
-                    onChange={(e) => setServiceForm({ ...serviceForm, duration: parseInt(e.target.value) || 0 })}
-                    required
+                    onChange={(minutes) => setServiceForm({ ...serviceForm, duration: minutes === '' ? 0 : minutes })}
                   />
                 </div>
                 {isUSD ? (
