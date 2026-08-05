@@ -15,14 +15,28 @@ const supabase = createClient<Database>(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-async function setPlanByUserId(userId: string, plan: 'free' | 'premium', extra: Record<string, string | null> = {}) {
+async function setPlanByUserId(userId: string, plan: 'free' | 'pro' | 'premium', extra: Record<string, string | null> = {}) {
   const { error } = await supabase.from('profiles').update({ plan, ...extra }).eq('id', userId)
   if (error) console.error('[iplanit] Error updating profile plan:', error)
 }
 
-async function setPlanByCustomerId(customerId: string, plan: 'free' | 'premium', extra: Record<string, string | null> = {}) {
+async function setPlanByCustomerId(customerId: string, plan: 'free' | 'pro' | 'premium', extra: Record<string, string | null> = {}) {
   const { error } = await supabase.from('profiles').update({ plan, ...extra }).eq('stripe_customer_id', customerId)
   if (error) console.error('[iplanit] Error updating profile plan by customer id:', error)
+}
+
+// Which Stripe Price ID maps to which iPlanit tier - built once at module
+// load, not per-request. STRIPE_PRICE_ID_PREMIUM_LEGACY is the original $35
+// Price (pre-3-tier); kept here purely so existing subscribers on it still
+// resolve to 'premium' - it's never used to create new checkouts.
+const PRICE_TIER_MAP: Record<string, 'pro' | 'premium'> = {}
+if (process.env.STRIPE_PRICE_ID_PRO) PRICE_TIER_MAP[process.env.STRIPE_PRICE_ID_PRO] = 'pro'
+if (process.env.STRIPE_PRICE_ID_PREMIUM) PRICE_TIER_MAP[process.env.STRIPE_PRICE_ID_PREMIUM] = 'premium'
+if (process.env.STRIPE_PRICE_ID_PREMIUM_LEGACY) PRICE_TIER_MAP[process.env.STRIPE_PRICE_ID_PREMIUM_LEGACY] = 'premium'
+
+function tierFromPriceId(priceId: string | undefined | null): 'pro' | 'premium' | null {
+  if (!priceId) return null
+  return PRICE_TIER_MAP[priceId] ?? null
 }
 
 export async function POST(request: Request) {
@@ -53,14 +67,30 @@ export async function POST(request: Request) {
       const subscriptionId =
         typeof session.subscription === 'string' ? session.subscription : session.subscription?.id
 
-      if (!userId || !customerId) {
-        console.error('[iplanit] checkout.session.completed missing user/customer link', { userId, customerId })
+      if (!userId || !customerId || !subscriptionId) {
+        console.error('[iplanit] checkout.session.completed missing user/customer/subscription link', {
+          userId,
+          customerId,
+          subscriptionId,
+        })
         break
       }
 
-      await setPlanByUserId(userId, 'premium', {
+      // Session objects don't carry price details unless expanded - one
+      // extra retrieve to resolve which tier was actually purchased,
+      // instead of trusting client-supplied checkout metadata.
+      const subscription = await getStripeClient().subscriptions.retrieve(subscriptionId)
+      const tier = tierFromPriceId(subscription.items.data[0]?.price.id)
+      if (!tier) {
+        console.error('[iplanit] checkout.session.completed: unrecognized price id', {
+          priceId: subscription.items.data[0]?.price.id,
+        })
+        break
+      }
+
+      await setPlanByUserId(userId, tier, {
         stripe_customer_id: customerId,
-        stripe_subscription_id: subscriptionId || null,
+        stripe_subscription_id: subscriptionId,
       })
       break
     }
@@ -74,9 +104,24 @@ export async function POST(request: Request) {
       const customerId = typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id
       const isActive = subscription.status === 'active' || subscription.status === 'trialing'
 
-      await setPlanByCustomerId(customerId, isActive ? 'premium' : 'free', {
-        stripe_subscription_id: isActive ? subscription.id : null,
-      })
+      if (!isActive) {
+        await setPlanByCustomerId(customerId, 'free', { stripe_subscription_id: null })
+        break
+      }
+
+      // The subscription IS event.data.object here, and its price is
+      // already a full object (never needs expand) - no extra API call,
+      // unlike the checkout.session.completed case above.
+      const tier = tierFromPriceId(subscription.items.data[0]?.price.id)
+      if (!tier) {
+        console.error('[iplanit] subscription event: unrecognized price id', {
+          priceId: subscription.items.data[0]?.price.id,
+          customerId,
+        })
+        break
+      }
+
+      await setPlanByCustomerId(customerId, tier, { stripe_subscription_id: subscription.id })
       break
     }
 

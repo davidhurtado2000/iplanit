@@ -42,7 +42,7 @@ import { createClient } from '@/lib/supabase/client'
 import { translateAuthError, withAuthLockRetry, withTimeout, AuthTimeoutError } from '@/lib/supabase/auth-errors'
 import { getPasswordChecks, isPasswordStrongEnough } from '@/lib/password'
 import { cn } from '@/lib/utils'
-import { FREE_LIMITS } from '@/lib/plan-limits'
+import { FREE_LIMITS, PRO_LIMITS } from '@/lib/plan-limits'
 import {
   User,
   Building2,
@@ -87,10 +87,12 @@ const DEFAULT_BUSINESS_HOURS: { dayOfWeek: DayOfWeek; startTime: string; endTime
 ]
 
 interface PlanUsage {
+  plan: 'free' | 'pro' | 'premium'
   reservations_this_month: number
   clients: number
   services: number
   resources: number
+  team_seats: number
 }
 
 // business_hours.day_of_week is 0-6 (0=Sunday), matching the convention
@@ -107,6 +109,7 @@ export default function SettingsPage() {
   const { theme, setTheme } = useTheme()
   const router = useRouter()
   const [isPortalLoading, setIsPortalLoading] = useState(false)
+  const [isChangingPlan, setIsChangingPlan] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
@@ -115,6 +118,10 @@ export default function SettingsPage() {
   const [hoursSaveStatus, setHoursSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [linkCopied, setLinkCopied] = useState(false)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  // Which tier the modal should emphasize - unset from the free-plan CTA
+  // (both cards shown equally), 'premium' when a Pro account clicks the
+  // "upgrade to Premium" upsell link.
+  const [upgradeModalPlan, setUpgradeModalPlan] = useState<'pro' | 'premium' | undefined>(undefined)
   const [showPasswordDialog, setShowPasswordDialog] = useState(false)
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -187,10 +194,40 @@ export default function SettingsPage() {
     }
   }
 
+  // For an existing subscriber changing tiers - modifies the current
+  // subscription's price (see app/api/stripe/change-plan) instead of
+  // Checkout, which would create a second subscription. profiles.plan
+  // itself updates via the Stripe webhook once it processes the change, so
+  // this refetches shortly after to reflect it without a manual reload.
+  const handleChangePlan = async (tier: 'pro' | 'premium') => {
+    setIsChangingPlan(true)
+    try {
+      const res = await fetch('/api/stripe/change-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tier }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(t.settings.changePlanSuccess)
+        await refreshProfile()
+        setTimeout(() => refreshProfile(), 2000)
+        return
+      }
+      toast.error(t.settings.changePlanError)
+    } catch (err) {
+      console.error('[iplanit] Error changing plan:', err)
+      toast.error(t.settings.changePlanError)
+    } finally {
+      setIsChangingPlan(false)
+    }
+  }
+
   // Staff (Premium team members) can't see/edit Configuracion or manage the
   // team themselves - only the owner can. Defaults to owner when there's no
   // business yet (the "create your business" flow).
   const isOwner = currentBusiness ? currentBusiness.role === 'owner' : true
+  const plan = (authProfile?.plan ?? 'free') as 'free' | 'pro' | 'premium'
 
   // Team State
   const [teamMembers, setTeamMembers] = useState<
@@ -204,6 +241,7 @@ export default function SettingsPage() {
   const [isInviting, setIsInviting] = useState(false)
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null)
   const [updatingRoleId, setUpdatingRoleId] = useState<string | null>(null)
+  const atSeatCap = plan === 'pro' && teamMembers.length >= 2
 
   // DAYS computed from translations so they update when language changes
   const DAYS: { value: DayOfWeek; label: string }[] = [
@@ -338,7 +376,8 @@ export default function SettingsPage() {
         const key = (
           {
             user_not_found: 'errorNotFound',
-            not_premium: 'errorNotPremium',
+            plan_required: 'errorPlanRequired',
+            seat_limit_reached: 'errorSeatLimit',
             is_owner: 'errorIsOwner',
           } as const
         )[result.error] ?? 'errorGeneric'
@@ -1416,9 +1455,11 @@ export default function SettingsPage() {
             <CardHeader>
               <CardTitle>{t.settings.planTitle}</CardTitle>
               <CardDescription>
-                {authProfile?.plan === 'premium'
+                {plan === 'premium'
                   ? t.settings.premiumPlanDesc
-                  : t.settings.freePlanDesc}
+                  : plan === 'pro'
+                    ? t.settings.proPlanDesc
+                    : t.settings.freePlanDesc}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1427,18 +1468,22 @@ export default function SettingsPage() {
                   <Crown className="h-8 w-8 text-amber-500" />
                   <div>
                     <p className="font-semibold">
-                      {authProfile?.plan === 'premium'
+                      {plan === 'premium'
                         ? t.settings.premiumPlanName
-                        : t.settings.freePlanName}
+                        : plan === 'pro'
+                          ? t.settings.proPlanName
+                          : t.settings.freePlanName}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      {authProfile?.plan === 'premium'
+                      {plan === 'premium'
                         ? t.settings.premiumFeatures
-                        : t.settings.freeFeatures}
+                        : plan === 'pro'
+                          ? t.settings.proFeatures
+                          : t.settings.freeFeatures}
                     </p>
                   </div>
                 </div>
-                {authProfile?.plan === 'premium' ? (
+                {plan !== 'free' ? (
                   <div className="flex flex-col items-end gap-2">
                     <Badge>
                       <Check className="mr-1 h-3 w-3" />
@@ -1453,13 +1498,31 @@ export default function SettingsPage() {
                       {isPortalLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       {t.settings.manageSubscription}
                     </Button>
+                    {plan === 'pro' && (
+                      <button
+                        type="button"
+                        className="flex items-center gap-1 text-xs text-primary underline hover:text-primary/80 disabled:opacity-50"
+                        disabled={isChangingPlan}
+                        onClick={() => handleChangePlan('premium')}
+                      >
+                        {isChangingPlan && <Loader2 className="h-3 w-3 animate-spin" />}
+                        {t.settings.upgradeToPremiumBtn}
+                      </button>
+                    )}
                   </div>
                 ) : (
-                  <Button onClick={() => setShowUpgradeModal(true)}>{t.settings.upgradePremium}</Button>
+                  <Button
+                    onClick={() => {
+                      setUpgradeModalPlan(undefined)
+                      setShowUpgradeModal(true)
+                    }}
+                  >
+                    {t.settings.upgradePremium}
+                  </Button>
                 )}
               </div>
 
-              {authProfile?.plan === 'free' && planUsage && (
+              {plan === 'free' && planUsage && (
                 <>
                   <Separator />
                   <div className="space-y-4">
@@ -1492,7 +1555,66 @@ export default function SettingsPage() {
                 </>
               )}
 
-              {authProfile?.plan === 'premium' && planUsage && (
+              {plan === 'pro' && planUsage && (
+                <>
+                  <Separator />
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-foreground">{t.settings.proUsageTitle}</h3>
+                      <p className="text-sm text-muted-foreground">{t.settings.proUsageDesc}</p>
+                    </div>
+                    {(
+                      [
+                        ['reservations_this_month', t.upgradeModal.reservationsPerMonthLabel],
+                        ['clients', t.upgradeModal.clientsLabel],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <div key={key} className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">{label}</span>
+                        <span className="flex items-center gap-2">
+                          <span className="font-medium">{planUsage[key]}</span>
+                          <Badge variant="secondary" className="text-emerald-600 dark:text-emerald-400">
+                            {t.settings.unlimitedLabel}
+                          </Badge>
+                        </span>
+                      </div>
+                    ))}
+                    {(
+                      [
+                        ['services', t.upgradeModal.servicesLabel, PRO_LIMITS.services],
+                        ['resources', t.upgradeModal.resourcesLabel, PRO_LIMITS.resources],
+                      ] as const
+                    ).map(([key, label, limit]) => {
+                      const used = planUsage[key]
+                      return (
+                        <div key={key} className="space-y-1.5">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">{label}</span>
+                            <span className={cn('font-medium', used >= limit && 'text-destructive')}>
+                              {used} / {limit}
+                            </span>
+                          </div>
+                          <Progress value={Math.min(100, (used / limit) * 100)} className="h-2" />
+                        </div>
+                      )
+                    })}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">{t.settings.teamSeatsLabel}</span>
+                        <span className={cn('font-medium', planUsage.team_seats >= PRO_LIMITS.teamSeats && 'text-destructive')}>
+                          {planUsage.team_seats} / {PRO_LIMITS.teamSeats}
+                        </span>
+                      </div>
+                      <Progress
+                        value={Math.min(100, (planUsage.team_seats / PRO_LIMITS.teamSeats) * 100)}
+                        className="h-2"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {plan === 'premium' && planUsage && (
                 <>
                   <Separator />
                   <div className="space-y-4">
@@ -1518,11 +1640,20 @@ export default function SettingsPage() {
                         </span>
                       </div>
                     ))}
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">{t.settings.teamSeatsLabel}</span>
+                      <span className="flex items-center gap-2">
+                        <span className="font-medium">{planUsage.team_seats}</span>
+                        <Badge variant="secondary" className="text-emerald-600 dark:text-emerald-400">
+                          {t.settings.unlimitedLabel}
+                        </Badge>
+                      </span>
+                    </div>
                   </div>
                 </>
               )}
 
-              {authProfile?.plan === 'free' && (
+              {plan === 'free' && (
                 <>
                   <Separator />
                   <div className="space-y-3 rounded-lg border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 p-4 dark:border-amber-900 dark:from-amber-950/40 dark:to-orange-950/30">
@@ -1538,11 +1669,50 @@ export default function SettingsPage() {
                         </li>
                       ))}
                     </ul>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setUpgradeModalPlan(undefined)
+                        setShowUpgradeModal(true)
+                      }}
+                    >
+                      {t.settings.viewPlansBtn}
+                    </Button>
                   </div>
                 </>
               )}
 
-              {authProfile?.plan === 'premium' && (
+              {plan === 'pro' && (
+                <>
+                  <Separator />
+                  <div className="space-y-3 rounded-lg border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 p-4 dark:border-emerald-900 dark:from-emerald-950/40 dark:to-teal-950/30">
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                      <Crown className="h-4 w-4 text-amber-500" />
+                      {t.settings.proIncludedTitle}
+                    </h3>
+                    <ul className="space-y-2">
+                      {t.settings.proFeaturesList.map((feature) => (
+                        <li key={feature} className="flex items-center gap-2 text-sm">
+                          <Check className="h-4 w-4 text-emerald-500" />
+                          <span>{feature}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <button
+                      type="button"
+                      className="flex items-center gap-1 text-xs text-primary underline hover:text-primary/80 disabled:opacity-50"
+                      disabled={isChangingPlan}
+                      onClick={() => handleChangePlan('premium')}
+                    >
+                      {isChangingPlan && <Loader2 className="h-3 w-3 animate-spin" />}
+                      {t.settings.premiumUpsellFromProLabel}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {plan === 'premium' && (
                 <>
                   <Separator />
                   <div className="space-y-3 rounded-lg border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 p-4 dark:border-emerald-900 dark:from-emerald-950/40 dark:to-teal-950/30">
@@ -1568,7 +1738,7 @@ export default function SettingsPage() {
         {/* Team Tab - owner only, Premium-gated */}
         {isOwner && (
         <TabsContent value="team" className="space-y-6">
-          <PremiumFeature featureName={t.settings.team.featureName}>
+          <PremiumFeature featureName={t.settings.team.featureName} requiredPlan="pro">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -1578,6 +1748,11 @@ export default function SettingsPage() {
                 <CardDescription>{t.settings.team.desc}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
+                {plan === 'pro' && (
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {t.settings.team.seatsUsedLabel.replace('{used}', String(teamMembers.length))}
+                  </p>
+                )}
                 <form onSubmit={handleInvite} className="flex flex-col gap-2 sm:flex-row">
                   <div className="flex-1 space-y-2">
                     <Label htmlFor="invite-email" className="sr-only">
@@ -1589,10 +1764,10 @@ export default function SettingsPage() {
                       value={inviteEmail}
                       onChange={(e) => setInviteEmail(e.target.value)}
                       placeholder={t.settings.team.emailPlaceholder}
-                      disabled={isInviting}
+                      disabled={isInviting || atSeatCap}
                     />
                   </div>
-                  <Select value={inviteRole} onValueChange={(v: 'admin' | 'sales') => setInviteRole(v)} disabled={isInviting}>
+                  <Select value={inviteRole} onValueChange={(v: 'admin' | 'sales') => setInviteRole(v)} disabled={isInviting || atSeatCap}>
                     <SelectTrigger className="sm:w-[180px]">
                       <SelectValue />
                     </SelectTrigger>
@@ -1601,7 +1776,7 @@ export default function SettingsPage() {
                       <SelectItem value="sales">{t.settings.team.roleSales}</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Button type="submit" disabled={isInviting || !inviteEmail.trim()} className="gap-2">
+                  <Button type="submit" disabled={isInviting || atSeatCap || !inviteEmail.trim()} className="gap-2">
                     {isInviting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                     {t.settings.team.addBtn}
                   </Button>
@@ -1609,6 +1784,20 @@ export default function SettingsPage() {
                 <p className="text-xs text-muted-foreground">
                   {inviteRole === 'admin' ? t.settings.team.roleAdminDesc : t.settings.team.roleSalesDesc}
                 </p>
+                {atSeatCap && (
+                  <p className="text-sm text-destructive">
+                    {t.settings.team.errorSeatLimit}
+                    {' '}
+                    <button
+                      type="button"
+                      className="underline disabled:opacity-50"
+                      disabled={isChangingPlan}
+                      onClick={() => handleChangePlan('premium')}
+                    >
+                      {t.settings.upgradeToPremiumBtn}
+                    </button>
+                  </p>
+                )}
                 {inviteError && <p className="text-sm text-destructive">{inviteError}</p>}
                 {inviteSuccess && <p className="text-sm text-green-600">{inviteSuccess}</p>}
 
@@ -1684,7 +1873,11 @@ export default function SettingsPage() {
         </>
       )}
 
-      <UpgradeModal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} />
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        requiredPlan={upgradeModalPlan}
+      />
 
       <Dialog
         open={showPasswordDialog}

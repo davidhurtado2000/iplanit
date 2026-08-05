@@ -45,6 +45,7 @@ export default function DashboardPage() {
   // pages themselves show.
   const resources = allResources.filter((r) => r.type !== 'parking')
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [upgradeModalPlan, setUpgradeModalPlan] = useState<'pro' | 'premium' | undefined>(undefined)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null)
 
@@ -144,7 +145,8 @@ export default function DashboardPage() {
     )
   }
 
-  const isPremium = profile?.plan === 'premium'
+  const plan = (profile?.plan ?? 'free') as 'free' | 'pro' | 'premium'
+  const isPremium = plan === 'premium'
   const displayName = profile?.full_name?.split(' ')[0] || user.email?.split('@')[0] || 'Usuario'
   const displayEmail = profile?.email || user.email || ''
 
@@ -174,8 +176,9 @@ export default function DashboardPage() {
         hasReservations={reservations.length > 0}
       />
 
-      {/* Free Plan Usage Banner */}
-      {!isPremium && (
+      {/* Free Plan Usage Banner - hidden for Pro and Premium, both already
+          paying, neither needs the "upgrade" nag. */}
+      {plan === 'free' && (
         <Card className="border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 dark:border-amber-900 dark:from-amber-950/40 dark:to-orange-950/30">
           <CardContent className="py-4">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -193,7 +196,10 @@ export default function DashboardPage() {
               <Button
                 size="sm"
                 className="gap-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600"
-                onClick={() => setShowUpgradeModal(true)}
+                onClick={() => {
+                  setUpgradeModalPlan(undefined)
+                  setShowUpgradeModal(true)
+                }}
               >
                 <Crown className="h-4 w-4" />
                 {t.dashboard.upgrade}
@@ -340,12 +346,12 @@ export default function DashboardPage() {
             <div className="p-4">
               <p className="text-xs font-medium text-muted-foreground">{t.dashboard.planCard}</p>
               <div className="mt-1 flex items-center gap-2">
-                <Badge variant={isPremium ? 'default' : 'secondary'}>
-                  {isPremium ? t.dashboard.premium : t.dashboard.free}
+                <Badge variant={plan === 'free' ? 'secondary' : 'default'}>
+                  {plan === 'premium' ? t.dashboard.premium : plan === 'pro' ? t.dashboard.pro : t.dashboard.free}
                 </Badge>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                {isPremium ? t.dashboard.allFeatures : t.dashboard.basicAccess}
+                {plan === 'premium' ? t.dashboard.allFeatures : plan === 'pro' ? t.dashboard.proAccess : t.dashboard.basicAccess}
               </p>
             </div>
             <div className="p-4">
@@ -430,7 +436,10 @@ export default function DashboardPage() {
                 ) : (
                   <button
                     type="button"
-                    onClick={() => setShowUpgradeModal(true)}
+                    onClick={() => {
+                      setUpgradeModalPlan('premium')
+                      setShowUpgradeModal(true)
+                    }}
                     className="block w-full text-left"
                   >
                     <HeroKpiCard
@@ -463,7 +472,11 @@ export default function DashboardPage() {
       />
 
       {/* Upgrade Modal */}
-      <UpgradeModal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} />
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        requiredPlan={upgradeModalPlan}
+      />
     </div>
   )
 }

@@ -9,7 +9,7 @@ export interface Profile {
   email: string
   full_name: string | null
   avatar_url: string | null
-  plan: string
+  plan: 'free' | 'pro' | 'premium'
   language: string
   created_at: string
 }

@@ -62,7 +62,7 @@ import { capitalizeFirst, cn } from '@/lib/utils'
 import { toTzLocalInput, parseInTimezone, toDateStr } from '@/lib/timezone'
 import { generateAvailableSlots, isDayClosed } from '@/lib/availability'
 import { sendReservationNotification } from '@/lib/email/notify'
-import { isPlanLimitReached } from '@/lib/plan-limits'
+import { isPlanLimitReached, meetsPlan } from '@/lib/plan-limits'
 import { UpgradeModal } from '@/components/upgrade-modal'
 
 interface Client {
@@ -188,17 +188,22 @@ export function ReservationModal({
   const isUSD = currentBusiness?.currency === 'USD'
   const [isEditing, setIsEditing] = useState(mode === 'create')
 
-  const isPremium = profile?.plan === 'premium'
+  // Pro and Premium are both unlimited on reservations - only Free is
+  // capped (see scripts/052-three-tier-plans.sql's check_reservation_limit).
+  const hasPaidPlan = meetsPlan(profile?.plan, 'pro')
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
 
   // Checked fresh right when a "create" open is requested, rather than on
-  // every render - the database trigger (scripts/048-free-plan-limits.sql)
+  // every render - the database trigger (scripts/052-three-tier-plans.sql)
   // is the actual guarantee, this is only the proactive nicety that avoids
   // making someone fill out the whole form just to hit a rejection at the
   // end. Closes the (still-empty) create dialog and shows the Upgrade modal
-  // in its place instead of leaving a dead form open.
+  // in its place instead of leaving a dead form open. The hasPaidPlan guard
+  // here is just a perf shortcut to skip the RPC round-trip when already
+  // paid - isPlanLimitReached is tier-aware on its own and would return
+  // false anyway.
   useEffect(() => {
-    if (!isOpen || mode !== 'create' || isPremium || !currentBusiness) return
+    if (!isOpen || mode !== 'create' || hasPaidPlan || !currentBusiness) return
     let cancelled = false
     isPlanLimitReached(currentBusiness.id, 'reservations_this_month').then((reached) => {
       if (!cancelled && reached) {
@@ -210,7 +215,7 @@ export function ReservationModal({
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, mode, isPremium, currentBusiness?.id])
+  }, [isOpen, mode, hasPaidPlan, currentBusiness?.id])
 
   const [repeatEnabled, setRepeatEnabled] = useState(false)
   const [repeatDays, setRepeatDays] = useState<number[]>([])
@@ -785,7 +790,7 @@ export function ReservationModal({
       if (error?.code === '23P01') {
         setError(t.reservation.timeConflict)
       } else if (error?.code === 'PLN01') {
-        // Backstop for the proactive check above (scripts/048) - only
+        // Backstop for the proactive check above (scripts/052) - only
         // reachable via a real race (e.g. two tabs creating at once).
         onClose()
         setShowUpgradeModal(true)
@@ -1561,7 +1566,7 @@ export function ReservationModal({
                     id="repeat"
                     checked={repeatEnabled}
                     onCheckedChange={(checked) => {
-                      if (checked && !isPremium) {
+                      if (checked && !hasPaidPlan) {
                         setShowUpgradeModal(true)
                         return
                       }
@@ -1695,6 +1700,7 @@ export function ReservationModal({
       isOpen={showUpgradeModal}
       onClose={() => setShowUpgradeModal(false)}
       feature={t.reservation.repeatLabel}
+      requiredPlan="pro"
     />
     <AlertDialog open={cancelConfirmType !== null} onOpenChange={(open) => !open && setCancelConfirmType(null)}>
       <AlertDialogContent>

@@ -36,7 +36,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
 import { useDashboardData } from '@/context/dashboard-data-context'
@@ -75,8 +74,6 @@ const RESOURCE_COLORS = [
 
 export default function ResourcesPage() {
   const { currentBusiness } = useBusinesses()
-  const { profile } = useAuth()
-  const isPremium = profile?.plan === 'premium'
   const { t } = useLanguage()
   const {
     resources: allResources,
@@ -100,7 +97,7 @@ export default function ResourcesPage() {
   const supabase = createClient()
 
   const handleNewResourceClick = async () => {
-    if (!isPremium && currentBusiness && (await isPlanLimitReached(currentBusiness.id, 'resources'))) {
+    if (currentBusiness && (await isPlanLimitReached(currentBusiness.id, 'resources'))) {
       setShowUpgradeModal(true)
       return
     }

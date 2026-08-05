@@ -581,7 +581,7 @@ export default function ClientsPage() {
   const isPremium = profile?.plan === 'premium'
 
   const handleNewClientClick = async () => {
-    if (!isPremium && currentBusiness && (await isPlanLimitReached(currentBusiness.id, 'clients'))) {
+    if (currentBusiness && (await isPlanLimitReached(currentBusiness.id, 'clients'))) {
       setShowUpgradeModal(true)
       return
     }

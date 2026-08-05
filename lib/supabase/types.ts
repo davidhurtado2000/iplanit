@@ -45,7 +45,7 @@ export interface Database {
           email: string
           full_name: string | null
           avatar_url: string | null
-          plan: 'free' | 'premium'
+          plan: 'free' | 'pro' | 'premium'
           timezone: string
           language: string
           stripe_customer_id: string | null
@@ -58,7 +58,7 @@ export interface Database {
           email: string
           full_name?: string | null
           avatar_url?: string | null
-          plan?: 'free' | 'premium'
+          plan?: 'free' | 'pro' | 'premium'
           timezone?: string
           language?: string
           stripe_customer_id?: string | null
@@ -71,7 +71,7 @@ export interface Database {
           email?: string
           full_name?: string | null
           avatar_url?: string | null
-          plan?: 'free' | 'premium'
+          plan?: 'free' | 'pro' | 'premium'
           timezone?: string
           language?: string
           stripe_customer_id?: string | null

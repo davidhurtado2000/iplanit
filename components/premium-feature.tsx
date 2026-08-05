@@ -9,20 +9,22 @@ import { UpgradeModal } from '@/components/upgrade-modal'
 import { useAuth } from '@/hooks/use-auth'
 import { useLanguage } from '@/context/language-context'
 import { cn } from '@/lib/utils'
+import { meetsPlan } from '@/lib/plan-limits'
 
 interface PremiumFeatureProps {
   children: React.ReactNode
   featureName: string
   className?: string
+  requiredPlan?: 'pro' | 'premium'
 }
 
-export function PremiumFeature({ children, featureName, className }: PremiumFeatureProps) {
+export function PremiumFeature({ children, featureName, className, requiredPlan = 'premium' }: PremiumFeatureProps) {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const { profile } = useAuth()
   const { t } = useLanguage()
-  const isPremium = profile?.plan === 'premium'
+  const hasAccess = meetsPlan(profile?.plan, requiredPlan)
 
-  if (isPremium) {
+  if (hasAccess) {
     return <>{children}</>
   }
 
@@ -44,7 +46,9 @@ export function PremiumFeature({ children, featureName, className }: PremiumFeat
           <Crown className="h-6 w-6 text-amber-500" />
         </div>
         <div>
-          <p className="font-medium text-foreground">{t.premiumFeatureTitle}</p>
+          <p className="font-medium text-foreground">
+            {requiredPlan === 'pro' ? t.proFeatureTitle : t.premiumFeatureTitle}
+          </p>
           <p className="text-sm text-muted-foreground">{featureName}</p>
         </div>
         <Button
@@ -60,6 +64,7 @@ export function PremiumFeature({ children, featureName, className }: PremiumFeat
         isOpen={showUpgradeModal}
         onClose={() => setShowUpgradeModal(false)}
         feature={featureName}
+        requiredPlan={requiredPlan}
       />
     </>
   )
@@ -72,6 +77,7 @@ interface PremiumButtonProps {
   className?: string
   variant?: 'default' | 'outline' | 'ghost' | 'secondary'
   size?: 'default' | 'sm' | 'lg' | 'icon'
+  requiredPlan?: 'pro' | 'premium'
 }
 
 export function PremiumButton({
@@ -81,13 +87,14 @@ export function PremiumButton({
   className,
   variant = 'default',
   size = 'default',
+  requiredPlan = 'premium',
 }: PremiumButtonProps) {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const { profile } = useAuth()
-  const isPremium = profile?.plan === 'premium'
+  const hasAccess = meetsPlan(profile?.plan, requiredPlan)
 
   const handleClick = () => {
-    if (isPremium) {
+    if (hasAccess) {
       onClick?.()
     } else {
       setShowUpgradeModal(true)
@@ -100,13 +107,13 @@ export function PremiumButton({
         variant={variant}
         size={size}
         className={cn(
-          !isPremium && 'relative',
+          !hasAccess && 'relative',
           className
         )}
         onClick={handleClick}
       >
         {children}
-        {!isPremium && (
+        {!hasAccess && (
           <Lock className="ml-1 h-3 w-3 text-amber-500" />
         )}
       </Button>
@@ -114,29 +121,31 @@ export function PremiumButton({
         isOpen={showUpgradeModal}
         onClose={() => setShowUpgradeModal(false)}
         feature={featureName}
+        requiredPlan={requiredPlan}
       />
     </>
   )
 }
 
-// Badge component for premium-only indicators
+// Badge component for premium/pro-only indicators
 interface PremiumBadgeProps {
   className?: string
+  requiredPlan?: 'pro' | 'premium'
 }
 
-export function PremiumBadge({ className }: PremiumBadgeProps) {
+export function PremiumBadge({ className, requiredPlan = 'premium' }: PremiumBadgeProps) {
   const { profile } = useAuth()
-  const isPremium = profile?.plan === 'premium'
+  const hasAccess = meetsPlan(profile?.plan, requiredPlan)
 
-  if (isPremium) return null
-  
+  if (hasAccess) return null
+
   return (
     <span className={cn(
       'inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-500/10 to-orange-500/10 px-2 py-0.5 text-xs font-medium text-amber-600',
       className
     )}>
       <Crown className="h-3 w-3" />
-      Premium
+      {requiredPlan === 'pro' ? 'Pro' : 'Premium'}
     </span>
   )
 }

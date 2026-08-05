@@ -38,7 +38,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
 import { useDashboardData, type ServiceResource, type ServiceDurationOption } from '@/context/dashboard-data-context'
@@ -95,8 +94,6 @@ const SERVICE_COLORS = [
 
 export default function ServicesPage() {
   const { currentBusiness } = useBusinesses()
-  const { profile } = useAuth()
-  const isPremium = profile?.plan === 'premium'
   const { t } = useLanguage()
   const {
     services,
@@ -127,7 +124,7 @@ export default function ServicesPage() {
   const supabase = createClient()
 
   const handleNewServiceClick = async () => {
-    if (!isPremium && currentBusiness && (await isPlanLimitReached(currentBusiness.id, 'services'))) {
+    if (currentBusiness && (await isPlanLimitReached(currentBusiness.id, 'services'))) {
       setShowUpgradeModal(true)
       return
     }
