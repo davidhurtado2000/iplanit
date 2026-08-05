@@ -131,10 +131,12 @@ export default function SettingsPage() {
   const [planUsage, setPlanUsage] = useState<PlanUsage | null>(null)
   const supabase = createClient()
 
-  // Free-plan usage vs. the caps enforced in scripts/048-free-plan-limits.sql
-  // - only fetched for free accounts, since Premium has no limits to show.
+  // Usage vs. the caps enforced in scripts/048-free-plan-limits.sql. Fetched
+  // for both plans - free shows "used / limit" bars, premium shows the same
+  // counts labeled "Unlimited" since is_business_premium() bypasses every
+  // cap in those triggers.
   useEffect(() => {
-    if (!currentBusiness?.id || authProfile?.plan !== 'free') {
+    if (!currentBusiness?.id) {
       setPlanUsage(null)
       return
     }
@@ -1490,6 +1492,36 @@ export default function SettingsPage() {
                 </>
               )}
 
+              {authProfile?.plan === 'premium' && planUsage && (
+                <>
+                  <Separator />
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-foreground">{t.settings.premiumUsageTitle}</h3>
+                      <p className="text-sm text-muted-foreground">{t.settings.premiumUsageDesc}</p>
+                    </div>
+                    {(
+                      [
+                        ['reservations_this_month', t.upgradeModal.reservationsPerMonthLabel],
+                        ['clients', t.upgradeModal.clientsLabel],
+                        ['services', t.upgradeModal.servicesLabel],
+                        ['resources', t.upgradeModal.resourcesLabel],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <div key={key} className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">{label}</span>
+                        <span className="flex items-center gap-2">
+                          <span className="font-medium">{planUsage[key]}</span>
+                          <Badge variant="secondary" className="text-emerald-600 dark:text-emerald-400">
+                            {t.settings.unlimitedLabel}
+                          </Badge>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
               {authProfile?.plan === 'free' && (
                 <>
                   <Separator />
@@ -1502,6 +1534,26 @@ export default function SettingsPage() {
                       {t.settings.premiumFeaturesList.map((feature) => (
                         <li key={feature} className="flex items-center gap-2 text-sm">
                           <Check className="h-4 w-4 text-amber-500" />
+                          <span>{feature}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </>
+              )}
+
+              {authProfile?.plan === 'premium' && (
+                <>
+                  <Separator />
+                  <div className="space-y-3 rounded-lg border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 p-4 dark:border-emerald-900 dark:from-emerald-950/40 dark:to-teal-950/30">
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                      <Crown className="h-4 w-4 text-amber-500" />
+                      {t.settings.premiumIncludedTitle}
+                    </h3>
+                    <ul className="space-y-2">
+                      {t.settings.premiumFeaturesList.map((feature) => (
+                        <li key={feature} className="flex items-center gap-2 text-sm">
+                          <Check className="h-4 w-4 text-emerald-500" />
                           <span>{feature}</span>
                         </li>
                       ))}
