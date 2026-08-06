@@ -47,6 +47,7 @@ import { useDashboardData, type Reservation } from '@/context/dashboard-data-con
 import { createClient } from '@/lib/supabase/client'
 import { getStatusBadgeVariant, getStatusLabel } from '@/lib/reservation-status'
 import { cn } from '@/lib/utils'
+import { sedeAbbr, sedeTint, buildBusinessColorIndex } from '@/lib/sede-colors'
 import {
   Plus,
   MoreHorizontal,
@@ -170,7 +171,7 @@ function mapCsvHeaders(header: string[]): Partial<Record<ImportField, number>> {
 }
 
 export default function ClientsPage() {
-  const { currentBusiness } = useBusinesses()
+  const { currentBusiness, businesses } = useBusinesses()
   const { profile } = useAuth()
   const { t, locale } = useLanguage()
   const { clients, services, loading, refetchClients } = useDashboardData()
@@ -218,6 +219,21 @@ export default function ClientsPage() {
     documentType: defaultDocumentType as ClientDocumentType,
     documentNumber: '',
   })
+
+  // Clients are now shared org-wide (organization_id, scripts/053) - when
+  // the account has more than one sede, tag each row with its sede of
+  // origin (client.business_id, provenance only) so it's clear where a
+  // shared client first came from without implying it "belongs" only there.
+  const orgBusinessIds = useMemo(
+    () => businesses.filter((b) => b.organization_id === currentBusiness?.organization_id).map((b) => b.id),
+    [businesses, currentBusiness?.organization_id]
+  )
+  const hasMultipleSedes = orgBusinessIds.length > 1
+  const businessNameById = useMemo(
+    () => Object.fromEntries(businesses.filter((b) => orgBusinessIds.includes(b.id)).map((b) => [b.id, b.name])),
+    [businesses, orgBusinessIds]
+  )
+  const businessColorIndexById = useMemo(() => buildBusinessColorIndex(orgBusinessIds), [orgBusinessIds])
 
   // Reservation counts per client (all-time) come from a small aggregate
   // query against the client_reservation_counts view, not by filtering the
@@ -524,10 +540,12 @@ export default function ClientsPage() {
         notes: formData.notes || null,
         document_type: formData.documentNumber ? formData.documentType : null,
         document_number: formData.documentNumber || null,
-        business_id: currentBusiness.id,
       }
 
       if (editingClient) {
+        // business_id is provenance only (which sede first created this
+        // client, scripts/053) - must never be rewritten just because the
+        // client is now being edited from a different sede in the org.
         const { error } = await supabase
           .from('clients')
           .update(clientData)
@@ -537,7 +555,7 @@ export default function ClientsPage() {
       } else {
         const { error } = await supabase
           .from('clients')
-          .insert(clientData)
+          .insert({ ...clientData, business_id: currentBusiness.id })
 
         if (error) throw error
       }
@@ -774,7 +792,21 @@ export default function ClientsPage() {
                           </AvatarFallback>
                         </Avatar>
                         <div>
-                          <p className="font-medium">{client.name}</p>
+                          <p className="flex items-center gap-1.5 font-medium">
+                            {client.name}
+                            {hasMultipleSedes && (
+                              <span
+                                title={businessNameById[client.business_id]}
+                                className={cn(
+                                  'rounded px-1 py-0.5 text-[10px] font-semibold',
+                                  sedeTint(businessColorIndexById[client.business_id])?.bg,
+                                  sedeTint(businessColorIndexById[client.business_id])?.text
+                                )}
+                              >
+                                {sedeAbbr(businessNameById[client.business_id] || '')}
+                              </span>
+                            )}
+                          </p>
                           {client.notes && (
                             <p className="max-w-[200px] truncate text-xs text-muted-foreground">
                               {client.notes}
@@ -917,7 +949,20 @@ export default function ClientsPage() {
                     </AvatarFallback>
                   </Avatar>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{client.name}</p>
+                    <p className="flex items-center gap-1.5 truncate font-medium">
+                      <span className="truncate">{client.name}</span>
+                      {hasMultipleSedes && (
+                        <span
+                          className={cn(
+                            'shrink-0 rounded px-1 py-0.5 text-[10px] font-semibold',
+                            sedeTint(businessColorIndexById[client.business_id])?.bg,
+                            sedeTint(businessColorIndexById[client.business_id])?.text
+                          )}
+                        >
+                          {sedeAbbr(businessNameById[client.business_id] || '')}
+                        </span>
+                      )}
+                    </p>
                     <p className="truncate text-sm text-muted-foreground">
                       {client.email || client.phone || '-'}
                     </p>

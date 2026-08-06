@@ -35,7 +35,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Loader2 } from 'lucide-react'
-import { Calendar, Clock, User, Briefcase, Trash2, MapPin, Repeat, DollarSign, ParkingSquare, ChevronDown, ChevronsUpDown, Check, Eye } from 'lucide-react'
+import { Calendar, Clock, User, Briefcase, Trash2, MapPin, Repeat, DollarSign, ParkingSquare, ChevronDown, ChevronsUpDown, Check, Eye, UserPlus } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -56,7 +56,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
-import { useDashboardData } from '@/context/dashboard-data-context'
+import { useDashboardData, type ClientDocumentType } from '@/context/dashboard-data-context'
 import { getStatusBadgeVariant, getStatusLabel } from '@/lib/reservation-status'
 import { capitalizeFirst, cn } from '@/lib/utils'
 import { toTzLocalInput, parseInTimezone, toDateStr } from '@/lib/timezone'
@@ -73,6 +73,10 @@ interface Client {
   email: string | null
   phone: string | null
 }
+
+// Same 5 document types as clients/page.tsx's own form - kept identical so
+// a client created inline here looks no different from one created there.
+const DOCUMENT_TYPES: ClientDocumentType[] = ['dni', 'ruc', 'ein', 'passport', 'other']
 
 interface Service {
   id: string
@@ -149,7 +153,7 @@ export function ReservationModal({
   const { profile } = useAuth()
   const { currentBusiness } = useBusinesses()
   const { t, locale } = useLanguage()
-  const { clients, services, resources: allResources, serviceResources, serviceDurationOptions, businessHours, reservations } = useDashboardData()
+  const { clients, services, resources: allResources, serviceResources, serviceDurationOptions, businessHours, reservations, refetchClients } = useDashboardData()
   // Parking is a separate concept from a service's linked resource (see the
   // needsParking switch below) - never offered as a pickable resource here.
   const resources = allResources.filter((r) => r.type !== 'parking')
@@ -162,6 +166,21 @@ export function ReservationModal({
   // same name/email/document match, kept consistent here.
   const [clientComboOpen, setClientComboOpen] = useState(false)
   const [clientSearch, setClientSearch] = useState('')
+  // Inline "create client" from within this combobox (colleague-suggested -
+  // avoids leaving the reservation form to go create one on the Clients
+  // page first). Swaps the Command list for a small form in-place.
+  const [isAddingClient, setIsAddingClient] = useState(false)
+  const [newClientForm, setNewClientForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    documentType: 'dni' as ClientDocumentType,
+    documentNumber: '',
+    notes: '',
+  })
+  const [isSavingNewClient, setIsSavingNewClient] = useState(false)
+  const [newClientError, setNewClientError] = useState('')
+  const [showClientLimitModal, setShowClientLimitModal] = useState(false)
 
   const [formData, setFormData] = useState({
     client_id: '',
@@ -387,6 +406,59 @@ export function ReservationModal({
         (c.document_number && c.document_number.toLowerCase().includes(q))
     )
   })()
+  // Same default-by-country logic as clients/page.tsx's own form.
+  const defaultDocumentType: ClientDocumentType = currentBusiness?.country === 'US' ? 'ein' : 'dni'
+  const documentTypeLabels: Record<ClientDocumentType, string> = {
+    dni: t.clients.documentTypeDni,
+    ruc: t.clients.documentTypeRuc,
+    ein: t.clients.documentTypeEin,
+    passport: t.clients.documentTypePassport,
+    other: t.clients.documentTypeOther,
+  }
+
+  // Quick-add from the client combobox - same fields as the full form on
+  // clients/page.tsx (name, email, phone, document, notes), just reachable
+  // without leaving the reservation.
+  const handleCreateInlineClient = async () => {
+    if (!currentBusiness || !newClientForm.name.trim() || isSavingNewClient) return
+    setIsSavingNewClient(true)
+    setNewClientError('')
+    try {
+      const { data, error } = await supabase
+        .from('clients')
+        .insert({
+          name: newClientForm.name.trim(),
+          email: newClientForm.email.trim() || null,
+          phone: newClientForm.phone.trim() || null,
+          document_type: newClientForm.documentNumber.trim() ? newClientForm.documentType : null,
+          document_number: newClientForm.documentNumber.trim() || null,
+          notes: newClientForm.notes.trim() || null,
+          business_id: currentBusiness.id,
+        })
+        .select('id')
+        .single()
+      if (error) throw error
+      await refetchClients()
+      setFormData((prev) => ({ ...prev, client_id: data.id }))
+      setIsAddingClient(false)
+      setNewClientForm({ name: '', email: '', phone: '', documentType: defaultDocumentType, documentNumber: '', notes: '' })
+      setClientComboOpen(false)
+      setClientSearch('')
+    } catch (err: any) {
+      console.error('[iplanit] Error creating client inline:', err)
+      // PLN02 = free-plan client limit trigger (scripts/048/052).
+      if (err?.code === 'PLN02') {
+        setIsAddingClient(false)
+        setClientComboOpen(false)
+        setShowClientLimitModal(true)
+      } else {
+        setNewClientError(t.saveError)
+      }
+    } finally {
+      setIsSavingNewClient(false)
+    }
+  }
+
   const selectedServiceDurationOptions = serviceDurationOptions.filter((o) => o.service_id === formData.service_id)
   const selectedDurationOption = selectedServiceDurationOptions.find((o) => o.id === formData.duration_option_id)
   // Effective duration: a visit's duration always comes from
@@ -1180,7 +1252,11 @@ export function ReservationModal({
                 open={clientComboOpen}
                 onOpenChange={(open) => {
                   setClientComboOpen(open)
-                  if (!open) setClientSearch('')
+                  if (!open) {
+                    setClientSearch('')
+                    setIsAddingClient(false)
+                    setNewClientError('')
+                  }
                 }}
               >
                 <PopoverTrigger asChild>
@@ -1206,44 +1282,176 @@ export function ReservationModal({
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                  <Command shouldFilter={false}>
-                    <CommandInput
-                      placeholder={t.reservation.searchClientPlaceholder}
-                      value={clientSearch}
-                      onValueChange={setClientSearch}
-                    />
-                    <CommandList>
-                      <CommandEmpty>
-                        {activeClients.length === 0 ? t.reservation.noClients : t.reservation.noClientsFound}
-                      </CommandEmpty>
-                      <CommandGroup>
-                        {clientSearchResults.map((client) => (
+                  {isAddingClient ? (
+                    <div className="max-h-[70vh] space-y-3 overflow-y-auto p-4">
+                      <div className="flex items-center gap-2">
+                        <UserPlus className="h-4 w-4 text-primary" />
+                        <p className="text-sm font-semibold">{t.reservation.addNewClientTitle}</p>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label htmlFor="new-client-name" className="text-xs">{t.clients.fullName}</Label>
+                        <Input
+                          id="new-client-name"
+                          autoFocus
+                          placeholder={t.clients.namePlaceholder}
+                          value={newClientForm.name}
+                          onChange={(e) => setNewClientForm({ ...newClientForm, name: e.target.value })}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="new-client-email" className="text-xs">{t.clients.emailLabel}</Label>
+                          <Input
+                            id="new-client-email"
+                            type="email"
+                            placeholder={t.clients.emailPlaceholder}
+                            value={newClientForm.email}
+                            onChange={(e) => setNewClientForm({ ...newClientForm, email: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="new-client-phone" className="text-xs">{t.clients.phoneLabel}</Label>
+                          <Input
+                            id="new-client-phone"
+                            type="tel"
+                            placeholder={t.clients.phonePlaceholder}
+                            value={newClientForm.phone}
+                            onChange={(e) => setNewClientForm({ ...newClientForm, phone: e.target.value })}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="new-client-doc-type" className="text-xs">{t.clients.documentTypeLabel}</Label>
+                          <Select
+                            value={newClientForm.documentType}
+                            onValueChange={(value: ClientDocumentType) =>
+                              setNewClientForm({ ...newClientForm, documentType: value })
+                            }
+                          >
+                            <SelectTrigger id="new-client-doc-type">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {DOCUMENT_TYPES.map((type) => (
+                                <SelectItem key={type} value={type}>
+                                  {documentTypeLabels[type]}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="new-client-doc-number" className="text-xs">{t.clients.documentNumberLabel}</Label>
+                          <Input
+                            id="new-client-doc-number"
+                            maxLength={30}
+                            value={newClientForm.documentNumber}
+                            onChange={(e) => setNewClientForm({ ...newClientForm, documentNumber: e.target.value })}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label htmlFor="new-client-notes" className="text-xs">{t.clients.notesLabel}</Label>
+                        <Textarea
+                          id="new-client-notes"
+                          rows={2}
+                          placeholder={t.clients.notesPlaceholder}
+                          value={newClientForm.notes}
+                          onChange={(e) => setNewClientForm({ ...newClientForm, notes: e.target.value })}
+                        />
+                      </div>
+
+                      {newClientError && <p className="text-xs text-destructive">{newClientError}</p>}
+
+                      <div className="flex justify-end gap-2 border-t pt-3">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setIsAddingClient(false)
+                            setNewClientError('')
+                          }}
+                        >
+                          {t.services.cancelBtn}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={handleCreateInlineClient}
+                          disabled={isSavingNewClient || !newClientForm.name.trim()}
+                        >
+                          {isSavingNewClient && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+                          {t.reservation.addNewClientSave}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Command shouldFilter={false}>
+                      <CommandInput
+                        placeholder={t.reservation.searchClientPlaceholder}
+                        value={clientSearch}
+                        onValueChange={setClientSearch}
+                      />
+                      <CommandList>
+                        {clientSearchResults.length === 0 && (
+                          <p className="px-2 py-3 text-center text-sm text-muted-foreground">
+                            {activeClients.length === 0 ? t.reservation.noClients : t.reservation.noClientsFound}
+                          </p>
+                        )}
+                        <CommandGroup>
+                          {clientSearchResults.map((client) => (
+                            <CommandItem
+                              key={client.id}
+                              value={client.id}
+                              onSelect={() => {
+                                setFormData({ ...formData, client_id: client.id })
+                                setClientComboOpen(false)
+                                setClientSearch('')
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  'h-4 w-4 shrink-0',
+                                  formData.client_id === client.id ? 'opacity-100' : 'opacity-0'
+                                )}
+                              />
+                              <div className="flex min-w-0 flex-col">
+                                <span className="truncate font-medium">{client.name}</span>
+                                {client.email && (
+                                  <span className="truncate text-xs text-muted-foreground">{client.email}</span>
+                                )}
+                              </div>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                        <CommandGroup>
                           <CommandItem
-                            key={client.id}
-                            value={client.id}
                             onSelect={() => {
-                              setFormData({ ...formData, client_id: client.id })
-                              setClientComboOpen(false)
-                              setClientSearch('')
+                              setNewClientForm({
+                                name: clientSearch.trim(),
+                                email: '',
+                                phone: '',
+                                documentType: defaultDocumentType,
+                                documentNumber: '',
+                                notes: '',
+                              })
+                              setNewClientError('')
+                              setIsAddingClient(true)
                             }}
                           >
-                            <Check
-                              className={cn(
-                                'h-4 w-4 shrink-0',
-                                formData.client_id === client.id ? 'opacity-100' : 'opacity-0'
-                              )}
-                            />
-                            <div className="flex min-w-0 flex-col">
-                              <span className="truncate font-medium">{client.name}</span>
-                              {client.email && (
-                                <span className="truncate text-xs text-muted-foreground">{client.email}</span>
-                              )}
-                            </div>
+                            <UserPlus className="h-4 w-4 shrink-0" />
+                            {t.reservation.addNewClientOption}
                           </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  )}
                 </PopoverContent>
               </Popover>
             </div>
@@ -1698,6 +1906,12 @@ export function ReservationModal({
       isOpen={showUpgradeModal}
       onClose={() => setShowUpgradeModal(false)}
       feature={t.reservation.repeatLabel}
+      requiredPlan="pro"
+    />
+    <UpgradeModal
+      isOpen={showClientLimitModal}
+      onClose={() => setShowClientLimitModal(false)}
+      feature={t.upgradeModal.featureUnlimitedRecordsTitle}
       requiredPlan="pro"
     />
     <AlertDialog open={cancelConfirmType !== null} onOpenChange={(open) => !open && setCancelConfirmType(null)}>

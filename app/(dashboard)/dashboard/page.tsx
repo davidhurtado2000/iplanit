@@ -171,6 +171,7 @@ export default function DashboardPage() {
       {/* Onboarding Banner */}
       <OnboardingBanner
         hasBusiness={!!currentBusiness}
+        hasResources={resourcesCount > 0}
         hasServices={servicesCount > 0}
         hasClients={clientsCount > 0}
         hasReservations={reservations.length > 0}

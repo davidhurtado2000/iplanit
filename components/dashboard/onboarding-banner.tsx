@@ -13,11 +13,13 @@ import {
   CheckCircle2,
   ArrowRight,
   Sparkles,
+  Wrench,
 } from 'lucide-react'
 import { useLanguage } from '@/context/language-context'
 
 interface OnboardingBannerProps {
   hasBusiness: boolean
+  hasResources: boolean
   hasServices: boolean
   hasClients: boolean
   hasReservations: boolean
@@ -25,6 +27,7 @@ interface OnboardingBannerProps {
 
 export function OnboardingBanner({
   hasBusiness,
+  hasResources,
   hasServices,
   hasClients,
   hasReservations,
@@ -44,6 +47,14 @@ export function OnboardingBanner({
       icon: Building2,
       href: '/dashboard/settings',
       completed: hasBusiness,
+    },
+    {
+      id: 'resources',
+      title: t.onboarding.steps.resources.title,
+      description: t.onboarding.steps.resources.desc,
+      icon: Wrench,
+      href: '/dashboard/resources',
+      completed: hasResources,
     },
     {
       id: 'services',
@@ -133,7 +144,7 @@ export function OnboardingBanner({
         </div>
 
         {/* Steps */}
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {steps.map((step) => (
             <Link
               key={step.id}

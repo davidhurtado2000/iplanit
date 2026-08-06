@@ -2,7 +2,7 @@
 
 import React from "react"
 
-import { useState } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -14,6 +14,13 @@ import { Switch } from '@/components/ui/switch'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -96,7 +103,7 @@ const SERVICE_COLORS = [
 ]
 
 export default function ServicesPage() {
-  const { currentBusiness } = useBusinesses()
+  const { currentBusiness, businesses } = useBusinesses()
   const { t } = useLanguage()
   const {
     services,
@@ -125,6 +132,25 @@ export default function ServicesPage() {
   const [saveError, setSaveError] = useState('')
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const supabase = createClient()
+
+  // Services are per-sede by design (no organization_id, unlike clients) -
+  // when the account has multiple sedes, a service can be created directly
+  // into any of them (see targetBusinessId below), which is what makes
+  // "duplicate into another sede" possible without retyping everything.
+  const orgBusinessIds = useMemo(
+    () => businesses.filter((b) => b.organization_id === currentBusiness?.organization_id).map((b) => b.id),
+    [businesses, currentBusiness?.organization_id]
+  )
+  const hasMultipleSedes = orgBusinessIds.length > 1
+  const businessNameById = useMemo(
+    () => Object.fromEntries(businesses.filter((b) => orgBusinessIds.includes(b.id)).map((b) => [b.id, b.name])),
+    [businesses, orgBusinessIds]
+  )
+  // Only meaningful while creating (editingService === null) - an existing
+  // service never changes sede via this modal, so it always tracks
+  // currentBusiness.id there. Defaults to the current business for both a
+  // plain "new service" and a same-sede duplicate.
+  const [targetBusinessId, setTargetBusinessId] = useState<string>('')
 
   const handleNewServiceClick = async () => {
     if (currentBusiness && (await isPlanLimitReached(currentBusiness.id, 'services'))) {
@@ -227,6 +253,7 @@ export default function ServicesPage() {
 
   const handleOpenServiceModal = (service?: Service) => {
     setDurationOptionsError('')
+    setTargetBusinessId(currentBusiness?.id || '')
     let nextForm: typeof serviceForm
     let nextDurationOptions: DurationOptionForm[]
     let nextResourceIds: string[]
@@ -294,6 +321,7 @@ export default function ServicesPage() {
   const handleDuplicateService = (service: Service) => {
     setDurationOptionsError('')
     setEditingService(null)
+    setTargetBusinessId(currentBusiness?.id || '')
     const nextForm: typeof serviceForm = {
       name: `${service.name}${t.services.duplicateSuffix}`,
       description: service.description || '',
@@ -328,6 +356,16 @@ export default function ServicesPage() {
     setSaveError('')
     setIsServiceModalOpen(true)
   }
+
+  // Resource links only ever come from the CURRENT business's own resources
+  // (useDashboardData() only loads that business's data) - if the target
+  // sede is switched away from it, those picks would silently point at the
+  // wrong sede's rooms/staff, so they're cleared and re-picked there instead.
+  useEffect(() => {
+    if (targetBusinessId && currentBusiness && targetBusinessId !== currentBusiness.id) {
+      setSelectedResourceIds([])
+    }
+  }, [targetBusinessId, currentBusiness])
 
   const hasUnsavedChanges =
     isServiceModalOpen &&
@@ -421,10 +459,12 @@ export default function ServicesPage() {
         max_hours: serviceForm.pricingMode === 'hourly' && serviceForm.maxHours !== '' ? serviceForm.maxHours : null,
         buffer_before_min: serviceForm.bufferBeforeMin !== '' ? serviceForm.bufferBeforeMin : 0,
         buffer_after_min: serviceForm.bufferAfterMin !== '' ? serviceForm.bufferAfterMin : 0,
-        business_id: currentBusiness.id,
       }
 
       let serviceId: string
+      // New services (including duplicates) can target any sede in the org
+      // via targetBusinessId; editing an existing one never moves its sede.
+      const insertBusinessId = targetBusinessId || currentBusiness.id
 
       if (editingService) {
         const { error } = await supabase
@@ -436,7 +476,7 @@ export default function ServicesPage() {
       } else {
         const { data, error } = await supabase
           .from('services')
-          .insert(serviceData)
+          .insert({ ...serviceData, business_id: insertBusinessId })
           .select('id')
           .single()
         if (error) throw error
@@ -454,7 +494,7 @@ export default function ServicesPage() {
         const links = selectedResourceIds.map((resource_id) => ({
           service_id: serviceId,
           resource_id,
-          business_id: currentBusiness.id,
+          business_id: insertBusinessId,
         }))
         const { error: linkError } = await supabase.from('service_resources').insert(links)
         if (linkError) throw linkError
@@ -474,7 +514,7 @@ export default function ServicesPage() {
         if (validOptions.length > 0) {
           const optionRows = validOptions.map((o) => ({
             service_id: serviceId,
-            business_id: currentBusiness.id,
+            business_id: insertBusinessId,
             duration_minutes: o.duration as number,
             price: isUSD ? null : (o.price as number),
             price_usd: isUSD ? (o.price as number) : null,
@@ -685,6 +725,26 @@ export default function ServicesPage() {
           </DialogHeader>
           <form onSubmit={handleSaveService} className="space-y-6">
             <FormSection title={t.services.sectionBasicInfo}>
+              {!editingService && hasMultipleSedes && (
+                <div className="space-y-2">
+                  <Label htmlFor="service-sede">{t.services.sedeLabel}</Label>
+                  <Select value={targetBusinessId} onValueChange={setTargetBusinessId}>
+                    <SelectTrigger id="service-sede">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {orgBusinessIds.map((id) => (
+                        <SelectItem key={id} value={id}>
+                          {businessNameById[id]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {targetBusinessId !== currentBusiness?.id && (
+                    <p className="text-xs text-muted-foreground">{t.services.sedeResourceHint}</p>
+                  )}
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="service-name">{t.services.nameLabel}</Label>
                 <Input
@@ -931,7 +991,7 @@ export default function ServicesPage() {
                 <p className="text-xs text-muted-foreground">{t.services.bufferHint}</p>
               </div>
 
-              {resources.length > 0 && (
+              {resources.length > 0 && targetBusinessId === currentBusiness?.id && (
                 <div className="space-y-2">
                   <Label>{t.services.resourcesAssociatedLabel}</Label>
                   <div className="max-h-32 space-y-1 overflow-y-auto rounded-md border p-2">

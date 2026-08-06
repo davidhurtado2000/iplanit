@@ -2,7 +2,7 @@
 
 import React from "react"
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -12,6 +12,13 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -55,6 +62,7 @@ import {
   Briefcase,
   Search,
   Loader2,
+  Copy,
 } from 'lucide-react'
 
 interface Resource {
@@ -73,7 +81,7 @@ const RESOURCE_COLORS = [
 ]
 
 export default function ResourcesPage() {
-  const { currentBusiness } = useBusinesses()
+  const { currentBusiness, businesses } = useBusinesses()
   const { t } = useLanguage()
   const {
     resources: allResources,
@@ -95,6 +103,22 @@ export default function ResourcesPage() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [saveError, setSaveError] = useState('')
   const supabase = createClient()
+
+  // Resources are per-sede by design (no organization_id) - when the
+  // account has multiple sedes, a new (or duplicated) resource can target
+  // any of them directly instead of being recreated from scratch there.
+  const orgBusinessIds = useMemo(
+    () => businesses.filter((b) => b.organization_id === currentBusiness?.organization_id).map((b) => b.id),
+    [businesses, currentBusiness?.organization_id]
+  )
+  const hasMultipleSedes = orgBusinessIds.length > 1
+  const businessNameById = useMemo(
+    () => Object.fromEntries(businesses.filter((b) => orgBusinessIds.includes(b.id)).map((b) => [b.id, b.name])),
+    [businesses, orgBusinessIds]
+  )
+  // Only meaningful while creating (editingResource === null) - editing an
+  // existing resource never moves its sede via this modal.
+  const [targetBusinessId, setTargetBusinessId] = useState<string>('')
 
   const handleNewResourceClick = async () => {
     if (currentBusiness && (await isPlanLimitReached(currentBusiness.id, 'resources'))) {
@@ -137,6 +161,7 @@ export default function ResourcesPage() {
   }
 
   const handleOpenResourceModal = (resource?: Resource) => {
+    setTargetBusinessId(currentBusiness?.id || '')
     if (resource) {
       setEditingResource(resource)
       setResourceForm({
@@ -160,6 +185,22 @@ export default function ResourcesPage() {
     setIsResourceModalOpen(true)
   }
 
+  // Prefills a NEW resource's form from an existing one (create mode, not
+  // edit) - same pattern as services' handleDuplicateService.
+  const handleDuplicateResource = (resource: Resource) => {
+    setEditingResource(null)
+    setTargetBusinessId(currentBusiness?.id || '')
+    setResourceForm({
+      name: `${resource.name}${t.services.duplicateSuffix}`,
+      description: resource.description || '',
+      type: resource.type as 'room' | 'person' | 'equipment' | 'virtual',
+      color: resource.color || RESOURCE_COLORS[0],
+      isActive: resource.is_active,
+    })
+    setSaveError('')
+    setIsResourceModalOpen(true)
+  }
+
   const handleSaveResource = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!currentBusiness) return
@@ -173,7 +214,6 @@ export default function ResourcesPage() {
         type: resourceForm.type,
         color: resourceForm.color,
         is_active: resourceForm.isActive,
-        business_id: currentBusiness.id,
       }
 
       if (editingResource) {
@@ -186,7 +226,7 @@ export default function ResourcesPage() {
       } else {
         const { error } = await supabase
           .from('resources')
-          .insert(resourceData)
+          .insert({ ...resourceData, business_id: targetBusinessId || currentBusiness.id })
 
         if (error) throw error
       }
@@ -355,6 +395,10 @@ export default function ResourcesPage() {
                             <Pencil className="mr-2 h-4 w-4" />
                             {t.services.edit}
                           </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleDuplicateResource(resource)}>
+                            <Copy className="mr-2 h-4 w-4" />
+                            {t.services.duplicate}
+                          </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() => setDeletingResource(resource)}
                             className="text-destructive"
@@ -408,6 +452,23 @@ export default function ResourcesPage() {
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSaveResource} className="space-y-4">
+            {!editingResource && hasMultipleSedes && (
+              <div className="space-y-2">
+                <Label htmlFor="resource-sede">{t.services.sedeLabel}</Label>
+                <Select value={targetBusinessId} onValueChange={setTargetBusinessId}>
+                  <SelectTrigger id="resource-sede">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {orgBusinessIds.map((id) => (
+                      <SelectItem key={id} value={id}>
+                        {businessNameById[id]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="resource-name">{t.services.nameLabel}</Label>
               <Input

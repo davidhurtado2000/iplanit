@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
@@ -44,6 +45,7 @@ import { translateAuthError, withAuthLockRetry, withTimeout, AuthTimeoutError } 
 import { getPasswordChecks, isPasswordStrongEnough } from '@/lib/password'
 import { cn } from '@/lib/utils'
 import { FREE_LIMITS, PRO_LIMITS } from '@/lib/plan-limits'
+import { sedeAbbr, sedeTint, buildBusinessColorIndex } from '@/lib/sede-colors'
 import {
   User,
   Building2,
@@ -230,20 +232,45 @@ export default function SettingsPage() {
   const isOwner = currentBusiness ? currentBusiness.role === 'owner' : true
   const plan = (authProfile?.plan ?? 'free') as 'free' | 'pro' | 'premium'
   const sedes = businesses.filter((b) => b.organization_id === currentBusiness?.organization_id)
+  const orgBusinessIds = sedes.map((s) => s.id)
+  const hasMultipleSedes = sedes.length > 1
+  const businessNameById = Object.fromEntries(sedes.map((s) => [s.id, s.name]))
+  const businessColorIndexById = buildBusinessColorIndex(orgBusinessIds)
 
-  // Team State
+  // Team State - business_id kept per row (not just id) so a multi-sede
+  // roster can be grouped by person instead of showing one row per sede.
   const [teamMembers, setTeamMembers] = useState<
-    { id: string; email: string; full_name: string | null; created_at: string; role: 'admin' | 'sales' }[]
+    { id: string; business_id: string; email: string; full_name: string | null; created_at: string; role: 'admin' | 'sales' }[]
   >([])
   const [loadingTeam, setLoadingTeam] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<'admin' | 'sales'>('admin')
+  // Which sedes to invite into - defaults to every sede in the org (the
+  // common case: "add this person everywhere"), only relevant/shown when
+  // hasMultipleSedes. Single-sede accounts always just invite into
+  // currentBusiness.id, no picker shown.
+  const [inviteBusinessIds, setInviteBusinessIds] = useState<string[]>([])
   const [inviteError, setInviteError] = useState('')
   const [inviteSuccess, setInviteSuccess] = useState('')
   const [isInviting, setIsInviting] = useState(false)
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null)
   const [updatingRoleId, setUpdatingRoleId] = useState<string | null>(null)
-  const atSeatCap = plan === 'pro' && teamMembers.length >= 2
+  // Seat cap is per-business (Pro = 2 seats/sede) - only block the whole
+  // form when every currently-targeted sede is already at cap.
+  const seatCountByBusiness = teamMembers.reduce<Record<string, number>>((acc, m) => {
+    acc[m.business_id] = (acc[m.business_id] || 0) + 1
+    return acc
+  }, {})
+  const targetBusinessIds = hasMultipleSedes ? inviteBusinessIds : currentBusiness ? [currentBusiness.id] : []
+  const atSeatCap =
+    plan === 'pro' &&
+    targetBusinessIds.length > 0 &&
+    targetBusinessIds.every((id) => (seatCountByBusiness[id] || 0) >= 2)
+
+  useEffect(() => {
+    setInviteBusinessIds(orgBusinessIds)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentBusiness?.organization_id])
 
   // DAYS computed from translations so they update when language changes
   const DAYS: { value: DayOfWeek; label: string }[] = [
@@ -346,62 +373,90 @@ export default function SettingsPage() {
   }, [authProfile, user, currentBusiness])
 
   // Team roster - only the owner can see the full list (RLS), so staff
-  // never triggers this fetch since they never see the Team tab.
+  // never triggers this fetch since they never see the Team tab. Fetches
+  // across every sede in the org (not just currentBusiness) when the
+  // account has more than one, so the roster can group a person's
+  // memberships instead of only showing whichever sede is active.
+  const refetchTeam = async () => {
+    if (!currentBusiness || !isOwner) return
+    setLoadingTeam(true)
+    const { data } = await supabase
+      .from('business_members')
+      .select('id, business_id, email, full_name, created_at, role')
+      .in('business_id', hasMultipleSedes ? orgBusinessIds : [currentBusiness.id])
+      .order('created_at', { ascending: true })
+    setTeamMembers(data || [])
+    setLoadingTeam(false)
+  }
+
   useEffect(() => {
     if (!currentBusiness || !isOwner) {
       setTeamMembers([])
       return
     }
-    const loadTeam = async () => {
-      setLoadingTeam(true)
-      const { data } = await supabase
-        .from('business_members')
-        .select('id, email, full_name, created_at, role')
-        .eq('business_id', currentBusiness.id)
-        .order('created_at', { ascending: true })
-      setTeamMembers(data || [])
-      setLoadingTeam(false)
-    }
-    loadTeam()
-  }, [currentBusiness?.id, isOwner])
+    refetchTeam()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentBusiness?.id, currentBusiness?.organization_id, isOwner, hasMultipleSedes])
 
   const handleInvite = async (e: FormEvent) => {
     e.preventDefault()
     if (!currentBusiness || !inviteEmail.trim()) return
+    const targets = hasMultipleSedes ? inviteBusinessIds : [currentBusiness.id]
+    if (targets.length === 0) return
 
     setIsInviting(true)
     setInviteError('')
     setInviteSuccess('')
     try {
-      const { data, error } = await supabase.rpc('add_business_staff', {
-        p_business_id: currentBusiness.id,
-        p_email: inviteEmail.trim(),
-        p_role: inviteRole,
-      })
-      if (error) throw error
+      // Each sede's membership/seat-cap is independent (add_business_staff,
+      // scripts/052) - looping is a series of independent operations, not
+      // one atomic transaction, so a cap hit on one sede doesn't roll back
+      // a success on another.
+      const results = await Promise.all(
+        targets.map(async (businessId) => {
+          const { data, error } = await supabase.rpc('add_business_staff', {
+            p_business_id: businessId,
+            p_email: inviteEmail.trim(),
+            p_role: inviteRole,
+          })
+          if (error) return { businessId, error: 'errorGeneric' as const }
+          const result = data as { success?: boolean; error?: string; name?: string; email?: string }
+          if (result.error) {
+            const key = (
+              {
+                user_not_found: 'errorNotFound',
+                plan_required: 'errorPlanRequired',
+                seat_limit_reached: 'errorSeatLimit',
+                is_owner: 'errorIsOwner',
+              } as const
+            )[result.error] ?? 'errorGeneric'
+            return { businessId, error: key, name: result.name }
+          }
+          return { businessId, name: result.name || result.email }
+        })
+      )
 
-      const result = data as { success?: boolean; error?: string; name?: string; email?: string }
-      if (result.error) {
-        const key = (
-          {
-            user_not_found: 'errorNotFound',
-            plan_required: 'errorPlanRequired',
-            seat_limit_reached: 'errorSeatLimit',
-            is_owner: 'errorIsOwner',
-          } as const
-        )[result.error] ?? 'errorGeneric'
-        setInviteError(t.settings.team[key])
-        return
+      const succeeded = results.filter((r) => !r.error)
+      const failed = results.filter((r) => r.error)
+
+      if (succeeded.length > 0) {
+        const name = succeeded[0].name || inviteEmail.trim()
+        const sedeNames = succeeded.map((r) => businessNameById[r.businessId]).join(', ')
+        setInviteSuccess(
+          hasMultipleSedes
+            ? t.settings.team.addedToSedes.replace('{name}', name).replace('{sedes}', sedeNames)
+            : t.settings.team.added.replace('{name}', name)
+        )
+        setInviteEmail('')
+      }
+      if (failed.length > 0) {
+        const failedText = failed
+          .map((r) => `${businessNameById[r.businessId]}: ${t.settings.team[r.error as keyof typeof t.settings.team]}`)
+          .join(' · ')
+        setInviteError(succeeded.length > 0 ? failedText : (t.settings.team[failed[0].error as keyof typeof t.settings.team] as string))
       }
 
-      setInviteSuccess(t.settings.team.added.replace('{name}', result.name || result.email || ''))
-      setInviteEmail('')
-      const { data: refreshed } = await supabase
-        .from('business_members')
-        .select('id, email, full_name, created_at, role')
-        .eq('business_id', currentBusiness.id)
-        .order('created_at', { ascending: true })
-      setTeamMembers(refreshed || [])
+      if (succeeded.length > 0) await refetchTeam()
     } catch (err) {
       console.error('[v0] Error inviting team member:', err)
       setInviteError(t.settings.team.errorGeneric)
@@ -422,6 +477,36 @@ export default function SettingsPage() {
       setRemovingMemberId(null)
     }
   }
+
+  // Removes every sede-membership row for this person in one go ("quitar de
+  // todas las sedes") instead of clicking remove once per row.
+  const handleRemoveMemberFromAllSedes = async (memberIds: string[]) => {
+    setRemovingMemberId(memberIds[0])
+    try {
+      const { error } = await supabase.from('business_members').delete().in('id', memberIds)
+      if (error) throw error
+      setTeamMembers((prev) => prev.filter((m) => !memberIds.includes(m.id)))
+    } catch (err) {
+      console.error('[v0] Error removing team member from all sedes:', err)
+    } finally {
+      setRemovingMemberId(null)
+    }
+  }
+
+  // Groups the (possibly org-wide) flat membership rows by person, so a
+  // staffer added to 3 sedes renders as one roster entry with 3 sede
+  // badges instead of 3 duplicate-looking rows.
+  const groupedTeamMembers = Object.values(
+    teamMembers.reduce<Record<string, { email: string; full_name: string | null; earliest: string; entries: typeof teamMembers }>>(
+      (acc, m) => {
+        if (!acc[m.email]) acc[m.email] = { email: m.email, full_name: m.full_name, earliest: m.created_at, entries: [] }
+        acc[m.email].entries.push(m)
+        if (m.created_at < acc[m.email].earliest) acc[m.email].earliest = m.created_at
+        return acc
+      },
+      {}
+    )
+  ).sort((a, b) => a.earliest.localeCompare(b.earliest))
 
   const handleChangeRole = async (memberId: string, role: 'admin' | 'sales') => {
     setUpdatingRoleId(memberId)
@@ -1860,38 +1945,69 @@ export default function SettingsPage() {
                 <CardDescription>{t.settings.team.desc}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                {plan === 'pro' && (
+                {plan === 'pro' && currentBusiness && (
                   <p className="text-xs font-medium text-muted-foreground">
-                    {t.settings.team.seatsUsedLabel.replace('{used}', String(teamMembers.length))}
+                    {t.settings.team.seatsUsedLabel.replace('{used}', String(seatCountByBusiness[currentBusiness.id] || 0))}
                   </p>
                 )}
-                <form onSubmit={handleInvite} className="flex flex-col gap-2 sm:flex-row">
-                  <div className="flex-1 space-y-2">
-                    <Label htmlFor="invite-email" className="sr-only">
-                      {t.settings.team.emailLabel}
-                    </Label>
-                    <Input
-                      id="invite-email"
-                      type="email"
-                      value={inviteEmail}
-                      onChange={(e) => setInviteEmail(e.target.value)}
-                      placeholder={t.settings.team.emailPlaceholder}
-                      disabled={isInviting || atSeatCap}
-                    />
+                <form onSubmit={handleInvite} className="space-y-3">
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <div className="flex-1 space-y-2">
+                      <Label htmlFor="invite-email" className="sr-only">
+                        {t.settings.team.emailLabel}
+                      </Label>
+                      <Input
+                        id="invite-email"
+                        type="email"
+                        value={inviteEmail}
+                        onChange={(e) => setInviteEmail(e.target.value)}
+                        placeholder={t.settings.team.emailPlaceholder}
+                        disabled={isInviting || atSeatCap}
+                      />
+                    </div>
+                    <Select value={inviteRole} onValueChange={(v: 'admin' | 'sales') => setInviteRole(v)} disabled={isInviting || atSeatCap}>
+                      <SelectTrigger className="sm:w-[180px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="admin">{t.settings.team.roleAdmin}</SelectItem>
+                        <SelectItem value="sales">{t.settings.team.roleSales}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button type="submit" disabled={isInviting || atSeatCap || !inviteEmail.trim() || (hasMultipleSedes && inviteBusinessIds.length === 0)} className="gap-2">
+                      {isInviting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                      {t.settings.team.addBtn}
+                    </Button>
                   </div>
-                  <Select value={inviteRole} onValueChange={(v: 'admin' | 'sales') => setInviteRole(v)} disabled={isInviting || atSeatCap}>
-                    <SelectTrigger className="sm:w-[180px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="admin">{t.settings.team.roleAdmin}</SelectItem>
-                      <SelectItem value="sales">{t.settings.team.roleSales}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button type="submit" disabled={isInviting || atSeatCap || !inviteEmail.trim()} className="gap-2">
-                    {isInviting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                    {t.settings.team.addBtn}
-                  </Button>
+                  {hasMultipleSedes && (
+                    <div className="space-y-1.5 rounded-lg border p-3">
+                      <label className="flex items-center gap-2 text-sm font-medium">
+                        <Checkbox
+                          checked={inviteBusinessIds.length === orgBusinessIds.length}
+                          onCheckedChange={(checked) =>
+                            setInviteBusinessIds(checked === true ? orgBusinessIds : [])
+                          }
+                        />
+                        {t.settings.team.allSedesLabel}
+                      </label>
+                      <div className="flex flex-wrap gap-3 pl-6">
+                        {sedes.map((s) => (
+                          <label key={s.id} className="flex items-center gap-1.5 text-sm">
+                            <Checkbox
+                              checked={inviteBusinessIds.includes(s.id)}
+                              onCheckedChange={(checked) =>
+                                setInviteBusinessIds((prev) =>
+                                  checked === true ? [...prev, s.id] : prev.filter((id) => id !== s.id)
+                                )
+                              }
+                            />
+                            {s.name}
+                          </label>
+                        ))}
+                      </div>
+                      <p className="pl-6 text-xs text-muted-foreground">{t.settings.team.allSedesHint}</p>
+                    </div>
+                  )}
                 </form>
                 <p className="text-xs text-muted-foreground">
                   {inviteRole === 'admin' ? t.settings.team.roleAdminDesc : t.settings.team.roleSalesDesc}
@@ -1919,57 +2035,85 @@ export default function SettingsPage() {
                   <div className="flex justify-center py-6">
                     <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                   </div>
-                ) : teamMembers.length === 0 ? (
+                ) : groupedTeamMembers.length === 0 ? (
                   <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
                     <Users className="h-8 w-8 text-muted-foreground/40" />
                     <p className="text-sm text-muted-foreground">{t.settings.team.empty}</p>
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {teamMembers.map((member) => (
-                      <div
-                        key={member.id}
-                        className="flex items-center justify-between gap-3 rounded-lg border p-3"
-                      >
-                        <div className="flex items-center gap-3 overflow-hidden">
-                          <Avatar className="h-9 w-9">
-                            <AvatarFallback>
-                              {(member.full_name || member.email)[0]?.toUpperCase()}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="overflow-hidden">
-                            <p className="truncate text-sm font-medium">
-                              {member.full_name || member.email}
-                            </p>
-                            <p className="truncate text-xs text-muted-foreground">{member.email}</p>
+                    {groupedTeamMembers.map((person) => (
+                      <div key={person.email} className="rounded-lg border p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3 overflow-hidden">
+                            <Avatar className="h-9 w-9">
+                              <AvatarFallback>
+                                {(person.full_name || person.email)[0]?.toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="overflow-hidden">
+                              <p className="truncate text-sm font-medium">
+                                {person.full_name || person.email}
+                              </p>
+                              <p className="truncate text-xs text-muted-foreground">{person.email}</p>
+                            </div>
                           </div>
-                        </div>
-                        <Select
-                          value={member.role}
-                          onValueChange={(v: 'admin' | 'sales') => handleChangeRole(member.id, v)}
-                          disabled={updatingRoleId === member.id}
-                        >
-                          <SelectTrigger className="w-[140px] shrink-0">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="admin">{t.settings.team.roleAdmin}</SelectItem>
-                            <SelectItem value="sales">{t.settings.team.roleSales}</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleRemoveMember(member.id)}
-                          disabled={removingMemberId === member.id}
-                          className="shrink-0 text-muted-foreground hover:text-destructive"
-                        >
-                          {removingMemberId === member.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-4 w-4" />
+                          {hasMultipleSedes && person.entries.length > 1 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleRemoveMemberFromAllSedes(person.entries.map((e) => e.id))}
+                              disabled={person.entries.some((e) => removingMemberId === e.id)}
+                              className="shrink-0 text-xs text-muted-foreground hover:text-destructive"
+                            >
+                              {t.settings.team.removeFromAllSedes}
+                            </Button>
                           )}
-                        </Button>
+                        </div>
+                        <div className="mt-2.5 space-y-1.5 pl-12">
+                          {person.entries.map((member) => (
+                            <div key={member.id} className="flex items-center gap-2">
+                              {hasMultipleSedes && (
+                                <span
+                                  className={cn(
+                                    'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold',
+                                    sedeTint(businessColorIndexById[member.business_id])?.bg,
+                                    sedeTint(businessColorIndexById[member.business_id])?.text
+                                  )}
+                                  title={businessNameById[member.business_id]}
+                                >
+                                  {sedeAbbr(businessNameById[member.business_id] || '')}
+                                </span>
+                              )}
+                              <Select
+                                value={member.role}
+                                onValueChange={(v: 'admin' | 'sales') => handleChangeRole(member.id, v)}
+                                disabled={updatingRoleId === member.id}
+                              >
+                                <SelectTrigger className="h-8 w-[130px] shrink-0 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="admin">{t.settings.team.roleAdmin}</SelectItem>
+                                  <SelectItem value="sales">{t.settings.team.roleSales}</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleRemoveMember(member.id)}
+                                disabled={removingMemberId === member.id}
+                                className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                              >
+                                {removingMemberId === member.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     ))}
                   </div>

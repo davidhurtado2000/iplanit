@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useCallback, useEffect, useMemo } from 'react'
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
@@ -21,7 +21,7 @@ import { getStatusBadgeVariant, getStatusLabel } from '@/lib/reservation-status'
 import { capitalizeFirst } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import type { CalendarView } from '@/lib/types'
-import { Plus, CalendarDays, CalendarRange, Calendar as CalendarIcon, Clock, ChevronDown, Building2, List, Eye } from 'lucide-react'
+import { Plus, CalendarDays, CalendarRange, Calendar as CalendarIcon, Clock, ChevronDown, Building2, List, Eye, Loader2 } from 'lucide-react'
 
 interface Reservation {
   id: string
@@ -129,12 +129,25 @@ export default function CalendarPage() {
     [orgBusinessIds]
   )
 
+  const [isLoadingOrgData, setIsLoadingOrgData] = useState(false)
+  // Remembers which (sedes, date range, org) the currently-loaded orgData
+  // covers, so toggling "vista expandida" off and back on re-uses it
+  // instantly instead of re-running all 4 queries every single click -
+  // that repeated round trip is what was actually making the toggle feel
+  // slow, not the sede-color rendering. orgData itself is intentionally
+  // left in place when toggled off (not cleared) - isExpanded already
+  // falls back to single-sede data via the expandedMode check, so stale
+  // cached org data sitting unused in memory is harmless.
+  const orgDataKeyRef = useRef<string | null>(null)
+
   useEffect(() => {
-    if (!expandedMode || !hasMultipleSedes || !currentBusiness || !visibleRange) {
-      setOrgData(null)
-      return
-    }
+    if (!expandedMode || !hasMultipleSedes || !currentBusiness || !visibleRange) return
+
+    const key = `${orgBusinessIds.join(',')}|${visibleRange.from.toISOString()}|${visibleRange.to.toISOString()}|${currentBusiness.organization_id}`
+    if (orgDataKeyRef.current === key) return
+
     let cancelled = false
+    setIsLoadingOrgData(true)
     ;(async () => {
       const [{ data: res }, { data: rsc }, { data: svc }, { data: cli }] = await Promise.all([
         supabase
@@ -155,6 +168,7 @@ export default function CalendarPage() {
         // sede's - Postgres/Supabase gives no ordering guarantee otherwise.
         const sortByBusiness = (a: { business_id: string }, b: { business_id: string }) =>
           orgBusinessIds.indexOf(a.business_id) - orgBusinessIds.indexOf(b.business_id)
+        orgDataKeyRef.current = key
         setOrgData({
           reservations: (res || []) as Reservation[],
           resources: ((rsc || []) as Resource[]).sort(sortByBusiness),
@@ -162,6 +176,10 @@ export default function CalendarPage() {
           clients: (cli || []) as Client[],
         })
       }
+      // Always clears, even if this particular run was cancelled (e.g. the
+      // toggle got flipped off mid-fetch) - otherwise the spinner next to
+      // the switch would stay stuck on forever with nothing to turn it off.
+      setIsLoadingOrgData(false)
     })()
     return () => {
       cancelled = true
@@ -335,6 +353,7 @@ export default function CalendarPage() {
             <label htmlFor="expanded-mode-toggle" className="cursor-pointer text-sm font-medium">
               {t.calendar.expandedModeLabel}
             </label>
+            {isLoadingOrgData && !isExpanded && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
           </div>
           {expandedMode && <p className="text-xs text-muted-foreground">{t.calendar.expandedModeHint}</p>}
         </div>

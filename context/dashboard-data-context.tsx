@@ -229,7 +229,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
           supabase
             .from('clients')
             .select('*')
-            .eq('business_id', currentBusiness.id)
+            .eq('organization_id', currentBusiness.organization_id)
             .order('name'),
           supabase
             .from('services')
@@ -422,10 +422,10 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
     const { data } = await supabase
       .from('clients')
       .select('*')
-      .eq('business_id', currentBusiness.id)
+      .eq('organization_id', currentBusiness.organization_id)
       .order('name')
     setClients(data || [])
-  }, [currentBusiness?.id])
+  }, [currentBusiness?.id, currentBusiness?.organization_id])
 
   const refetchServicesAndResources = useCallback(async () => {
     if (!currentBusiness) return
