@@ -46,12 +46,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useBusinesses } from '@/hooks/use-businesses'
+import { useDuplicateSiblings } from '@/hooks/use-duplicate-siblings'
 import { useLanguage } from '@/context/language-context'
 import { useDashboardData, type ServiceResource, type ServiceDurationOption } from '@/context/dashboard-data-context'
 import { createClient } from '@/lib/supabase/client'
 import { getResourceTypeLabel } from '@/lib/resource-display'
 import { isPlanLimitReached } from '@/lib/plan-limits'
 import { UpgradeModal } from '@/components/upgrade-modal'
+import { sedeAbbr, sedeTint, buildBusinessColorIndex } from '@/lib/sede-colors'
 import { FormSection } from '@/components/dashboard/form-section'
 import { DurationInput } from '@/components/dashboard/duration-input'
 import { formatDuration } from '@/lib/duration'
@@ -87,6 +89,7 @@ interface Service {
   buffer_before_min: number
   buffer_after_min: number
   is_active: boolean
+  duplicate_group_id: string | null
 }
 
 // One row of the flexible-duration editor - price/priceUsd is whichever
@@ -146,11 +149,20 @@ export default function ServicesPage() {
     () => Object.fromEntries(businesses.filter((b) => orgBusinessIds.includes(b.id)).map((b) => [b.id, b.name])),
     [businesses, orgBusinessIds]
   )
+  const businessColorIndexById = useMemo(() => buildBusinessColorIndex(orgBusinessIds), [orgBusinessIds])
+  // "Tambien en Sede X" (scripts/054) - which other sedes share a service's
+  // duplicate_group_id, so a duplicated offering doesn't look like an
+  // unrelated coincidence once it's living in more than one sede.
+  const duplicateSiblings = useDuplicateSiblings('services', services, orgBusinessIds, currentBusiness?.id, hasMultipleSedes)
   // Only meaningful while creating (editingService === null) - an existing
   // service never changes sede via this modal, so it always tracks
   // currentBusiness.id there. Defaults to the current business for both a
   // plain "new service" and a same-sede duplicate.
   const [targetBusinessId, setTargetBusinessId] = useState<string>('')
+  // Set only by handleDuplicateService below - lets saveService() know this
+  // create is a duplicate, so it can assign/reuse a duplicate_group_id
+  // (scripts/054). Cleared for a plain "new service" and never set for edits.
+  const [duplicateSourceId, setDuplicateSourceId] = useState<string | null>(null)
 
   const handleNewServiceClick = async () => {
     if (currentBusiness && (await isPlanLimitReached(currentBusiness.id, 'services'))) {
@@ -254,6 +266,7 @@ export default function ServicesPage() {
   const handleOpenServiceModal = (service?: Service) => {
     setDurationOptionsError('')
     setTargetBusinessId(currentBusiness?.id || '')
+    setDuplicateSourceId(null)
     let nextForm: typeof serviceForm
     let nextDurationOptions: DurationOptionForm[]
     let nextResourceIds: string[]
@@ -322,6 +335,7 @@ export default function ServicesPage() {
     setDurationOptionsError('')
     setEditingService(null)
     setTargetBusinessId(currentBusiness?.id || '')
+    setDuplicateSourceId(service.id)
     const nextForm: typeof serviceForm = {
       name: `${service.name}${t.services.duplicateSuffix}`,
       description: service.description || '',
@@ -473,10 +487,37 @@ export default function ServicesPage() {
           .eq('id', editingService.id)
         if (error) throw error
         serviceId = editingService.id
+
+        // Name/description/color are the shared "identity" of a service
+        // that's offered at more than one sede (scripts/054's
+        // duplicate_group_id) - keep every sibling in sync so it reads as
+        // ONE service everywhere, while price/duration/resources/buffers
+        // stay genuinely independent per sede (different rent/staff cost
+        // per location is a real scenario, not something to force-merge).
+        if (editingService.duplicate_group_id) {
+          await supabase
+            .from('services')
+            .update({ name: serviceData.name, description: serviceData.description, color: serviceData.color })
+            .eq('duplicate_group_id', editingService.duplicate_group_id)
+            .neq('id', editingService.id)
+        }
       } else {
+        // Duplicate tracking (scripts/054) - reuse the source's existing
+        // group if it's already part of one (a service can be duplicated
+        // more than once, into more than one sede), otherwise this is the
+        // first duplication ever for that source, so a new group is minted
+        // and retroactively stamped onto the source too.
+        let duplicateGroupId: string | undefined
+        if (duplicateSourceId) {
+          const source = services.find((s) => s.id === duplicateSourceId)
+          duplicateGroupId = source?.duplicate_group_id || crypto.randomUUID()
+          if (source && !source.duplicate_group_id) {
+            await supabase.from('services').update({ duplicate_group_id: duplicateGroupId }).eq('id', duplicateSourceId)
+          }
+        }
         const { data, error } = await supabase
           .from('services')
-          .insert({ ...serviceData, business_id: insertBusinessId })
+          .insert({ ...serviceData, business_id: insertBusinessId, duplicate_group_id: duplicateGroupId ?? null })
           .select('id')
           .single()
         if (error) throw error
@@ -526,6 +567,7 @@ export default function ServicesPage() {
 
       await Promise.all([refetchServicesAndResources(), refetchServiceResources(), refetchServiceDurationOptions()])
       setIsServiceModalOpen(false)
+      setDuplicateSourceId(null)
     } catch (err: any) {
       console.error('[v0] Error saving service:', err)
       // PLN03 = free-plan service limit trigger (scripts/048) - only
@@ -658,6 +700,24 @@ export default function ServicesPage() {
                     {service.description && (
                       <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">{service.description}</p>
                     )}
+                    {service.duplicate_group_id && duplicateSiblings[service.duplicate_group_id]?.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                        <span className="text-[10px] text-muted-foreground">{t.services.alsoAtLabel}</span>
+                        {duplicateSiblings[service.duplicate_group_id].map((businessId) => (
+                          <span
+                            key={businessId}
+                            title={businessNameById[businessId]}
+                            className={cn(
+                              'rounded px-1 py-0.5 text-[10px] font-semibold',
+                              sedeTint(businessColorIndexById[businessId])?.bg,
+                              sedeTint(businessColorIndexById[businessId])?.text
+                            )}
+                          >
+                            {sedeAbbr(businessNameById[businessId] || '')}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -723,6 +783,11 @@ export default function ServicesPage() {
               {editingService ? t.services.editServiceDesc : t.services.newServiceDesc}
             </DialogDescription>
           </DialogHeader>
+          {editingService?.duplicate_group_id && duplicateSiblings[editingService.duplicate_group_id]?.length > 0 && (
+            <p className="-mt-2 rounded-md bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+              {t.services.syncedIdentityHint}
+            </p>
+          )}
           <form onSubmit={handleSaveService} className="space-y-6">
             <FormSection title={t.services.sectionBasicInfo}>
               {!editingService && hasMultipleSedes && (

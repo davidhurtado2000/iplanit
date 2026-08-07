@@ -70,7 +70,9 @@ import {
   Download,
   Upload,
   Check,
+  HelpCircle,
 } from 'lucide-react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { PremiumButton } from '@/components/premium-feature'
 import { HeroKpiCard } from '@/components/dashboard/hero-kpi-card'
 import { UpgradeModal } from '@/components/upgrade-modal'
@@ -711,14 +713,49 @@ export default function ClientsPage() {
       </div>
 
       {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder={t.clients.search}
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-9"
-        />
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative max-w-sm flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder={t.clients.search}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        {hasMultipleSedes && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className="flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
+              >
+                <HelpCircle className="h-3.5 w-3.5 shrink-0" />
+                {t.clients.sedeLegendButton}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-64">
+              <p className="mb-1 text-sm font-semibold text-foreground">{t.clients.sedeLegendTitle}</p>
+              <p className="mb-2.5 text-xs text-muted-foreground">{t.clients.sedeLegendDesc}</p>
+              <div className="space-y-1.5">
+                {orgBusinessIds.map((id) => (
+                  <div key={id} className="flex items-center gap-2 text-xs text-foreground">
+                    <span
+                      className={cn(
+                        'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold',
+                        sedeTint(businessColorIndexById[id])?.bg,
+                        sedeTint(businessColorIndexById[id])?.text
+                      )}
+                    >
+                      {sedeAbbr(businessNameById[id] || '')}
+                    </span>
+                    <span>{businessNameById[id]}</span>
+                  </div>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        )}
       </div>
 
       {/* Clients Table - full table from sm up; a stacked card list below

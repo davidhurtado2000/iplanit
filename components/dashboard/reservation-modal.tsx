@@ -134,6 +134,18 @@ interface ReservationModalProps {
    * "the user wants to convert this visit" and lets the parent decide how
    * to reopen the modal in create mode. */
   onCreateFollowUp?: (source: { clientId: string; serviceId: string | null; reservationId: string }) => void
+  /** Only used in create mode, set when opened by clicking directly on an
+   * empty slot in the calendar grid (calendar-view.tsx's DayView) instead
+   * of the "Nueva reserva" toolbar button. */
+  prefillResourceId?: string | null
+  /** "YYYY-MM-DDTHH:MM" in business-local time, same shape as
+   * formData.start_time - the exact slot that was clicked. Deliberately
+   * NOT written to formData.start_time directly (start_time depends on a
+   * service/duration being chosen first, see availableSlots below); instead
+   * it's auto-selected the moment it turns out to be a real available slot,
+   * so a click can never create an invalid/conflicting booking - it just
+   * saves re-finding the same slot in the list. */
+  prefillStartHint?: string
 }
 
 export function ReservationModal({
@@ -148,6 +160,8 @@ export function ReservationModal({
   prefillServiceId,
   followUpOfReservationId,
   onCreateFollowUp,
+  prefillResourceId,
+  prefillStartHint,
 }: ReservationModalProps) {
   const supabase = createClient()
   const { profile } = useAuth()
@@ -319,10 +333,11 @@ export function ReservationModal({
       setFormData({
         client_id: prefillClientId || '',
         service_id: prefillServiceId || '',
-        resource_id: '',
+        resource_id: prefillResourceId || '',
         // Left empty on purpose - the slot grid below forces an explicit
         // pick instead of defaulting to a guessed time that might not even
-        // be available.
+        // be available. (prefillStartHint auto-selects it once it's
+        // confirmed available - see the effect below, not here.)
         start_time: '',
         notes: '',
         type: initialType,
@@ -341,7 +356,7 @@ export function ReservationModal({
     setRepeatDays([])
     setSessionCount(4)
     setSeriesResult(null)
-  }, [reservation, selectedDate, mode, tz, initialType, serviceDurationOptions, isUSD, services, prefillClientId, prefillServiceId])
+  }, [reservation, selectedDate, mode, tz, initialType, serviceDurationOptions, isUSD, services, prefillClientId, prefillServiceId, prefillResourceId])
 
   // Fetch how many future sessions remain in this reservation's series (if
   // any), so the view can show "quedan N sesiones" and offer to cancel them.
@@ -576,6 +591,20 @@ export function ReservationModal({
   // Distinguishes "the business doesn't open this day" from "open but fully
   // booked" - both show 0 slots, but staff need different next steps for each.
   const dayClosed = !!slotDate && isDayClosed(slotDate, businessHours, tz)
+
+  // Auto-selects the exact slot clicked on the calendar grid (see
+  // prefillStartHint above) the moment it actually shows up as available -
+  // which depends on a service (and therefore a duration) being chosen
+  // first, so this can't just be set once on open. Guarded by
+  // formData.start_time being empty so it only ever fires the first time,
+  // never overwriting a choice the user makes afterward.
+  useEffect(() => {
+    if (!prefillStartHint || formData.start_time) return
+    const isAvailable = availableSlots.some((slot) => toTzLocalInput(slot.toISOString(), tz) === prefillStartHint)
+    if (isAvailable) {
+      setFormData((prev) => ({ ...prev, start_time: prefillStartHint }))
+    }
+  }, [availableSlots, prefillStartHint, formData.start_time, tz])
 
   const resourceTypeLabel: Record<Resource['type'], string> = {
     room: t.reservation.roomType,

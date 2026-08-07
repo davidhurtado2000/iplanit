@@ -7,6 +7,7 @@ import { FeedbackWidget } from '@/components/dashboard/feedback-widget'
 import { Toaster } from '@/components/ui/sonner'
 import { BusinessProvider } from '@/context/business-context'
 import { DashboardDataProvider } from '@/context/dashboard-data-context'
+import { NotificationsProvider } from '@/context/notifications-context'
 import { cn } from '@/lib/utils'
 
 export default function DashboardLayout({
@@ -20,6 +21,7 @@ export default function DashboardLayout({
   return (
     <BusinessProvider>
     <DashboardDataProvider>
+    <NotificationsProvider>
     <div className="min-h-screen bg-background">
       {/* Desktop Sidebar - hidden on mobile */}
       <div className="hidden lg:block">
@@ -42,6 +44,7 @@ export default function DashboardLayout({
       <FeedbackWidget />
       <Toaster position="top-right" />
     </div>
+    </NotificationsProvider>
     </DashboardDataProvider>
     </BusinessProvider>
   )

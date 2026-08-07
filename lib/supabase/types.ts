@@ -210,6 +210,7 @@ export interface Database {
           buffer_before_min: number
           buffer_after_min: number
           is_active: boolean
+          duplicate_group_id: string | null
           created_at: string
           updated_at: string
         }
@@ -230,6 +231,7 @@ export interface Database {
           buffer_before_min?: number
           buffer_after_min?: number
           is_active?: boolean
+          duplicate_group_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -250,6 +252,7 @@ export interface Database {
           buffer_before_min?: number
           buffer_after_min?: number
           is_active?: boolean
+          duplicate_group_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -294,6 +297,7 @@ export interface Database {
           color: string
           description: string | null
           is_active: boolean
+          duplicate_group_id: string | null
           created_at: string
           updated_at: string
         }
@@ -305,6 +309,7 @@ export interface Database {
           color?: string
           description?: string | null
           is_active?: boolean
+          duplicate_group_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -316,6 +321,7 @@ export interface Database {
           color?: string
           description?: string | null
           is_active?: boolean
+          duplicate_group_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -437,6 +443,30 @@ export interface Database {
           notes?: string | null
           created_at?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      notifications: {
+        Row: {
+          id: string
+          business_id: string
+          type: 'new_reservation' | 'client_cancelled'
+          reservation_id: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          business_id: string
+          type: 'new_reservation' | 'client_cancelled'
+          reservation_id: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          business_id?: string
+          type?: 'new_reservation' | 'client_cancelled'
+          reservation_id?: string
+          created_at?: string
         }
         Relationships: []
       }

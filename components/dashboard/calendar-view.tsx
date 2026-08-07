@@ -11,19 +11,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ChevronLeft, ChevronRight, CalendarDays, ParkingSquare, Search, Eye, HelpCircle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CalendarOff, ParkingSquare, Search, Eye, HelpCircle } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { CalendarView } from '@/lib/types'
 import { cn, capitalizeFirst } from '@/lib/utils'
 import { useLanguage } from '@/context/language-context'
 import { getStatusBadgeVariant, getStatusLabel } from '@/lib/reservation-status'
 import { sedeAbbr, sedeTint } from '@/lib/sede-colors'
+import { isDayClosed, getDayHoursRange, type BusinessHourRow } from '@/lib/availability'
 
 // ─── Time grid constants ───────────────────────────────────────────────────
 const HOUR_HEIGHT    = 64  // px per hour
 const DEFAULT_START  = 7   // fallback 07:00
 const DEFAULT_END    = 21  // fallback 21:00
 const DEFAULT_TZ     = 'America/Lima'
+// DayView only - breathing room above the very first gridline so its hour
+// label (e.g. "07:00") isn't sitting flush against the scroll container's
+// top edge. Every top offset in DayView's hour grid (gridlines, labels,
+// reservation blocks) adds this same constant.
+const GRID_TOP_PAD   = 16
 
 // A visit's block always uses this instead of its (optional, informational
 // only) service's color - color alone is what actually reads at a glance
@@ -121,6 +127,19 @@ interface CalendarViewProps {
    * businessNameById - kept as a separate prop so the parent only decides
    * ordering/assignment, not the actual palette. */
   businessColorIndexById?: Record<string, number>
+  /** Drives DayView's per-day closed message and out-of-hours shading (see
+   * lib/availability.ts's isDayClosed/getDayHoursRange, already shared with
+   * the reservation modal's own slot picker and the public booking page, so
+   * "available" means the same thing everywhere). Undefined (not yet
+   * loaded) is treated as permissively open, same fallback used elsewhere. */
+  businessHours?: BusinessHourRow[]
+  /** DayView only - fires when the user clicks directly on an empty part of
+   * the grid (not an existing reservation block), already confirmed to be
+   * inside business hours. resourceId is null for the "no resource"
+   * fallback column; dateTimeLocal is "YYYY-MM-DDTHH:MM" in business-local
+   * time, snapped to the nearest 15 minutes. Undefined disables the
+   * click-to-create interaction entirely (no hover affordance either). */
+  onCreateAtSlot?: (resourceId: string | null, dateTimeLocal: string) => void
 }
 
 // ─── Main component ────────────────────────────────────────────────────────
@@ -139,6 +158,8 @@ export function CalendarViewComponent({
   onVisibleRangeChange,
   businessNameById,
   businessColorIndexById,
+  businessHours,
+  onCreateAtSlot,
 }: CalendarViewProps) {
   const { t, locale } = useLanguage()
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -155,8 +176,22 @@ export function CalendarViewComponent({
     let from: Date
     let to: Date
     if (view === 'day') {
+      // A single point in time (both from/to equal to currentDate) was
+      // harmless for the single-sede default fetch (dashboard-data-context
+      // already loads ±90 days and only checks "is this covered?"), but
+      // vista expandida's org-wide fetch (calendar/page.tsx) uses this
+      // range as a real gte/lte query filter - two near-identical
+      // timestamps matched almost nothing, silently dropping every
+      // reservation that day from the expanded view. Pad a day on each
+      // side (same generous-padding approach as week/month below) so it
+      // safely covers the whole day regardless of any gap between the
+      // browser's local timezone and the business's own.
       from = new Date(currentDate)
+      from.setDate(from.getDate() - 1)
+      from.setHours(0, 0, 0, 0)
       to = new Date(currentDate)
+      to.setDate(to.getDate() + 1)
+      to.setHours(23, 59, 59, 999)
     } else if (view === 'week') {
       const start = new Date(currentDate)
       const diff = start.getDate() - start.getDay() + (start.getDay() === 0 ? -6 : 1)
@@ -280,9 +315,9 @@ export function CalendarViewComponent({
           <PopoverTrigger asChild>
             <button
               type="button"
-              className="flex items-center gap-1 rounded-full border px-2 py-0.5 transition-colors hover:bg-muted hover:text-foreground"
+              className="flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
             >
-              <HelpCircle className="h-3 w-3 shrink-0" />
+              <HelpCircle className="h-3.5 w-3.5 shrink-0" />
               {t.calendar.legendButtonLabel}
             </button>
           </PopoverTrigger>
@@ -338,7 +373,7 @@ export function CalendarViewComponent({
         </Popover>
       </div>
 
-      {view === 'day'   && <DayView   date={currentDate} reservations={reservations} resources={resources} selectedResourceId={selectedResourceId} clientsMap={clientsMap} servicesMap={servicesMap} resourcesMap={resourcesMap} onSelectReservation={onSelectReservation} startHour={startHour} endHour={endHour} timezone={timezone} t={t} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
+      {view === 'day'   && <DayView   date={currentDate} reservations={reservations} resources={resources} selectedResourceId={selectedResourceId} clientsMap={clientsMap} servicesMap={servicesMap} resourcesMap={resourcesMap} onSelectReservation={onSelectReservation} startHour={startHour} endHour={endHour} timezone={timezone} t={t} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} businessHours={businessHours} onCreateAtSlot={onCreateAtSlot} />}
       {view === 'week'  && <WeekView  date={currentDate} reservations={reservations} clientsMap={clientsMap} servicesMap={servicesMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
       {view === 'month' && <MonthView date={currentDate} reservations={reservations} servicesMap={servicesMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
     </div>
@@ -349,7 +384,7 @@ export function CalendarViewComponent({
 function DayView({
   date, reservations, resources, selectedResourceId,
   clientsMap, servicesMap, resourcesMap, onSelectReservation,
-  startHour, endHour, timezone, t, businessNameById, businessColorIndexById,
+  startHour, endHour, timezone, t, businessNameById, businessColorIndexById, businessHours, onCreateAtSlot,
 }: {
   date: Date
   reservations: any[]
@@ -365,9 +400,17 @@ function DayView({
   t: ReturnType<typeof useLanguage>['t']
   businessNameById?: Record<string, string>
   businessColorIndexById?: Record<string, number>
+  businessHours?: BusinessHourRow[]
+  onCreateAtSlot?: (resourceId: string | null, dateTimeLocal: string) => void
 }) {
   // Use business timezone so "dateStr" matches the day the user sees, not UTC midnight
   const dateStr = toDateStr(date, timezone)
+
+  // Undefined businessHours (not loaded yet) is treated as "open" - same
+  // permissive fallback lib/availability.ts already uses elsewhere, so a
+  // slow network doesn't briefly flash "closed" on every date.
+  const isClosed = businessHours ? isDayClosed(dateStr, businessHours, timezone) : false
+  const dayHoursRange = businessHours ? getDayHoursRange(dateStr, businessHours, timezone) : null
 
   const dayRes = reservations.filter(
     r => toDateStr(r.start_time, timezone) === dateStr && r.status !== 'cancelled'
@@ -446,8 +489,43 @@ function DayView({
 
   const COL_WIDTH  = 160
   const GUTTER     = 48
-  const gridHeight = HOURS.length * HOUR_HEIGHT
+  const gridHeight = HOURS.length * HOUR_HEIGHT + GRID_TOP_PAD
   const totalWidth = GUTTER + columns.length * COL_WIDTH
+
+  // Shades the part of the rendered grid that falls before opening / after
+  // closing - the grid's own start/end (effStartHour/effEndHour) can be
+  // wider than this specific day's actual hours (calendar/page.tsx's
+  // startHour/endHour are a week-wide min/max across every open day, plus
+  // any out-of-range reservation - see effStartHour above), so without this
+  // a business that closes early on Saturdays would otherwise look equally
+  // bookable all evening.
+  const minutesToTop = (totalMinutes: number) => GRID_TOP_PAD + (totalMinutes - effStartHour * 60) * (HOUR_HEIGHT / 60)
+  const gridBottom = GRID_TOP_PAD + HOURS.length * HOUR_HEIGHT
+  const beforeOpenHeight = dayHoursRange ? Math.max(0, minutesToTop(dayHoursRange.openMinutes) - GRID_TOP_PAD) : 0
+  const afterCloseTop = dayHoursRange ? minutesToTop(dayHoursRange.closeMinutes) : gridBottom
+  const afterCloseHeight = dayHoursRange ? Math.max(0, gridBottom - afterCloseTop) : 0
+
+  // Click-to-create: converts the click's pixel offset back into a time,
+  // snapped to the nearest 15 minutes (same increment TimeSelect already
+  // uses). Ignores clicks that bubbled up from a child element (an existing
+  // reservation block already has its own onClick to open it - e.target
+  // !== e.currentTarget means this wasn't a direct hit on the column's own
+  // background) and clicks outside business hours (dayHoursRange), so the
+  // create modal never opens on a slot that's guaranteed unavailable. A
+  // past-time click still opens the modal, same as clicking "Nueva
+  // reserva" any other time - generateAvailableSlots (lib/availability.ts)
+  // already excludes past times from what the modal will let you pick.
+  const handleGridClick = (e: React.MouseEvent<HTMLDivElement>, colId: string | null) => {
+    if (!onCreateAtSlot || e.target !== e.currentTarget) return
+    const offsetY = e.nativeEvent.offsetY - GRID_TOP_PAD
+    if (offsetY < 0) return
+    const rawMinutes = effStartHour * 60 + (offsetY / HOUR_HEIGHT) * 60
+    const snapped = Math.round(rawMinutes / 15) * 15
+    if (dayHoursRange && (snapped < dayHoursRange.openMinutes || snapped >= dayHoursRange.closeMinutes)) return
+    const hh = String(Math.floor(snapped / 60)).padStart(2, '0')
+    const mm = String(snapped % 60).padStart(2, '0')
+    onCreateAtSlot(colId, `${dateStr}T${hh}:${mm}`)
+  }
 
   return (
     <div className="rounded-lg border bg-card">
@@ -504,13 +582,19 @@ function DayView({
             </div>
           </div>
 
-          {/* Time grid — skipped entirely when the day is empty so the
-              "no reservations" message shows right under the header instead
-              of being pushed below a tall, empty scrollable grid. */}
-          {dayRes.length === 0 ? (
+          {/* Time grid — skipped only when the business doesn't open at all
+              this day AND there's nothing already booked on it (an edge
+              case - e.g. hours changed after a booking was made - must
+              still render normally so that reservation stays visible and
+              editable, never silently hidden behind a "closed" message).
+              An open day with zero reservations still renders the
+              (possibly partially shaded) grid, both to show its actual
+              hours and so it stays clickable for creating a reservation
+              directly on it. */}
+          {isClosed && dayRes.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
-              <CalendarDays className="h-7 w-7 text-muted-foreground/30" />
-              <p className="text-sm text-muted-foreground">{t.calendar.noReservationsForDay}</p>
+              <CalendarOff className="h-7 w-7 text-muted-foreground/30" />
+              <p className="text-sm text-muted-foreground">{t.calendar.businessClosedForDay}</p>
             </div>
           ) : (
           <div className="relative flex" style={{ height: gridHeight }}>
@@ -524,7 +608,14 @@ function DayView({
                 <div
                   key={h}
                   className="absolute flex w-full items-start justify-end pr-2"
-                  style={{ top: (h - effStartHour) * HOUR_HEIGHT - 8 }}
+                  // -8 centers the label vertically on its gridline.
+                  // GRID_TOP_PAD is what keeps that from going negative for
+                  // the very first hour (which used to push it above the
+                  // grid's own top edge and out of the scroll container's
+                  // visible area, cutting it off entirely - see the
+                  // screenshot that caught this); Math.max is just a
+                  // defensive floor in case GRID_TOP_PAD is ever shrunk.
+                  style={{ top: Math.max(0, GRID_TOP_PAD + (h - effStartHour) * HOUR_HEIGHT - 8) }}
                 >
                   <span className="text-[10px] leading-none text-muted-foreground">
                     {String(h).padStart(2, '0')}:00
@@ -539,18 +630,36 @@ function DayView({
               return (
                 <div
                   key={String(col.id)}
-                  className="relative flex-shrink-0 border-r last:border-r-0"
+                  className={cn(
+                    'relative flex-shrink-0 border-r last:border-r-0',
+                    onCreateAtSlot && 'cursor-pointer hover:bg-muted/30'
+                  )}
                   style={{ width: COL_WIDTH, height: gridHeight }}
+                  onClick={(e) => handleGridClick(e, col.id)}
                 >
+                  {/* Out-of-hours shading - flat, no stripes, so it never
+                      reads as "visit" (VISIT_BLOCK_COLOR's diagonal stripe
+                      is already that signal elsewhere in this file).
+                      pointer-events-none on every decorative layer below so
+                      handleGridClick's e.target === e.currentTarget check
+                      (only fires on a direct hit on the column's own
+                      background) isn't defeated by clicking a gridline or
+                      shading div sitting on top of it. */}
+                  {beforeOpenHeight > 0 && (
+                    <div className="pointer-events-none absolute inset-x-0 bg-muted/50" style={{ top: GRID_TOP_PAD, height: beforeOpenHeight }} />
+                  )}
+                  {afterCloseHeight > 0 && (
+                    <div className="pointer-events-none absolute inset-x-0 bg-muted/50" style={{ top: afterCloseTop, height: afterCloseHeight }} />
+                  )}
                   {HOURS.map(h => (
-                    <div key={h} className="absolute w-full border-t border-border/40" style={{ top: (h - effStartHour) * HOUR_HEIGHT }} />
+                    <div key={h} className="pointer-events-none absolute w-full border-t border-border/40" style={{ top: GRID_TOP_PAD + (h - effStartHour) * HOUR_HEIGHT }} />
                   ))}
                   {HOURS.map(h => (
-                    <div key={`${h}h`} className="absolute w-full border-t border-border/20" style={{ top: (h - effStartHour) * HOUR_HEIGHT + HOUR_HEIGHT / 2 }} />
+                    <div key={`${h}h`} className="pointer-events-none absolute w-full border-t border-border/20" style={{ top: GRID_TOP_PAD + (h - effStartHour) * HOUR_HEIGHT + HOUR_HEIGHT / 2 }} />
                   ))}
 
                   {colRes.length === 0 && (
-                    <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                       <span className="text-[10px] text-muted-foreground/30 select-none">—</span>
                     </div>
                   )}
@@ -559,7 +668,7 @@ function DayView({
                     const client  = clientsMap[r.client_id]
                     const service = servicesMap[r.service_id]
                     const color   = r.type === 'visit' ? VISIT_BLOCK_COLOR : service?.color ?? '#3B82F6'
-                    const top     = topOffset(r.start_time, effStartHour, timezone)
+                    const top     = GRID_TOP_PAD + topOffset(r.start_time, effStartHour, timezone)
                     const height  = blockHeight(r.start_time, r.end_time)
                     const isShort = height < 44
                     const { h, m } = getTzHourMin(r.start_time, timezone)

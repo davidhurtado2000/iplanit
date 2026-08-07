@@ -87,6 +87,12 @@ export interface Service {
   buffer_before_min: number
   buffer_after_min: number
   is_active: boolean
+  /** Shared by every row that came from duplicating this service (within
+   * the same sede or into another one, scripts/054) - null until the first
+   * time it's ever duplicated. Every member of the family gets the SAME id
+   * (not a parent-pointer chain), so "find every relative" is one flat
+   * query regardless of which one was duplicated from which. */
+  duplicate_group_id: string | null
 }
 
 export interface ServiceDurationOption {
@@ -106,6 +112,8 @@ export interface Resource {
   type: 'room' | 'person' | 'equipment' | 'virtual' | 'parking'
   color: string
   is_active: boolean
+  /** Same duplicate-family tracking as Service.duplicate_group_id above. */
+  duplicate_group_id: string | null
 }
 
 export interface ServiceResource {

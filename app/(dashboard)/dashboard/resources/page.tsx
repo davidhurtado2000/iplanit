@@ -44,6 +44,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useBusinesses } from '@/hooks/use-businesses'
+import { useDuplicateSiblings } from '@/hooks/use-duplicate-siblings'
+import { sedeAbbr, sedeTint, buildBusinessColorIndex } from '@/lib/sede-colors'
 import { useLanguage } from '@/context/language-context'
 import { useDashboardData } from '@/context/dashboard-data-context'
 import { createClient } from '@/lib/supabase/client'
@@ -73,6 +75,7 @@ interface Resource {
   type: 'room' | 'person' | 'equipment' | 'virtual' | 'parking'
   color: string
   is_active: boolean
+  duplicate_group_id: string | null
 }
 
 const RESOURCE_COLORS = [
@@ -116,9 +119,15 @@ export default function ResourcesPage() {
     () => Object.fromEntries(businesses.filter((b) => orgBusinessIds.includes(b.id)).map((b) => [b.id, b.name])),
     [businesses, orgBusinessIds]
   )
+  const businessColorIndexById = useMemo(() => buildBusinessColorIndex(orgBusinessIds), [orgBusinessIds])
+  // "Tambien en Sede X" (scripts/054) - same pattern as services/page.tsx.
+  const duplicateSiblings = useDuplicateSiblings('resources', resources, orgBusinessIds, currentBusiness?.id, hasMultipleSedes)
   // Only meaningful while creating (editingResource === null) - editing an
   // existing resource never moves its sede via this modal.
   const [targetBusinessId, setTargetBusinessId] = useState<string>('')
+  // Set only by handleDuplicateResource below - lets handleSaveResource know
+  // this create is a duplicate, so it can assign/reuse a duplicate_group_id.
+  const [duplicateSourceId, setDuplicateSourceId] = useState<string | null>(null)
 
   const handleNewResourceClick = async () => {
     if (currentBusiness && (await isPlanLimitReached(currentBusiness.id, 'resources'))) {
@@ -162,6 +171,7 @@ export default function ResourcesPage() {
 
   const handleOpenResourceModal = (resource?: Resource) => {
     setTargetBusinessId(currentBusiness?.id || '')
+    setDuplicateSourceId(null)
     if (resource) {
       setEditingResource(resource)
       setResourceForm({
@@ -190,6 +200,7 @@ export default function ResourcesPage() {
   const handleDuplicateResource = (resource: Resource) => {
     setEditingResource(null)
     setTargetBusinessId(currentBusiness?.id || '')
+    setDuplicateSourceId(resource.id)
     setResourceForm({
       name: `${resource.name}${t.services.duplicateSuffix}`,
       description: resource.description || '',
@@ -224,14 +235,25 @@ export default function ResourcesPage() {
 
         if (error) throw error
       } else {
+        // Duplicate tracking (scripts/054) - same reuse-or-mint logic as
+        // services/page.tsx's saveService.
+        let duplicateGroupId: string | undefined
+        if (duplicateSourceId) {
+          const source = resources.find((r) => r.id === duplicateSourceId)
+          duplicateGroupId = source?.duplicate_group_id || crypto.randomUUID()
+          if (source && !source.duplicate_group_id) {
+            await supabase.from('resources').update({ duplicate_group_id: duplicateGroupId }).eq('id', duplicateSourceId)
+          }
+        }
         const { error } = await supabase
           .from('resources')
-          .insert({ ...resourceData, business_id: targetBusinessId || currentBusiness.id })
+          .insert({ ...resourceData, business_id: targetBusinessId || currentBusiness.id, duplicate_group_id: duplicateGroupId ?? null })
 
         if (error) throw error
       }
       await refetchServicesAndResources()
       setIsResourceModalOpen(false)
+      setDuplicateSourceId(null)
     } catch (err: any) {
       console.error('[v0] Error saving resource:', err)
       // PLN04 = free-plan resource limit trigger (scripts/048) - only
@@ -377,6 +399,24 @@ export default function ResourcesPage() {
                           <p className="text-xs text-muted-foreground">
                             {getResourceTypeLabel(resource.type, t.services)}
                           </p>
+                          {resource.duplicate_group_id && duplicateSiblings[resource.duplicate_group_id]?.length > 0 && (
+                            <div className="mt-1 flex flex-wrap items-center gap-1">
+                              <span className="text-[10px] text-muted-foreground">{t.services.alsoAtLabel}</span>
+                              {duplicateSiblings[resource.duplicate_group_id].map((businessId) => (
+                                <span
+                                  key={businessId}
+                                  title={businessNameById[businessId]}
+                                  className={cn(
+                                    'rounded px-1 py-0.5 text-[10px] font-semibold',
+                                    sedeTint(businessColorIndexById[businessId])?.bg,
+                                    sedeTint(businessColorIndexById[businessId])?.text
+                                  )}
+                                >
+                                  {sedeAbbr(businessNameById[businessId] || '')}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                       <DropdownMenu>

@@ -41,6 +41,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { UpgradeModal } from '@/components/upgrade-modal'
 import { PremiumBadge } from '@/components/premium-feature'
+import { NotificationBell } from '@/components/dashboard/notification-bell'
 import { useLanguage } from '@/context/language-context'
 
 interface SidebarProps {
@@ -136,7 +137,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         </button>
 
         {/* Header */}
-        <div className="flex h-16 items-center border-b border-sidebar-border px-4">
+        <div className="flex h-16 items-center justify-between border-b border-sidebar-border px-4">
           <Link href="/dashboard" className="flex items-center gap-2 overflow-hidden">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary">
               <Calendar className="h-5 w-5 text-sidebar-primary-foreground" />
@@ -145,6 +146,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
               <span className="text-lg font-bold text-sidebar-foreground">iPlanit</span>
             )}
           </Link>
+          {!isCollapsed && <NotificationBell className="text-sidebar-foreground/70 hover:text-sidebar-foreground" />}
         </div>
 
         {/* Business Info */}

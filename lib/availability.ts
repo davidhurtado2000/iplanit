@@ -34,6 +34,25 @@ function toMinutes(t: string) {
 }
 
 /**
+ * This date's open/close time (in minutes from midnight), or null when the
+ * business is closed that day or hours aren't configured yet - lets the
+ * calendar grid (calendar-view.tsx) shade hours outside the business's own
+ * range instead of only ever showing the same fixed week-wide start/end
+ * regardless of which day is open how late.
+ */
+export function getDayHoursRange(
+  dateStr: string,
+  hours: BusinessHourRow[],
+  tz: string
+): { openMinutes: number; closeMinutes: number } | null {
+  if (hours.length === 0) return null
+  const dayOfWeek = getTzDayOfWeek(dateStr, tz)
+  const bh = hours.find((h) => h.day_of_week === dayOfWeek)
+  if (!bh || bh.is_closed) return null
+  return { openMinutes: toMinutes(bh.open_time), closeMinutes: toMinutes(bh.close_time) }
+}
+
+/**
  * Available start times for a single day, given business hours and existing
  * bookings - shared by the public booking page and the internal reservation
  * modal's date/time picker so the two never drift apart on what counts as

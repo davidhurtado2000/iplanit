@@ -28,6 +28,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet'
 import { UpgradeModal } from '@/components/upgrade-modal'
 import { PremiumBadge } from '@/components/premium-feature'
+import { NotificationBell } from '@/components/dashboard/notification-bell'
 
 interface MobileNavProps {
   isOpen: boolean
@@ -88,13 +89,15 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
           <span className="text-lg font-bold">iPlanit</span>
         </Link>
 
-        <Sheet open={isOpen} onOpenChange={onToggle}>
-          <SheetTrigger asChild>
-            <Button variant="ghost" size="icon" className="lg:hidden">
-              <Menu className="h-5 w-5" />
-              <span className="sr-only">{t.mobileNav.openMenu}</span>
-            </Button>
-          </SheetTrigger>
+        <div className="flex items-center gap-1">
+          <NotificationBell />
+          <Sheet open={isOpen} onOpenChange={onToggle}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon" className="lg:hidden">
+                <Menu className="h-5 w-5" />
+                <span className="sr-only">{t.mobileNav.openMenu}</span>
+              </Button>
+            </SheetTrigger>
           <SheetContent side="right" className="w-[280px] p-0">
             <SheetTitle className="sr-only">{t.mobileNav.menuTitle}</SheetTitle>
             <div className="flex h-full flex-col">
@@ -218,6 +221,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
             </div>
           </SheetContent>
         </Sheet>
+        </div>
       </div>
 
       {/* Bottom Navigation Bar for quick access on mobile */}

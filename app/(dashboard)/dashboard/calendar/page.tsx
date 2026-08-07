@@ -87,6 +87,7 @@ export default function CalendarPage() {
     resources: allResources,
     calendarStartHour,
     calendarEndHour,
+    businessHours,
     loading,
     loadingMoreReservations,
     refetchReservations,
@@ -139,53 +140,61 @@ export default function CalendarPage() {
   // falls back to single-sede data via the expandedMode check, so stale
   // cached org data sitting unused in memory is harmless.
   const orgDataKeyRef = useRef<string | null>(null)
+  // Guards against an in-flight fetch overwriting orgData with stale
+  // results after a NEWER fetch (e.g. a forced refresh right after saving
+  // a reservation) has already started - only the most recently started
+  // call is allowed to apply its result.
+  const orgDataRequestIdRef = useRef(0)
 
-  useEffect(() => {
+  // force=true bypasses the cache-key check below - used right after saving
+  // a reservation (see handleReservationSaved), since editing/creating one
+  // doesn't otherwise change (sedes, date range, org) and so would
+  // otherwise never re-trigger a fetch, leaving orgData stale until the
+  // user navigates dates or toggles the business.
+  const fetchOrgData = useCallback(async (force = false) => {
     if (!expandedMode || !hasMultipleSedes || !currentBusiness || !visibleRange) return
 
     const key = `${orgBusinessIds.join(',')}|${visibleRange.from.toISOString()}|${visibleRange.to.toISOString()}|${currentBusiness.organization_id}`
-    if (orgDataKeyRef.current === key) return
+    if (!force && orgDataKeyRef.current === key) return
 
-    let cancelled = false
+    const requestId = ++orgDataRequestIdRef.current
     setIsLoadingOrgData(true)
-    ;(async () => {
-      const [{ data: res }, { data: rsc }, { data: svc }, { data: cli }] = await Promise.all([
-        supabase
-          .from('reservations')
-          .select('*')
-          .in('business_id', orgBusinessIds)
-          .gte('start_time', visibleRange.from.toISOString())
-          .lte('start_time', visibleRange.to.toISOString()),
-        supabase.from('resources').select('*').in('business_id', orgBusinessIds).neq('type', 'parking'),
-        supabase.from('services').select('*').in('business_id', orgBusinessIds),
-        supabase.from('clients').select('*').eq('organization_id', currentBusiness.organization_id),
-      ])
-      if (!cancelled) {
-        // Grouped by sede (in the same order as orgBusinessIds, which
-        // mirrors the sidebar switcher) so DayView's column-grouping into
-        // one spanning header per sede sees each sede's resources as a
-        // single contiguous run, not fragments interleaved with another
-        // sede's - Postgres/Supabase gives no ordering guarantee otherwise.
-        const sortByBusiness = (a: { business_id: string }, b: { business_id: string }) =>
-          orgBusinessIds.indexOf(a.business_id) - orgBusinessIds.indexOf(b.business_id)
-        orgDataKeyRef.current = key
-        setOrgData({
-          reservations: (res || []) as Reservation[],
-          resources: ((rsc || []) as Resource[]).sort(sortByBusiness),
-          services: (svc || []) as Service[],
-          clients: (cli || []) as Client[],
-        })
-      }
-      // Always clears, even if this particular run was cancelled (e.g. the
-      // toggle got flipped off mid-fetch) - otherwise the spinner next to
-      // the switch would stay stuck on forever with nothing to turn it off.
+    const [{ data: res }, { data: rsc }, { data: svc }, { data: cli }] = await Promise.all([
+      supabase
+        .from('reservations')
+        .select('*')
+        .in('business_id', orgBusinessIds)
+        .gte('start_time', visibleRange.from.toISOString())
+        .lte('start_time', visibleRange.to.toISOString()),
+      supabase.from('resources').select('*').in('business_id', orgBusinessIds).neq('type', 'parking'),
+      supabase.from('services').select('*').in('business_id', orgBusinessIds),
+      supabase.from('clients').select('*').eq('organization_id', currentBusiness.organization_id),
+    ])
+    if (requestId === orgDataRequestIdRef.current) {
+      // Grouped by sede (in the same order as orgBusinessIds, which
+      // mirrors the sidebar switcher) so DayView's column-grouping into
+      // one spanning header per sede sees each sede's resources as a
+      // single contiguous run, not fragments interleaved with another
+      // sede's - Postgres/Supabase gives no ordering guarantee otherwise.
+      const sortByBusiness = (a: { business_id: string }, b: { business_id: string }) =>
+        orgBusinessIds.indexOf(a.business_id) - orgBusinessIds.indexOf(b.business_id)
+      orgDataKeyRef.current = key
+      setOrgData({
+        reservations: (res || []) as Reservation[],
+        resources: ((rsc || []) as Resource[]).sort(sortByBusiness),
+        services: (svc || []) as Service[],
+        clients: (cli || []) as Client[],
+      })
       setIsLoadingOrgData(false)
-    })()
-    return () => {
-      cancelled = true
     }
+    // else: a newer call already landed (or is about to) - let that one be
+    // the one that clears the loading state and updates orgData.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expandedMode, hasMultipleSedes, orgBusinessIds.join(','), visibleRange, currentBusiness?.organization_id])
+
+  useEffect(() => {
+    fetchOrgData()
+  }, [fetchOrgData])
 
   const [view, setView] = useState<CalendarView>('day')
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -196,6 +205,15 @@ export default function CalendarPage() {
     clientId: string
     serviceId: string | null
     reservationId: string
+  } | null>(null)
+  // Set when a reservation is created by clicking directly on an empty slot
+  // in DayView's grid (see handleCreateAtSlot) - resourceId and the exact
+  // clicked time are handed to the modal as prefills/hints, the date drives
+  // which day the modal's own slot picker opens on.
+  const [createPrefill, setCreatePrefill] = useState<{
+    resourceId: string | null
+    startHint: string
+    date: string
   } | null>(null)
 
   // Build view options with translated labels
@@ -210,6 +228,7 @@ export default function CalendarPage() {
     setModalMode('create')
     setModalInitialType('booking')
     setFollowUpPrefill(null)
+    setCreatePrefill(null)
     setIsModalOpen(true)
   }
 
@@ -218,6 +237,32 @@ export default function CalendarPage() {
     setModalMode('create')
     setModalInitialType('visit')
     setFollowUpPrefill(null)
+    setCreatePrefill(null)
+    setIsModalOpen(true)
+  }
+
+  // Clicking directly on an empty slot in DayView's grid (calendar-view.tsx)
+  // - resourceId is null for the "no resource" fallback column. Only ever
+  // fires for a slot DayView already confirmed is inside business hours and
+  // not in the past (see its own click handler) - this just wires that
+  // into the same create flow as the toolbar buttons, always as a booking
+  // (a click on the grid is unambiguous "book this", unlike a visit, which
+  // stays an explicit button since it's the less common case).
+  const handleCreateAtSlot = (resourceId: string | null, dateTimeLocal: string) => {
+    // In vista expandida, a clicked column can belong to a sede other than
+    // the currently active one - same switch-first reasoning as
+    // handleSelectReservation, so the reservation actually gets created
+    // under the sede the user visibly clicked into, not whichever one
+    // happened to be active.
+    const clickedBusinessId = resourceId ? resourcesMap[resourceId]?.business_id : undefined
+    if (clickedBusinessId && clickedBusinessId !== currentBusiness?.id) {
+      switchBusiness(clickedBusinessId)
+    }
+    setSelectedReservation(null)
+    setModalMode('create')
+    setModalInitialType('booking')
+    setFollowUpPrefill(null)
+    setCreatePrefill({ resourceId, startHint: dateTimeLocal, date: dateTimeLocal.split('T')[0] })
     setIsModalOpen(true)
   }
 
@@ -234,6 +279,7 @@ export default function CalendarPage() {
     setSelectedReservation(reservation)
     setModalMode('view')
     setFollowUpPrefill(null)
+    setCreatePrefill(null)
     setIsModalOpen(true)
   }
 
@@ -244,12 +290,14 @@ export default function CalendarPage() {
     setModalMode('create')
     setModalInitialType('booking')
     setFollowUpPrefill(source)
+    setCreatePrefill(null)
   }
 
   const handleCloseModal = () => {
     setIsModalOpen(false)
     setSelectedReservation(null)
     setFollowUpPrefill(null)
+    setCreatePrefill(null)
   }
 
   const handleVisibleRangeChange = useCallback(
@@ -259,6 +307,18 @@ export default function CalendarPage() {
     },
     [ensureReservationsInRange]
   )
+
+  // Fires after any create/edit/status-change/cancel saved through the
+  // modal. refetchReservations covers the single-sede view; orgData
+  // (vista expandida) is a separate cache that a save wouldn't otherwise
+  // invalidate (same sedes/range/org as before), so it'd silently keep
+  // showing pre-save data until the user navigated dates or re-toggled -
+  // force-refreshing it here closes that gap. The force fetch is a no-op
+  // if vista expandida isn't even on (fetchOrgData's own guard).
+  const handleReservationSaved = () => {
+    refetchReservations()
+    fetchOrgData(true)
+  }
 
   if (loading) {
     return (
@@ -370,6 +430,7 @@ export default function CalendarPage() {
           <CalendarViewComponent
             view={view}
             onSelectReservation={handleSelectReservation}
+            onCreateAtSlot={handleCreateAtSlot}
             onViewChange={setView}
             reservations={effectiveReservations}
             resources={effectiveResources}
@@ -382,6 +443,7 @@ export default function CalendarPage() {
             onVisibleRangeChange={handleVisibleRangeChange}
             businessNameById={isExpanded ? businessNameById : undefined}
             businessColorIndexById={isExpanded ? businessColorIndexById : undefined}
+            businessHours={businessHours}
           />
         </div>
 
@@ -476,14 +538,16 @@ export default function CalendarPage() {
         isOpen={isModalOpen}
         onClose={handleCloseModal}
         reservation={selectedReservation}
-        selectedDate={today}
+        selectedDate={createPrefill?.date || today}
         mode={modalMode}
-        onSave={refetchReservations}
+        onSave={handleReservationSaved}
         initialType={modalInitialType}
         prefillClientId={followUpPrefill?.clientId}
         prefillServiceId={followUpPrefill?.serviceId}
         followUpOfReservationId={followUpPrefill?.reservationId}
         onCreateFollowUp={handleCreateFollowUp}
+        prefillResourceId={createPrefill?.resourceId ?? undefined}
+        prefillStartHint={createPrefill?.startHint}
       />
     </div>
   )
