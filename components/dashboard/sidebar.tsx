@@ -146,11 +146,9 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         {/* Header */}
         <div className="flex h-16 items-center justify-between border-b border-sidebar-border px-4">
           <Link href="/dashboard" className="flex items-center gap-2 overflow-hidden">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary">
-              <Calendar className="h-5 w-5 text-sidebar-primary-foreground" />
-            </div>
+            <img src="/favicon-96x96-white.png" alt="" className="h-8 w-8 shrink-0 rounded-lg" />
             {!isCollapsed && (
-              <span className="text-lg font-bold text-sidebar-foreground">iPlanit</span>
+              <img src="/logotipo_mododark.png" alt="iPlanit" className="h-5 w-auto" />
             )}
           </Link>
           {!isCollapsed && <NotificationBell className="text-sidebar-foreground/70 hover:text-sidebar-foreground" />}

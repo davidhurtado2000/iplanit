@@ -88,10 +88,8 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
       {/* Fixed Top Bar */}
       <div className="fixed inset-x-0 top-0 z-50 flex h-14 items-center justify-between border-b bg-background px-4 lg:hidden">
         <Link href="/dashboard" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-            <Calendar className="h-5 w-5 text-primary-foreground" />
-          </div>
-          <span className="text-lg font-bold">iPlanit</span>
+          <img src="/logotipo_modolight.png" alt="iPlanit" className="h-6 w-auto dark:hidden" />
+          <img src="/logotipo_mododark.png" alt="iPlanit" className="hidden h-6 w-auto dark:block" />
         </Link>
 
         <div className="flex items-center gap-1">

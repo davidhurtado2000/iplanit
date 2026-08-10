@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Calendar, Eye, EyeOff, Loader2, PartyPopper } from 'lucide-react'
+import { Eye, EyeOff, Loader2, PartyPopper } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import { Confetti } from '@/components/confetti'
 import { PasswordStrength } from '@/components/password-strength'
@@ -228,10 +228,9 @@ export default function RegisterPage() {
       {LanguageToggle}
 
       <div className="mb-8 flex items-center gap-2">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-          <Calendar className="h-6 w-6 text-primary-foreground" />
-        </div>
-        <span className="text-2xl font-bold text-foreground">iPlanit</span>
+        <img src="/favicon-96x96.png" alt="" className="h-9 w-9" />
+        <img src="/logotipo_modolight.png" alt="iPlanit" className="h-7 w-auto dark:hidden" />
+        <img src="/logotipo_mododark.png" alt="iPlanit" className="hidden h-7 w-auto dark:block" />
       </div>
 
       <Card className="w-full max-w-md">
