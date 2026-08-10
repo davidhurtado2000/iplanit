@@ -500,7 +500,7 @@ export interface Database {
           user_id?: string | null
           actor_name?: string
           action?: 'created' | 'updated' | 'deleted'
-          entity_type?: 'service' | 'client' | 'resource' | 'business' | 'business_hours' | 'staff'
+          entity_type?: 'service' | 'client' | 'resource' | 'business' | 'business_hours' | 'staff' | 'worker'
           entity_label?: string
           created_at?: string
         }

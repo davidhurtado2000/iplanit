@@ -111,11 +111,11 @@ export function generateAvailableSlots(
 
 /**
  * Slots available in BOTH sets - used to combine business-wide hours with a
- * specific resource's own work schedule (scripts/057-staff-schedules.sql),
- * so a client/staff member can't book a person outside either the
- * business's general hours or that person's individual ones. Both inputs
- * come from generateAvailableSlots on the same date/interval grid, so a
- * plain timestamp-set intersection is exact - no fuzzy matching needed.
+ * specific worker's own work schedule (scripts/057-staff-module.sql), so a
+ * booking can't land outside either the business's general hours or that
+ * worker's individual ones. Both inputs come from generateAvailableSlots on
+ * the same date/interval grid, so a plain timestamp-set intersection is
+ * exact - no fuzzy matching needed.
  */
 export function intersectSlots(a: Date[], b: Date[]): Date[] {
   const bTimes = new Set(b.map((d) => d.getTime()))
