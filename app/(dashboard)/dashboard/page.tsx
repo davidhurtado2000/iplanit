@@ -32,7 +32,7 @@ import { useBusinesses } from '@/hooks/use-businesses'
 import { useAuth } from '@/hooks/use-auth'
 import { useLanguage } from '@/context/language-context'
 import { useDashboardData, type Reservation } from '@/context/dashboard-data-context'
-import { getStatusBadgeVariant, getStatusLabel } from '@/lib/reservation-status'
+import { StatusBadge } from '@/components/dashboard/status-badge'
 import { capitalizeFirst } from '@/lib/utils'
 
 export default function DashboardPage() {
@@ -313,9 +313,7 @@ export default function DashboardPage() {
                             minute: '2-digit',
                           })}
                         </div>
-                        <Badge variant={getStatusBadgeVariant(reservation.status)} className="h-4 px-1.5 text-[9px]">
-                          {getStatusLabel(reservation.status, t.reservation)}
-                        </Badge>
+                        <StatusBadge status={reservation.status} labels={t.reservation} className="h-4 px-1.5 text-[9px]" />
                       </div>
                     </button>
                   )

@@ -65,6 +65,7 @@ import {
   Search,
   Loader2,
   Copy,
+  Palette,
 } from 'lucide-react'
 
 interface Resource {
@@ -254,6 +255,7 @@ export default function ResourcesPage() {
       await refetchServicesAndResources()
       setIsResourceModalOpen(false)
       setDuplicateSourceId(null)
+      toast.success(editingResource ? t.services.resourceUpdateSuccess : t.services.resourceCreateSuccess)
     } catch (err: any) {
       console.error('[v0] Error saving resource:', err)
       // PLN04 = free-plan resource limit trigger (scripts/048) - only
@@ -264,6 +266,7 @@ export default function ResourcesPage() {
         setShowUpgradeModal(true)
       } else {
         setSaveError(t.saveError)
+        toast.error(t.saveError)
       }
     } finally {
       setSaving(false)
@@ -559,7 +562,7 @@ export default function ResourcesPage() {
 
             <div className="space-y-2">
               <Label>{t.services.colorLabel}</Label>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {RESOURCE_COLORS.map((color) => (
                   <button
                     key={color}
@@ -573,6 +576,33 @@ export default function ResourcesPage() {
                     onClick={() => setResourceForm({ ...resourceForm, color })}
                   />
                 ))}
+                {/* 9th swatch: native color input, same pattern as
+                    services/page.tsx's color picker. */}
+                <label
+                  className={cn(
+                    'relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-2 transition-transform',
+                    !RESOURCE_COLORS.includes(resourceForm.color)
+                      ? 'scale-110 border-foreground'
+                      : 'border-transparent hover:scale-105'
+                  )}
+                  style={{
+                    background: !RESOURCE_COLORS.includes(resourceForm.color)
+                      ? resourceForm.color
+                      : 'conic-gradient(from 0deg, #EF4444, #F59E0B, #84CC16, #10B981, #06B6D4, #3B82F6, #8B5CF6, #EC4899, #EF4444)',
+                  }}
+                  title={t.services.customColorLabel}
+                >
+                  {RESOURCE_COLORS.includes(resourceForm.color) && (
+                    <Palette className="h-3.5 w-3.5 text-white drop-shadow" />
+                  )}
+                  <input
+                    type="color"
+                    value={RESOURCE_COLORS.includes(resourceForm.color) ? '#3B82F6' : resourceForm.color}
+                    onChange={(e) => setResourceForm({ ...resourceForm, color: e.target.value })}
+                    className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                    aria-label={t.services.customColorLabel}
+                  />
+                </label>
               </div>
             </div>
 

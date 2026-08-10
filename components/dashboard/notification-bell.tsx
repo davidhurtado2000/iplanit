@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bell, CalendarPlus, XCircle, Clock } from 'lucide-react'
+import { Bell, CalendarPlus, XCircle, Clock, Check } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Select,
@@ -13,13 +13,16 @@ import {
 } from '@/components/ui/select'
 import { useLanguage } from '@/context/language-context'
 import { useDashboardData } from '@/context/dashboard-data-context'
+import { useBusinesses } from '@/hooks/use-businesses'
 import { useNotifications, type NotificationItem, type NotificationType } from '@/context/notifications-context'
+import { toDateStr } from '@/lib/timezone'
 import { cn } from '@/lib/utils'
 
 const TYPE_ICON: Record<NotificationType, typeof Bell> = {
   new_reservation: CalendarPlus,
   client_cancelled: XCircle,
   starting_soon: Clock,
+  confirmed: Check,
 }
 
 type BellFilter = 'all' | NotificationType
@@ -27,6 +30,7 @@ type BellFilter = 'all' | NotificationType
 export function NotificationBell({ className }: { className?: string }) {
   const { t, locale } = useLanguage()
   const router = useRouter()
+  const { currentBusiness } = useBusinesses()
   const { clients, services } = useDashboardData()
   const { notifications, unreadCount, markAllSeen } = useNotifications()
   const [open, setOpen] = useState(false)
@@ -39,6 +43,7 @@ export function NotificationBell({ className }: { className?: string }) {
     new_reservation: t.notifications.newReservation,
     client_cancelled: t.notifications.clientCancelled,
     starting_soon: t.notifications.startingSoon,
+    confirmed: t.notifications.confirmed,
   }
 
   const filteredNotifications = filter === 'all' ? notifications : notifications.filter((n) => n.type === filter)
@@ -51,10 +56,14 @@ export function NotificationBell({ className }: { className?: string }) {
     }
   }
 
-  const goToCalendar = () => {
+  // Jumps straight to the day the reservation is actually on, in the
+  // business's own timezone - not just "the calendar" landing on today,
+  // which for anything not happening today meant an extra manual search.
+  const goToReservationDay = (item: NotificationItem) => {
     setOpen(false)
     markAllSeen()
-    router.push('/dashboard/calendar')
+    const dateStr = toDateStr(item.reservation.start_time, currentBusiness?.timezone || 'America/Lima')
+    router.push(`/dashboard/calendar?date=${dateStr}`)
   }
 
   const goToHistory = () => {
@@ -96,6 +105,7 @@ export function NotificationBell({ className }: { className?: string }) {
             <SelectContent align="end">
               <SelectItem value="all">{t.notifications.filterAll}</SelectItem>
               <SelectItem value="new_reservation">{typeLabel.new_reservation}</SelectItem>
+              <SelectItem value="confirmed">{typeLabel.confirmed}</SelectItem>
               <SelectItem value="client_cancelled">{typeLabel.client_cancelled}</SelectItem>
               <SelectItem value="starting_soon">{typeLabel.starting_soon}</SelectItem>
             </SelectContent>
@@ -111,7 +121,7 @@ export function NotificationBell({ className }: { className?: string }) {
                 <button
                   key={item.id}
                   type="button"
-                  onClick={goToCalendar}
+                  onClick={() => goToReservationDay(item)}
                   className="flex w-full items-start gap-3 border-b px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-muted/50"
                 >
                   <Icon

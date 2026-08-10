@@ -18,6 +18,9 @@ export interface Reservation {
   /** Null for visits with no specific service in mind - see type. */
   service_id: string | null
   resource_id: string | null
+  /** Who actually performed the service - independent of resource_id (see
+   * Worker above). Null when no specific worker was assigned. */
+  worker_id: string | null
   /** Independent of resource_id - a separately-booked parking spot, see
    * scripts/035-parking.sql. Null unless the business offers parking and
    * one was requested/assigned. */
@@ -44,6 +47,12 @@ export interface Reservation {
   cancelled_at: string | null
   notes: string | null
   created_at: string
+  /** No dedicated confirmed_at column exists - notifications-context.tsx
+   * uses this as a "recently confirmed" proxy for status === 'confirmed'.
+   * Not perfectly precise (any edit to an already-confirmed reservation
+   * also bumps this), but close enough for a notification feed without a
+   * schema change. */
+  updated_at: string
 }
 
 export type ClientDocumentType = 'dni' | 'ruc' | 'ein' | 'passport' | 'other'
@@ -130,6 +139,37 @@ export interface BusinessHour {
   is_closed: boolean
 }
 
+/** A worker (scripts/057) - deliberately separate from Resource: a resource
+ * is a bookable thing (room/equipment/generic "person" slot), a worker is
+ * who's actually doing the work. The two aren't tied together - a
+ * reservation can have a resource, a worker, both, or neither. */
+export interface Worker {
+  id: string
+  business_id: string
+  name: string
+  color: string
+  is_active: boolean
+}
+
+/** A worker's own work schedule - no rows means "follows business_hours",
+ * same convention business_hours itself uses for missing days. */
+export interface WorkerHour {
+  worker_id: string
+  day_of_week: number
+  open_time: string
+  close_time: string
+  is_closed: boolean
+}
+
+/** Many-to-many: which services a worker is assigned to perform - same
+ * shape/purpose as ServiceResource, just for the worker dimension. */
+export interface WorkerService {
+  id: string
+  business_id: string
+  worker_id: string
+  service_id: string
+}
+
 // ---- Context type ----
 
 type DashboardDataContextType = {
@@ -140,6 +180,9 @@ type DashboardDataContextType = {
   serviceResources: ServiceResource[]
   serviceDurationOptions: ServiceDurationOption[]
   businessHours: BusinessHour[]
+  workers: Worker[]
+  workerHours: WorkerHour[]
+  workerServices: WorkerService[]
   calendarStartHour: number
   calendarEndHour: number
   /** True only while initial data is loading. False forever after first fetch. */
@@ -152,6 +195,9 @@ type DashboardDataContextType = {
   refetchServiceResources: () => Promise<void>
   refetchServiceDurationOptions: () => Promise<void>
   refetchBusinessHours: () => Promise<void>
+  refetchWorkers: () => Promise<void>
+  refetchWorkerHours: () => Promise<void>
+  refetchWorkerServices: () => Promise<void>
   /**
    * Reservations are only loaded ±RESERVATION_WINDOW_DAYS from when this
    * provider mounted - fetching a business's entire history on every
@@ -190,6 +236,9 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
   const [serviceResources, setServiceResources] = useState<ServiceResource[]>([])
   const [serviceDurationOptions, setServiceDurationOptions] = useState<ServiceDurationOption[]>([])
   const [businessHours, setBusinessHours] = useState<BusinessHour[]>([])
+  const [workers, setWorkers] = useState<Worker[]>([])
+  const [workerHours, setWorkerHours] = useState<WorkerHour[]>([])
+  const [workerServices, setWorkerServices] = useState<WorkerService[]>([])
   const [calendarStartHour, setCalendarStartHour] = useState(7)
   const [calendarEndHour, setCalendarEndHour] = useState(21)
   const [loading, setLoading] = useState(true)
@@ -226,7 +275,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
     const fetchAll = async () => {
       try {
         const defaultWindow = getDefaultReservationWindow()
-        const [reservationsRes, clientsRes, servicesRes, resourcesRes, hoursRes, serviceResourcesRes, durationOptionsRes] = await Promise.all([
+        const [reservationsRes, clientsRes, servicesRes, resourcesRes, hoursRes, workersRes, workerHoursRes, workerServicesRes, serviceResourcesRes, durationOptionsRes] = await Promise.all([
           supabase
             .from('reservations')
             .select('*')
@@ -254,6 +303,19 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
             .select('day_of_week, open_time, close_time, is_closed')
             .eq('business_id', currentBusiness.id),
           supabase
+            .from('workers')
+            .select('*')
+            .eq('business_id', currentBusiness.id)
+            .order('name'),
+          supabase
+            .from('worker_hours')
+            .select('worker_id, day_of_week, open_time, close_time, is_closed')
+            .eq('business_id', currentBusiness.id),
+          supabase
+            .from('worker_services')
+            .select('*')
+            .eq('business_id', currentBusiness.id),
+          supabase
             .from('service_resources')
             .select('*')
             .eq('business_id', currentBusiness.id),
@@ -271,6 +333,9 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         setServiceResources(serviceResourcesRes.data || [])
         setServiceDurationOptions(durationOptionsRes.data || [])
         applyBusinessHours(hoursRes.data || [])
+        setWorkers(workersRes.data || [])
+        setWorkerHours(workerHoursRes.data || [])
+        setWorkerServices(workerServicesRes.data || [])
       } catch (err) {
         console.error('[dashboard-data] Error fetching data:', err)
       } finally {
@@ -472,6 +537,27 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
     applyBusinessHours(data || [])
   }, [currentBusiness?.id, applyBusinessHours])
 
+  const refetchWorkers = useCallback(async () => {
+    if (!currentBusiness) return
+    const { data } = await supabase.from('workers').select('*').eq('business_id', currentBusiness.id).order('name')
+    setWorkers(data || [])
+  }, [currentBusiness?.id])
+
+  const refetchWorkerHours = useCallback(async () => {
+    if (!currentBusiness) return
+    const { data } = await supabase
+      .from('worker_hours')
+      .select('worker_id, day_of_week, open_time, close_time, is_closed')
+      .eq('business_id', currentBusiness.id)
+    setWorkerHours(data || [])
+  }, [currentBusiness?.id])
+
+  const refetchWorkerServices = useCallback(async () => {
+    if (!currentBusiness) return
+    const { data } = await supabase.from('worker_services').select('*').eq('business_id', currentBusiness.id)
+    setWorkerServices(data || [])
+  }, [currentBusiness?.id])
+
   return (
     <DashboardDataContext.Provider
       value={{
@@ -482,6 +568,9 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         serviceResources,
         serviceDurationOptions,
         businessHours,
+        workers,
+        workerHours,
+        workerServices,
         calendarStartHour,
         calendarEndHour,
         loading,
@@ -492,6 +581,9 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         refetchServiceResources,
         refetchServiceDurationOptions,
         refetchBusinessHours,
+        refetchWorkers,
+        refetchWorkerHours,
+        refetchWorkerServices,
         ensureReservationsInRange,
       }}
     >

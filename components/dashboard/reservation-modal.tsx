@@ -2,7 +2,7 @@
 
 import React from "react"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -35,7 +35,8 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Loader2 } from 'lucide-react'
-import { Calendar, Clock, User, Briefcase, Trash2, MapPin, Repeat, DollarSign, ParkingSquare, ChevronDown, ChevronsUpDown, Check, Eye, UserPlus } from 'lucide-react'
+import { Calendar, Clock, User, Briefcase, Trash2, MapPin, Repeat, DollarSign, ParkingSquare, ChevronDown, ChevronsUpDown, Check, Eye, UserPlus, Bold, List, UserCog } from 'lucide-react'
+import { renderSimpleMarkdown } from '@/lib/simple-markdown'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -56,11 +57,11 @@ import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
-import { useDashboardData, type ClientDocumentType } from '@/context/dashboard-data-context'
-import { getStatusBadgeVariant, getStatusLabel } from '@/lib/reservation-status'
+import { useDashboardData, type ClientDocumentType, type Reservation } from '@/context/dashboard-data-context'
+import { StatusBadge } from '@/components/dashboard/status-badge'
 import { capitalizeFirst, cn } from '@/lib/utils'
 import { toTzLocalInput, parseInTimezone, toDateStr } from '@/lib/timezone'
-import { generateAvailableSlots, isDayClosed } from '@/lib/availability'
+import { generateAvailableSlots, isDayClosed, intersectSlots } from '@/lib/availability'
 import { sendReservationNotification } from '@/lib/email/notify'
 import { isPlanLimitReached, meetsPlan } from '@/lib/plan-limits'
 import { formatDuration } from '@/lib/duration'
@@ -146,6 +147,14 @@ interface ReservationModalProps {
    * so a click can never create an invalid/conflicting booking - it just
    * saves re-finding the same slot in the list. */
   prefillStartHint?: string
+  /** "YYYY-MM-DDTHH:MM", same shape as prefillStartHint - set only when the
+   * calendar slot was drag-selected (not a plain click). Used to prefill
+   * visitDurationMinutes (start-to-end difference) regardless of
+   * initialType: harmless if the reservation stays a booking (that field
+   * goes unused there), but already correct if the user switches to
+   * "Visita" inside the modal instead of needing to re-enter the duration
+   * they'd already dragged out on the calendar. */
+  prefillEndHint?: string
 }
 
 export function ReservationModal({
@@ -162,12 +171,13 @@ export function ReservationModal({
   onCreateFollowUp,
   prefillResourceId,
   prefillStartHint,
+  prefillEndHint,
 }: ReservationModalProps) {
   const supabase = createClient()
   const { profile } = useAuth()
   const { currentBusiness } = useBusinesses()
   const { t, locale } = useLanguage()
-  const { clients, services, resources: allResources, serviceResources, serviceDurationOptions, businessHours, reservations, refetchClients } = useDashboardData()
+  const { clients, services, resources: allResources, serviceResources, serviceDurationOptions, businessHours, workers, workerHours, workerServices, reservations, refetchClients } = useDashboardData()
   // Parking is a separate concept from a service's linked resource (see the
   // needsParking switch below) - never offered as a pickable resource here.
   const resources = allResources.filter((r) => r.type !== 'parking')
@@ -200,6 +210,7 @@ export function ReservationModal({
     client_id: '',
     service_id: '',
     resource_id: '',
+    worker_id: '',
     start_time: '',
     notes: '',
     type: 'booking' as 'booking' | 'visit',
@@ -294,6 +305,30 @@ export function ReservationModal({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.service_id])
 
+  // Worker (who's actually doing the work) is a separate dimension from
+  // resource (what's being used) - see Worker in dashboard-data-context.tsx.
+  // Same "assigned to this service" filtering as resources, via
+  // worker_services instead of service_resources, but never auto-selected:
+  // unlike a resource (which a service often structurally requires to be
+  // bookable at all), a worker is optional context, so forcing a pick would
+  // just be noise on every booking that doesn't need one.
+  const allowedWorkerIds = workerServices
+    .filter((ws) => ws.service_id === formData.service_id)
+    .map((ws) => ws.worker_id)
+
+  const filteredWorkers = allowedWorkerIds.length > 0
+    ? workers.filter((w) => allowedWorkerIds.includes(w.id) && w.is_active)
+    : workers.filter((w) => w.is_active)
+
+  // Clears (never auto-fills, unlike resource above) a worker selection
+  // that the newly-picked service doesn't actually allow.
+  useEffect(() => {
+    if (allowedWorkerIds.length === 0) return
+    if (!formData.worker_id || allowedWorkerIds.includes(formData.worker_id)) return
+    setFormData((prev) => ({ ...prev, worker_id: '' }))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.service_id])
+
   const tz = currentBusiness?.timezone || 'America/Lima'
 
   useEffect(() => {
@@ -312,6 +347,7 @@ export function ReservationModal({
         client_id: reservation.client_id,
         service_id: reservation.service_id || '',
         resource_id: reservation.resource_id || '',
+        worker_id: reservation.worker_id || '',
         start_time: toTzLocalInput(reservation.start_time, tz),
         notes: reservation.notes || '',
         type: reservation.type || 'booking',
@@ -330,10 +366,24 @@ export function ReservationModal({
       setSlotDate(toDateStr(reservation.start_time, tz))
       setIsEditing(mode === 'edit')
     } else {
+      // Both hints share the same "YYYY-MM-DDTHH:MM" business-local shape
+      // (calendar-view.tsx's drag-select snaps both ends the same way), so
+      // the difference is just HH:MM arithmetic - no Date/timezone parsing
+      // needed for a same-frame duration.
+      let draggedDurationMinutes: number | null = null
+      if (prefillStartHint && prefillEndHint) {
+        const toMinutes = (s: string) => {
+          const [hh, mm] = s.split('T')[1].split(':').map(Number)
+          return hh * 60 + mm
+        }
+        const diff = toMinutes(prefillEndHint) - toMinutes(prefillStartHint)
+        if (diff > 0) draggedDurationMinutes = diff
+      }
       setFormData({
         client_id: prefillClientId || '',
         service_id: prefillServiceId || '',
         resource_id: prefillResourceId || '',
+        worker_id: '',
         // Left empty on purpose - the slot grid below forces an explicit
         // pick instead of defaulting to a guessed time that might not even
         // be available. (prefillStartHint auto-selects it once it's
@@ -343,7 +393,7 @@ export function ReservationModal({
         type: initialType,
         duration_option_id: '',
         hours: '',
-        visitDurationMinutes: 60,
+        visitDurationMinutes: draggedDurationMinutes ?? 60,
         price: '',
         needsParking: false,
       })
@@ -474,6 +524,44 @@ export function ReservationModal({
     }
   }
 
+  // Notes formatting toolbar: wraps/prefixes the current selection instead
+  // of requiring a full editor - notes are stored as plain text with a
+  // **bold**/"- bullet" markdown subset (see lib/simple-markdown.tsx),
+  // never as HTML, so there's nothing to sanitize on the way back out.
+  const notesTextareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const applyNotesBold = () => {
+    const el = notesTextareaRef.current
+    if (!el) return
+    const { selectionStart: start, selectionEnd: end, value } = el
+    const selected = value.slice(start, end)
+    const next = `${value.slice(0, start)}**${selected}**${value.slice(end)}`
+    setFormData((prev) => ({ ...prev, notes: next }))
+    requestAnimationFrame(() => {
+      el.focus()
+      const cursor = selected ? end + 4 : start + 2
+      el.setSelectionRange(cursor, cursor)
+    })
+  }
+
+  const applyNotesBullets = () => {
+    const el = notesTextareaRef.current
+    if (!el) return
+    const { selectionStart: start, selectionEnd: end, value } = el
+    const lineStart = value.lastIndexOf('\n', start - 1) + 1
+    const lineEnd = end < value.length && value[end] !== '\n' ? value.indexOf('\n', end) : end
+    const effectiveLineEnd = lineEnd === -1 ? value.length : lineEnd
+    const block = value.slice(lineStart, effectiveLineEnd)
+    const linesInBlock = block.split('\n').map((line) => (line.startsWith('- ') ? line : `- ${line}`))
+    const newBlock = linesInBlock.join('\n')
+    const next = value.slice(0, lineStart) + newBlock + value.slice(effectiveLineEnd)
+    setFormData((prev) => ({ ...prev, notes: next }))
+    requestAnimationFrame(() => {
+      el.focus()
+      el.setSelectionRange(lineStart + newBlock.length, lineStart + newBlock.length)
+    })
+  }
+
   const selectedServiceDurationOptions = serviceDurationOptions.filter((o) => o.service_id === formData.service_id)
   const selectedDurationOption = selectedServiceDurationOptions.find((o) => o.id === formData.duration_option_id)
   // Effective duration: a visit's duration always comes from
@@ -551,46 +639,82 @@ export function ReservationModal({
     tz,
   ])
 
-  // Busy ranges for the currently-selected resource, excluding this
-  // reservation's own occupancy when editing (so its current slot doesn't
-  // show up as unavailable against itself) and cancelled reservations. No
-  // resource selected means nothing to conflict with, same as the DB
-  // exclusion constraint (scripts 012/035), which only applies when
-  // resource_id is set.
+  // Busy ranges for the currently-selected resource AND the currently-
+  // selected worker - two independent conflict checks (see Worker in
+  // dashboard-data-context.tsx: a room and the person using it are booked
+  // out separately), excluding this reservation's own occupancy when
+  // editing (so its current slot doesn't show up as unavailable against
+  // itself) and cancelled reservations. Neither selected means nothing to
+  // conflict with, same as the DB exclusion constraint (scripts 012/035),
+  // which only applies when resource_id is set (there's no equivalent DB
+  // constraint yet for worker_id - this client-side check is the only
+  // guard against double-booking a worker, see the save-time pre-flight
+  // check further below for the same caveat).
   // Each existing reservation's busy window is expanded by its OWN service's
   // buffer minutes (scripts/040-appointment-buffers.sql) - the candidate
   // slot being searched then gets expanded by the SELECTED service's own
   // buffer below, making the check bidirectional (see generateAvailableSlots).
-  const busyRanges = formData.resource_id
+  const expandByBuffer = (r: Reservation) => {
+    const svc = services.find((s) => s.id === r.service_id)
+    const before = svc?.buffer_before_min || 0
+    const after = svc?.buffer_after_min || 0
+    return {
+      start_time: new Date(new Date(r.start_time).getTime() - before * 60000).toISOString(),
+      end_time: new Date(new Date(r.end_time).getTime() + after * 60000).toISOString(),
+    }
+  }
+  const resourceBusyRanges = formData.resource_id
     ? reservations
         .filter((r) => r.resource_id === formData.resource_id && r.status !== 'cancelled' && r.id !== reservation?.id)
-        .map((r) => {
-          const svc = services.find((s) => s.id === r.service_id)
-          const before = svc?.buffer_before_min || 0
-          const after = svc?.buffer_after_min || 0
-          return {
-            start_time: new Date(new Date(r.start_time).getTime() - before * 60000).toISOString(),
-            end_time: new Date(new Date(r.end_time).getTime() + after * 60000).toISOString(),
-          }
-        })
+        .map(expandByBuffer)
+    : []
+  const workerBusyRanges = formData.worker_id
+    ? reservations
+        .filter((r) => r.worker_id === formData.worker_id && r.status !== 'cancelled' && r.id !== reservation?.id)
+        .map(expandByBuffer)
+    : []
+  const busyRanges = [...resourceBusyRanges, ...workerBusyRanges]
+
+  // A worker can have their own work schedule (scripts/057-staff-module.sql)
+  // on top of the business's general hours - no rows means "follows
+  // business hours", same convention business_hours itself uses for
+  // missing days.
+  const selectedWorkerHours = formData.worker_id
+    ? workerHours.filter((h) => h.worker_id === formData.worker_id)
     : []
 
   const availableSlots =
     slotDate && effectiveDurationMinutes
-      ? generateAvailableSlots(
-          slotDate,
-          businessHours,
-          effectiveDurationMinutes,
-          busyRanges,
-          tz,
-          selectedService?.buffer_before_min || 0,
-          selectedService?.buffer_after_min || 0
-        )
+      ? (() => {
+          const businessSlots = generateAvailableSlots(
+            slotDate,
+            businessHours,
+            effectiveDurationMinutes,
+            busyRanges,
+            tz,
+            selectedService?.buffer_before_min || 0,
+            selectedService?.buffer_after_min || 0
+          )
+          if (selectedWorkerHours.length === 0) return businessSlots
+          const workerSlots = generateAvailableSlots(
+            slotDate,
+            selectedWorkerHours,
+            effectiveDurationMinutes,
+            busyRanges,
+            tz,
+            selectedService?.buffer_before_min || 0,
+            selectedService?.buffer_after_min || 0
+          )
+          return intersectSlots(businessSlots, workerSlots)
+        })()
       : []
 
   // Distinguishes "the business doesn't open this day" from "open but fully
   // booked" - both show 0 slots, but staff need different next steps for each.
-  const dayClosed = !!slotDate && isDayClosed(slotDate, businessHours, tz)
+  const dayClosed =
+    !!slotDate &&
+    (isDayClosed(slotDate, businessHours, tz) ||
+      (selectedWorkerHours.length > 0 && isDayClosed(slotDate, selectedWorkerHours, tz)))
 
   // Auto-selects the exact slot clicked on the calendar grid (see
   // prefillStartHint above) the moment it actually shows up as available -
@@ -681,6 +805,7 @@ export function ReservationModal({
         client_id: formData.client_id,
         service_id: formData.service_id,
         resource_id: formData.resource_id || null,
+        worker_id: formData.worker_id || null,
         days_of_week: repeatDays,
         session_count: sessionCount,
         notes: formData.notes || null,
@@ -711,11 +836,27 @@ export function ReservationModal({
         }
       }
 
+      if (formData.worker_id) {
+        const { data: workerConflicts } = await supabase
+          .from('reservations')
+          .select('id')
+          .eq('worker_id', formData.worker_id)
+          .neq('status', 'cancelled')
+          .lt('start_time', occEnd.toISOString())
+          .gt('end_time', occStart.toISOString())
+
+        if (workerConflicts && workerConflicts.length > 0) {
+          skipped.push(occStart.toLocaleDateString(locale, { day: 'numeric', month: 'short' }))
+          continue
+        }
+      }
+
       const { error: insertError } = await supabase.from('reservations').insert({
         business_id: currentBusiness!.id,
         client_id: formData.client_id,
         service_id: formData.service_id,
         resource_id: formData.resource_id || null,
+        worker_id: formData.worker_id || null,
         series_id: series.id,
         start_time: occStart.toISOString(),
         end_time: occEnd.toISOString(),
@@ -824,6 +965,7 @@ export function ReservationModal({
         client_id: formData.client_id,
         service_id: formData.service_id || null,
         resource_id: formData.resource_id || null,
+        worker_id: formData.worker_id || null,
         parking_resource_id: parkingResourceId,
         start_time: startDate.toISOString(),
         end_time: endDate.toISOString(),
@@ -839,7 +981,10 @@ export function ReservationModal({
       // against race conditions is the DB exclusion constraint (see
       // scripts/012-reservations-overlap-constraint.sql), since two
       // near-simultaneous submits could both pass this check before either
-      // insert commits.
+      // insert commits. worker_id has no equivalent DB exclusion constraint
+      // (see scripts/057-staff-module.sql) - this pre-flight check is its
+      // only guard, so a race here is a real (if rare) possibility, unlike
+      // the resource_id check below.
       if (formData.resource_id) {
         let conflictQuery = supabase
           .from('reservations')
@@ -856,6 +1001,28 @@ export function ReservationModal({
         const { data: conflicts, error: conflictError } = await conflictQuery
         if (conflictError) throw conflictError
         if (conflicts && conflicts.length > 0) {
+          setError(t.reservation.timeConflict)
+          setIsLoading(false)
+          return
+        }
+      }
+
+      if (formData.worker_id) {
+        let workerConflictQuery = supabase
+          .from('reservations')
+          .select('id')
+          .eq('worker_id', formData.worker_id)
+          .neq('status', 'cancelled')
+          .lt('start_time', reservationData.end_time)
+          .gt('end_time', reservationData.start_time)
+
+        if (effectiveMode === 'edit' && reservation?.id) {
+          workerConflictQuery = workerConflictQuery.neq('id', reservation.id)
+        }
+
+        const { data: workerConflicts, error: workerConflictError } = await workerConflictQuery
+        if (workerConflictError) throw workerConflictError
+        if (workerConflicts && workerConflicts.length > 0) {
           setError(t.reservation.timeConflict)
           setIsLoading(false)
           return
@@ -1007,6 +1174,7 @@ export function ReservationModal({
   const viewClient = clients.find((c) => c.id === reservation?.client_id)
   const viewService = services.find((s) => s.id === reservation?.service_id)
   const viewResource = resources.find((r) => r.id === reservation?.resource_id)
+  const viewWorker = workers.find((w) => w.id === reservation?.worker_id)
   // allResources, not the parking-filtered `resources` above - a parking
   // spot is deliberately excluded from that list (see its own filter).
   const viewParkingSpot = allResources.find((r) => r.id === reservation?.parking_resource_id)
@@ -1094,6 +1262,13 @@ export function ReservationModal({
                   </span>
                 </div>
               )}
+              {viewWorker && (
+                <div className="flex items-center gap-3 text-sm">
+                  <UserCog className="h-4 w-4" style={{ color: viewWorker.color || undefined }} />
+                  <span className="font-medium">{t.reservation.workerLabel}</span>
+                  <span>{viewWorker.name}</span>
+                </div>
+              )}
               <div className="flex items-center gap-3 text-sm">
                 <Clock className="h-4 w-4 text-muted-foreground" />
                 <span className="font-medium">{t.reservation.datetimeLabel}</span>
@@ -1110,9 +1285,7 @@ export function ReservationModal({
                 </span>
               </div>
               <div className="flex items-center gap-3 text-sm">
-                <Badge variant={getStatusBadgeVariant(reservation.status)}>
-                  {getStatusLabel(reservation.status, t.reservation)}
-                </Badge>
+                <StatusBadge status={reservation.status} labels={t.reservation} />
               </div>
               {reservation.series_id && (
                 <div className="flex items-center gap-3 rounded-md bg-muted/50 p-3 text-sm">
@@ -1130,7 +1303,9 @@ export function ReservationModal({
               {reservation.notes && (
                 <div className="mt-2 rounded-md bg-muted p-3">
                   <p className="text-xs font-medium text-muted-foreground mb-1">{t.reservation.notesLabel}</p>
-                  <p className="text-sm">{reservation.notes}</p>
+                  <div className="text-sm [&_p]:mb-1 [&_p:last-child]:mb-0 [&_ul]:mb-1">
+                    {renderSimpleMarkdown(reservation.notes)}
+                  </div>
                 </div>
               )}
             </div>
@@ -1508,6 +1683,7 @@ export function ReservationModal({
                     ...formData,
                     service_id: val,
                     resource_id: '',
+                    worker_id: '',
                     duration_option_id: '',
                     hours: '',
                     price: suggestedPrice,
@@ -1621,6 +1797,7 @@ export function ReservationModal({
                     {t.reservation.visitDurationLabel}
                   </Label>
                   <DurationInput
+                    key={reservation?.id ?? mode}
                     id="visit-duration"
                     value={formData.visitDurationMinutes}
                     onChange={(minutes) => setFormData({ ...formData, visitDurationMinutes: minutes, start_time: '' })}
@@ -1726,6 +1903,46 @@ export function ReservationModal({
                 </p>
               )}
             </div>
+
+            {/* Worker - who's actually doing the work, independent of
+                resource (see Worker in dashboard-data-context.tsx). Always
+                optional: unlike a resource, a service never structurally
+                requires one. */}
+            {workers.length > 0 && (
+              <div className="space-y-2">
+                <Label htmlFor="worker">
+                  {t.reservation.workerSelect}{' '}
+                  <span className="text-muted-foreground font-normal">{t.reservation.resourceOptional}</span>
+                </Label>
+                <Select
+                  value={formData.worker_id || '_none'}
+                  onValueChange={(val) =>
+                    // Changing the worker changes which bookings count as
+                    // "busy" for them, which can invalidate whatever slot
+                    // was picked.
+                    setFormData({ ...formData, worker_id: val === '_none' ? '' : val, start_time: '' })
+                  }
+                >
+                  <SelectTrigger id="worker">
+                    <SelectValue placeholder={t.reservation.selectWorker} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">{t.reservation.noWorker}</SelectItem>
+                    {filteredWorkers.map((worker) => (
+                      <SelectItem key={worker.id} value={worker.id}>
+                        <span className="flex items-center gap-2">
+                          <span
+                            className="h-2 w-2 shrink-0 rounded-full"
+                            style={{ backgroundColor: worker.color || '#3B82F6' }}
+                          />
+                          <span className="font-medium">{worker.name}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {/* Date & Time - the slot grid below is generated from real
                 business hours + existing bookings (see lib/availability.ts,
@@ -1891,9 +2108,36 @@ export function ReservationModal({
 
             {/* Notes */}
             <div className="space-y-2">
-              <Label htmlFor="notes">{t.reservation.notesOptional}</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="notes">{t.reservation.notesOptional}</Label>
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    title={t.reservation.notesBold}
+                    aria-label={t.reservation.notesBold}
+                    onClick={applyNotesBold}
+                  >
+                    <Bold className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    title={t.reservation.notesBulletList}
+                    aria-label={t.reservation.notesBulletList}
+                    onClick={applyNotesBullets}
+                  >
+                    <List className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
               <Textarea
                 id="notes"
+                ref={notesTextareaRef}
                 placeholder={t.reservation.notesPlaceholder}
                 value={formData.notes}
                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -11,12 +11,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ChevronLeft, ChevronRight, CalendarOff, ParkingSquare, Search, Eye, HelpCircle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CalendarOff, ParkingSquare, Search, Eye, HelpCircle, Clock, Check, CheckCheck, X, Minus } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { CalendarView } from '@/lib/types'
 import { cn, capitalizeFirst } from '@/lib/utils'
 import { useLanguage } from '@/context/language-context'
-import { getStatusBadgeVariant, getStatusLabel } from '@/lib/reservation-status'
+import { getStatusLabel } from '@/lib/reservation-status'
+import { StatusBadge } from '@/components/dashboard/status-badge'
 import { sedeAbbr, sedeTint } from '@/lib/sede-colors'
 import { isDayClosed, getDayHoursRange, type BusinessHourRow } from '@/lib/availability'
 
@@ -133,13 +134,25 @@ interface CalendarViewProps {
    * "available" means the same thing everywhere). Undefined (not yet
    * loaded) is treated as permissively open, same fallback used elsewhere. */
   businessHours?: BusinessHourRow[]
-  /** DayView only - fires when the user clicks directly on an empty part of
+  /** Seeds the initially-shown date (e.g. a notification linking to a
+   * specific reservation's day) instead of always starting on today.
+   * Read once on mount only - changing this prop after mount does not
+   * re-navigate, since the user's own in-page navigation should win from
+   * then on. */
+  initialDate?: Date
+  /** DayView only - fires on a plain click (single point) OR a mouse-drag
+   * (LettuceMeet/Google-Calendar style range select) on an empty part of
    * the grid (not an existing reservation block), already confirmed to be
-   * inside business hours. resourceId is null for the "no resource"
-   * fallback column; dateTimeLocal is "YYYY-MM-DDTHH:MM" in business-local
-   * time, snapped to the nearest 15 minutes. Undefined disables the
-   * click-to-create interaction entirely (no hover affordance either). */
-  onCreateAtSlot?: (resourceId: string | null, dateTimeLocal: string) => void
+   * inside business hours (a drag straddling the edge of business hours is
+   * clamped to the open portion, not rejected outright). resourceId is
+   * null for the "no resource" fallback column; both times are
+   * "YYYY-MM-DDTHH:MM" in business-local time, snapped to the nearest 15
+   * minutes. endDateTimeLocal is only present for a real drag (more than a
+   * few px of movement) - a plain click omits it, same as before. Touch/pen
+   * input always omits it too (see DayView - dragging is mouse-only, to
+   * avoid fighting the grid's native touch-scroll gesture). Undefined
+   * disables the interaction entirely (no hover affordance either). */
+  onCreateAtSlot?: (resourceId: string | null, dateTimeLocal: string, endDateTimeLocal?: string) => void
 }
 
 // ─── Main component ────────────────────────────────────────────────────────
@@ -159,10 +172,11 @@ export function CalendarViewComponent({
   businessNameById,
   businessColorIndexById,
   businessHours,
+  initialDate,
   onCreateAtSlot,
 }: CalendarViewProps) {
   const { t, locale } = useLanguage()
-  const [currentDate, setCurrentDate] = useState(new Date())
+  const [currentDate, setCurrentDate] = useState(() => initialDate ?? new Date())
   const [selectedResourceId, setSelectedResourceId] = useState<string>('all')
 
   // Let the parent know what range is on screen so it can make sure that
@@ -329,22 +343,27 @@ export function CalendarViewComponent({
             <div className="space-y-1.5">
               <div className="flex items-center gap-2 text-xs text-foreground">
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-amber-400" />
+                <Clock className="h-3 w-3 shrink-0 text-muted-foreground" />
                 <span>{t.reservation.pending}</span>
               </div>
               <div className="flex items-center gap-2 text-xs text-foreground">
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-400" />
+                <Check className="h-3 w-3 shrink-0 text-muted-foreground" />
                 <span>{t.reservation.confirmed}</span>
               </div>
               <div className="flex items-center gap-2 text-xs text-foreground">
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-sky-400" />
+                <CheckCheck className="h-3 w-3 shrink-0 text-muted-foreground" />
                 <span>{t.reservation.completed}</span>
               </div>
               <div className="flex items-center gap-2 text-xs text-foreground">
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-red-400" />
+                <X className="h-3 w-3 shrink-0 text-muted-foreground" />
                 <span>{t.reservation.cancelled}</span>
               </div>
               <div className="flex items-center gap-2 text-xs text-foreground">
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-orange-500" />
+                <Minus className="h-3 w-3 shrink-0 text-muted-foreground" />
                 <span>{t.reservation.noShow}</span>
               </div>
             </div>
@@ -401,7 +420,7 @@ function DayView({
   businessNameById?: Record<string, string>
   businessColorIndexById?: Record<string, number>
   businessHours?: BusinessHourRow[]
-  onCreateAtSlot?: (resourceId: string | null, dateTimeLocal: string) => void
+  onCreateAtSlot?: (resourceId: string | null, dateTimeLocal: string, endDateTimeLocal?: string) => void
 }) {
   // Use business timezone so "dateStr" matches the day the user sees, not UTC midnight
   const dateStr = toDateStr(date, timezone)
@@ -505,26 +524,88 @@ function DayView({
   const afterCloseTop = dayHoursRange ? minutesToTop(dayHoursRange.closeMinutes) : gridBottom
   const afterCloseHeight = dayHoursRange ? Math.max(0, gridBottom - afterCloseTop) : 0
 
-  // Click-to-create: converts the click's pixel offset back into a time,
-  // snapped to the nearest 15 minutes (same increment TimeSelect already
-  // uses). Ignores clicks that bubbled up from a child element (an existing
-  // reservation block already has its own onClick to open it - e.target
-  // !== e.currentTarget means this wasn't a direct hit on the column's own
-  // background) and clicks outside business hours (dayHoursRange), so the
-  // create modal never opens on a slot that's guaranteed unavailable. A
-  // past-time click still opens the modal, same as clicking "Nueva
-  // reserva" any other time - generateAvailableSlots (lib/availability.ts)
-  // already excludes past times from what the modal will let you pick.
-  const handleGridClick = (e: React.MouseEvent<HTMLDivElement>, colId: string | null) => {
+  // Click-to-create, extended into drag-to-select (LettuceMeet/Google-
+  // Calendar style): a plain click still opens the create form with just a
+  // start-time hint (unchanged); a mouse-drag also captures an end-time
+  // hint. Mouse only, deliberately - drag-tracking would fight the grid's
+  // native touch-scroll gesture on a tablet, and getting that
+  // disambiguation right (e.g. requiring a long-press to start a drag) is
+  // its own separate problem. Touch/pen input always falls through to the
+  // plain-click path via the native `click` event fired after `pointerup`.
+  const DRAG_THRESHOLD_PX = 10
+  const [drag, setDrag] = useState<{ colId: string | null; startY: number; currentY: number } | null>(null)
+  // Set right before calling onCreateAtSlot from a mouse pointerup, so the
+  // synthetic `click` event that follows every pointer sequence (mouse
+  // AND touch) doesn't also fire handleClick and double-create.
+  const pointerHandledRef = useRef(false)
+
+  const yToMinutes = (y: number) => {
+    const rawMinutes = effStartHour * 60 + ((y - GRID_TOP_PAD) / HOUR_HEIGHT) * 60
+    return Math.round(rawMinutes / 15) * 15
+  }
+  const minutesToLocal = (minutes: number) => {
+    const hh = String(Math.floor(minutes / 60)).padStart(2, '0')
+    const mm = String(minutes % 60).padStart(2, '0')
+    return `${dateStr}T${hh}:${mm}`
+  }
+
+  // Shared by both the drag finish and the plain-click fallback. Rejects
+  // outright only when there's no overlap with business hours at all
+  // (matches the old click-only behavior); a drag that partially overlaps
+  // is clamped to the open portion instead of losing the whole gesture.
+  const finalizeSlot = (colId: string | null, startY: number, endY: number, isDrag: boolean) => {
+    if (!onCreateAtSlot) return
+    let startMin = yToMinutes(Math.min(startY, endY))
+    let endMin = yToMinutes(Math.max(startY, endY))
+    if (dayHoursRange) {
+      if (startMin >= dayHoursRange.closeMinutes || endMin <= dayHoursRange.openMinutes) return
+      startMin = Math.max(startMin, dayHoursRange.openMinutes)
+      endMin = Math.min(endMin, dayHoursRange.closeMinutes)
+    }
+    if (isDrag && endMin > startMin) {
+      onCreateAtSlot(colId, minutesToLocal(startMin), minutesToLocal(endMin))
+    } else {
+      onCreateAtSlot(colId, minutesToLocal(startMin))
+    }
+  }
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>, colId: string | null) => {
+    if (!onCreateAtSlot || e.pointerType !== 'mouse' || e.target !== e.currentTarget) return
+    if (e.nativeEvent.offsetY < GRID_TOP_PAD) return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    setDrag({ colId, startY: e.nativeEvent.offsetY, currentY: e.nativeEvent.offsetY })
+  }
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>, colId: string | null) => {
+    if (!drag || drag.colId !== colId) return
+    // Pointer capture keeps these events targeting this column even once
+    // the cursor leaves it, so offsetY (relative to whatever element is
+    // actually under the pointer) is no longer reliable - measuring
+    // against this column's own rect directly is.
+    const rect = e.currentTarget.getBoundingClientRect()
+    const y = e.clientY - rect.top
+    setDrag((prev) => (prev ? { ...prev, currentY: y } : prev))
+  }
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>, colId: string | null) => {
+    if (!drag || drag.colId !== colId) return
+    const isDrag = Math.abs(drag.currentY - drag.startY) >= DRAG_THRESHOLD_PX
+    pointerHandledRef.current = true
+    finalizeSlot(colId, drag.startY, drag.currentY, isDrag)
+    setDrag(null)
+  }
+
+  // Fallback path for touch/pen (and a no-op safety net for mouse, guarded
+  // by pointerHandledRef so it never double-fires after a pointer-driven
+  // create already happened).
+  const handleClick = (e: React.MouseEvent<HTMLDivElement>, colId: string | null) => {
+    if (pointerHandledRef.current) {
+      pointerHandledRef.current = false
+      return
+    }
     if (!onCreateAtSlot || e.target !== e.currentTarget) return
-    const offsetY = e.nativeEvent.offsetY - GRID_TOP_PAD
-    if (offsetY < 0) return
-    const rawMinutes = effStartHour * 60 + (offsetY / HOUR_HEIGHT) * 60
-    const snapped = Math.round(rawMinutes / 15) * 15
-    if (dayHoursRange && (snapped < dayHoursRange.openMinutes || snapped >= dayHoursRange.closeMinutes)) return
-    const hh = String(Math.floor(snapped / 60)).padStart(2, '0')
-    const mm = String(snapped % 60).padStart(2, '0')
-    onCreateAtSlot(colId, `${dateStr}T${hh}:${mm}`)
+    const y = e.nativeEvent.offsetY
+    finalizeSlot(colId, y, y, false)
   }
 
   return (
@@ -634,14 +715,27 @@ function DayView({
                     'relative flex-shrink-0 border-r last:border-r-0',
                     onCreateAtSlot && 'cursor-pointer hover:bg-muted/30'
                   )}
-                  style={{ width: COL_WIDTH, height: gridHeight }}
-                  onClick={(e) => handleGridClick(e, col.id)}
+                  style={{ width: COL_WIDTH, height: gridHeight, touchAction: onCreateAtSlot ? 'pan-y' : undefined }}
+                  onClick={(e) => handleClick(e, col.id)}
+                  onPointerDown={(e) => handlePointerDown(e, col.id)}
+                  onPointerMove={(e) => handlePointerMove(e, col.id)}
+                  onPointerUp={(e) => handlePointerUp(e, col.id)}
+                  onPointerCancel={() => setDrag(null)}
                 >
+                  {drag && drag.colId === col.id && Math.abs(drag.currentY - drag.startY) >= DRAG_THRESHOLD_PX && (
+                    <div
+                      className="pointer-events-none absolute inset-x-0 z-10 rounded border-2 border-primary/60 bg-primary/15"
+                      style={{
+                        top: Math.min(drag.startY, drag.currentY),
+                        height: Math.abs(drag.currentY - drag.startY),
+                      }}
+                    />
+                  )}
                   {/* Out-of-hours shading - flat, no stripes, so it never
                       reads as "visit" (VISIT_BLOCK_COLOR's diagonal stripe
                       is already that signal elsewhere in this file).
                       pointer-events-none on every decorative layer below so
-                      handleGridClick's e.target === e.currentTarget check
+                      handleClick's e.target === e.currentTarget check
                       (only fires on a direct hit on the column's own
                       background) isn't defeated by clicking a gridline or
                       shading div sitting on top of it. */}
@@ -1134,9 +1228,7 @@ function ListView({
                     </td>
                   )}
                   <td className="p-2">
-                    <Badge variant={getStatusBadgeVariant(r.status)}>
-                      {getStatusLabel(r.status, t.reservation)}
-                    </Badge>
+                    <StatusBadge status={r.status} labels={t.reservation} />
                   </td>
                   <td className="p-2 text-right">
                     {r.parking_resource_id && <ParkingSquare className="ml-auto h-3.5 w-3.5 text-muted-foreground" />}

@@ -25,6 +25,7 @@ import { useLanguage } from '@/context/language-context'
 import { createClient } from '@/lib/supabase/client'
 import { toCsv, downloadCsv } from '@/lib/csv'
 import { getStatusLabel } from '@/lib/reservation-status'
+import { countryDateLocale } from '@/lib/date-format'
 import { cn } from '@/lib/utils'
 import {
   getRangeBounds,
@@ -42,6 +43,7 @@ import {
   getClientRetention,
   getTopClients,
   getResourceBreakdown,
+  getWorkerBreakdown,
   type DateRangeOption,
   type TrendResult,
 } from '@/lib/analytics'
@@ -114,6 +116,7 @@ export default function AnalyticsPage() {
     clients: businessClients,
     services: businessServices,
     resources: businessResources,
+    workers: businessWorkers,
     businessHours,
     loading: dataLoading,
     ensureReservationsInRange,
@@ -163,6 +166,15 @@ export default function AnalyticsPage() {
   // exclusion in reservation-modal.tsx) - listing them here would be a
   // filter option that can never match anything.
   const filterableResources = useMemo(() => resources.filter((r) => r.type !== 'parking'), [resources])
+  // Workers aren't org-wide yet (no cross-sede duplicate tracking, unlike
+  // services/resources) - the All Sedes toggle above only affects
+  // reservations/services/resources, so this stays scoped to the current
+  // sede's own roster regardless of that toggle. A reservation from a
+  // different sede referencing a worker not in this list just falls back to
+  // "—" in the breakdown below (Worker.find returns undefined) - a minor,
+  // self-correcting edge case rather than something worth a second fetch
+  // path for.
+  const filterableWorkers = businessWorkers
 
   // Every metric on this page reads from this instead of the raw
   // `reservations` list, so the service/resource filters apply consistently
@@ -291,6 +303,10 @@ export default function AnalyticsPage() {
     () => getResourceBreakdown(filteredReservations, filterableResources, from, to),
     [filteredReservations, filterableResources, from, to]
   )
+  const workerBreakdown = useMemo(
+    () => getWorkerBreakdown(filteredReservations, filterableWorkers, from, to),
+    [filteredReservations, filterableWorkers, from, to]
+  )
 
   // Previous-period equivalents, purely to compute the trend badges below -
   // none of these are rendered on their own.
@@ -356,7 +372,7 @@ export default function AnalyticsPage() {
     const csv = toCsv(inRange, [
       {
         label: tr.exportColDate,
-        value: (r) => new Date(r.start_time).toLocaleDateString(locale, { timeZone: timezone }),
+        value: (r) => new Date(r.start_time).toLocaleDateString(countryDateLocale(currentBusiness?.country), { timeZone: timezone }),
       },
       {
         label: tr.exportColTime,
@@ -693,6 +709,48 @@ export default function AnalyticsPage() {
                             <TableCell className="text-right">{r.count}</TableCell>
                             <TableCell className="text-right">{r.bookedHours}</TableCell>
                             <TableCell className="text-right">{currencySymbol} {r.revenue.toFixed(0)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {filterableWorkers.length > 0 && (
+            <div className="space-y-4">
+              <SectionHeading>{tr.sectionWorkers}</SectionHeading>
+              <Card>
+                <CardHeader>
+                  <CardTitle>{tr.workerBreakdownTitle}</CardTitle>
+                  <CardDescription>{tr.workerBreakdownDesc}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {workerBreakdown.length === 0 ? (
+                    <p className="py-10 text-center text-sm text-muted-foreground">{tr.noData}</p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{tr.workerBreakdownColWorker}</TableHead>
+                          <TableHead className="text-right">{tr.workerBreakdownColCount}</TableHead>
+                          <TableHead className="text-right">{tr.workerBreakdownColHours}</TableHead>
+                          <TableHead className="text-right">{tr.workerBreakdownColRevenue}</TableHead>
+                          <TableHead className="text-right">{tr.workerBreakdownColCompletionRate}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {workerBreakdown.map((w) => (
+                          <TableRow key={w.workerId}>
+                            <TableCell className="font-medium">{w.name}</TableCell>
+                            <TableCell className="text-right">{w.count}</TableCell>
+                            <TableCell className="text-right">{w.bookedHours}</TableCell>
+                            <TableCell className="text-right">{currencySymbol} {w.revenue.toFixed(0)}</TableCell>
+                            <TableCell className="text-right">
+                              {w.completionRate === null ? '—' : `${w.completionRate}%`}
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>

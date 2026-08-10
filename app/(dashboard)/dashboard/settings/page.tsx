@@ -698,6 +698,11 @@ export default function SettingsPage() {
     } catch (err) {
       console.error('[v0] Error saving settings:', err)
       setSaveStatus('error')
+      // The inline red text next to the button is easy to miss if you've
+      // scrolled away or aren't looking right at it - a toast makes a
+      // failed save (as opposed to the more forgiving "nothing happened
+      // yet") hard to miss regardless of scroll position.
+      toast.error(t.saveError)
       setTimeout(() => setSaveStatus('idle'), 4000)
     } finally {
       setIsSaving(false)
@@ -720,6 +725,7 @@ export default function SettingsPage() {
     } catch (err) {
       console.error('[iplanit] Error saving notification preferences:', err)
       setNotifSaveStatus('error')
+      toast.error(t.saveError)
       setTimeout(() => setNotifSaveStatus('idle'), 4000)
     } finally {
       setIsSavingNotifications(false)
@@ -752,6 +758,7 @@ export default function SettingsPage() {
     } catch (err) {
       console.error('[iplanit] Error saving business hours:', err)
       setHoursSaveStatus('error')
+      toast.error(t.saveError)
       setTimeout(() => setHoursSaveStatus('idle'), 4000)
     } finally {
       setIsSavingHours(false)
@@ -994,7 +1001,7 @@ export default function SettingsPage() {
               <CardDescription>{t.settings.profileDesc}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <FormSection title={t.settings.sectionPhotoAndPersonal}>
+              <FormSection title={t.settings.sectionPhotoAndPersonal} bordered>
                 <div className="flex items-center gap-4">
                   <div className="relative">
                     <Avatar className="h-20 w-20">
@@ -1061,7 +1068,7 @@ export default function SettingsPage() {
 
               <Separator />
 
-              <FormSection title={t.settings.sectionPreferences}>
+              <FormSection title={t.settings.sectionPreferences} bordered>
                 <div className="space-y-2">
                   <Label htmlFor="profile-language">{t.language.label}</Label>
                   <Select value={language} onValueChange={(value) => setLanguage(value as 'es' | 'en')}>
@@ -1092,7 +1099,7 @@ export default function SettingsPage() {
 
               <Separator />
 
-              <FormSection title={t.settings.securityTitle}>
+              <FormSection title={t.settings.securityTitle} bordered>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <Button variant="outline" onClick={() => setShowPasswordDialog(true)}>
                     {t.settings.changePassword}
@@ -1164,7 +1171,7 @@ export default function SettingsPage() {
                   <CardDescription>{t.settings.businessDesc}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <FormSection title={t.settings.sectionBasicInfo}>
+                  <FormSection title={t.settings.sectionBasicInfo} bordered>
                     <div className="flex items-center gap-4">
                       <div className="relative">
                         <Avatar className="h-20 w-20 rounded-lg">
@@ -1248,7 +1255,7 @@ export default function SettingsPage() {
 
                   <Separator />
 
-                  <FormSection title={t.settings.sectionBookingSettings}>
+                  <FormSection title={t.settings.sectionBookingSettings} bordered>
                     <div className="space-y-2">
                       <Label htmlFor="business-slug">{t.settings.slugLabel}</Label>
                       <Input
@@ -1321,7 +1328,7 @@ export default function SettingsPage() {
 
                   <Separator />
 
-                  <FormSection title={t.settings.sectionContact}>
+                  <FormSection title={t.settings.sectionContact} bordered>
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div className="space-y-2">
                         <Label htmlFor="business-timezone">{t.settings.timezone}</Label>

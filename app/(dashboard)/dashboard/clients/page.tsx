@@ -3,6 +3,7 @@
 import React from "react"
 
 import { useState, useMemo, useEffect, useRef, type ChangeEvent } from 'react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -45,9 +46,10 @@ import { useAuth } from '@/hooks/use-auth'
 import { useLanguage } from '@/context/language-context'
 import { useDashboardData, type Reservation } from '@/context/dashboard-data-context'
 import { createClient } from '@/lib/supabase/client'
-import { getStatusBadgeVariant, getStatusLabel } from '@/lib/reservation-status'
+import { StatusBadge } from '@/components/dashboard/status-badge'
 import { cn } from '@/lib/utils'
 import { sedeAbbr, sedeTint, buildBusinessColorIndex } from '@/lib/sede-colors'
+import { countryDateLocale } from '@/lib/date-format'
 import {
   Plus,
   MoreHorizontal,
@@ -370,7 +372,7 @@ export default function ClientsPage() {
         label: t.clients.lastVisitCol,
         value: (c) => {
           const lastVisit = reservationCounts.get(c.id)?.last_reservation_at
-          return lastVisit ? new Date(lastVisit).toLocaleDateString(locale) : ''
+          return lastVisit ? new Date(lastVisit).toLocaleDateString(countryDateLocale(currentBusiness?.country)) : ''
         },
       },
     ])
@@ -563,6 +565,7 @@ export default function ClientsPage() {
       }
       await refetchClients()
       setIsModalOpen(false)
+      toast.success(editingClient ? t.clients.updateSuccess : t.clients.createSuccess)
     } catch (err: any) {
       console.error('[v0] Error saving client:', err)
       // PLN02 = free-plan client limit trigger (scripts/048) - only reachable
@@ -573,6 +576,7 @@ export default function ClientsPage() {
         setShowUpgradeModal(true)
       } else {
         setSaveError(t.saveError)
+        toast.error(t.saveError)
       }
     } finally {
       setSaving(false)
@@ -1402,15 +1406,16 @@ export default function ClientsPage() {
                                   })}
                                 </p>
                               </div>
-                              <Badge variant={getStatusBadgeVariant(reservation.status)}>
-                                {getStatusLabel(reservation.status, {
+                              <StatusBadge
+                                status={reservation.status}
+                                labels={{
                                   confirmed: t.clients.confirmed,
                                   cancelled: t.clients.cancelled,
                                   pending: t.clients.pending,
                                   completed: t.clients.completed,
                                   noShow: t.clients.noShow,
-                                })}
-                              </Badge>
+                                }}
+                              />
                             </div>
                           )
                         })}

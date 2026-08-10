@@ -22,6 +22,8 @@ import {
   BarChart3,
   ParkingSquare,
   Layers,
+  History,
+  UserCog,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
@@ -48,6 +50,8 @@ const NAV_ITEMS = [
   { key: 'analytics' as const, href: '/dashboard/analytics', icon: BarChart3 },
   { key: 'parking' as const, href: '/dashboard/parking', icon: ParkingSquare },
   { key: 'resources' as const, href: '/dashboard/resources', icon: Layers },
+  { key: 'workers' as const, href: '/dashboard/workers', icon: UserCog },
+  { key: 'activity' as const, href: '/dashboard/activity', icon: History },
 ]
 
 export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
@@ -64,8 +68,9 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
   // Sales/Cochera filtering - see sidebar.tsx for the same filter and the
   // reasoning behind it.
   const visibleNavItems = NAV_ITEMS.filter((item) => {
-    if (currentBusiness?.role === 'sales' && (item.key === 'services' || item.key === 'resources' || item.key === 'analytics')) return false
+    if (currentBusiness?.role === 'sales' && (item.key === 'services' || item.key === 'resources' || item.key === 'workers' || item.key === 'analytics')) return false
     if (item.key === 'parking' && !currentBusiness?.offers_parking) return false
+    if (item.key === 'activity' && currentBusiness?.role !== 'owner') return false
     return true
   })
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bell, CalendarPlus, XCircle, Clock, Loader2 } from 'lucide-react'
+import { Bell, CalendarPlus, XCircle, Clock, Check, Loader2 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Label } from '@/components/ui/label'
 import {
@@ -17,6 +17,7 @@ import { useLanguage } from '@/context/language-context'
 import { useDashboardData } from '@/context/dashboard-data-context'
 import { useNotifications } from '@/context/notifications-context'
 import { createClient } from '@/lib/supabase/client'
+import { toDateStr } from '@/lib/timezone'
 import { cn } from '@/lib/utils'
 
 type HistoryType = 'new_reservation' | 'client_cancelled'
@@ -127,6 +128,11 @@ export default function NotificationsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentBusiness?.id, filter])
 
+  const goToReservationDay = (startTime: string) => {
+    const dateStr = toDateStr(startTime, currentBusiness?.timezone || 'America/Lima')
+    router.push(`/dashboard/calendar?date=${dateStr}`)
+  }
+
   const describe = (reservation: ReservationSummary | null) => {
     if (!reservation) return t.notifications.deletedReservation
     const client = clientsMap[reservation.client_id]
@@ -148,20 +154,24 @@ export default function NotificationsPage() {
         <p className="text-muted-foreground">{t.notifications.pageSubtitle}</p>
       </div>
 
-      {liveNotifications.some((n) => n.type === 'starting_soon') && (
-        <div className="space-y-2">
-          <p className="text-sm font-semibold text-foreground">{t.notifications.startingSoon}</p>
-          <div className="divide-y rounded-lg border">
-            {liveNotifications
-              .filter((n) => n.type === 'starting_soon')
-              .map((n) => (
+      {(['starting_soon', 'confirmed'] as const).map((liveType) => {
+        const liveItems = liveNotifications.filter((n) => n.type === liveType)
+        if (liveItems.length === 0) return null
+        const Icon = liveType === 'starting_soon' ? Clock : Check
+        return (
+          <div key={liveType} className="space-y-2">
+            <p className="text-sm font-semibold text-foreground">
+              {liveType === 'starting_soon' ? t.notifications.startingSoon : t.notifications.confirmed}
+            </p>
+            <div className="divide-y rounded-lg border">
+              {liveItems.map((n) => (
                 <button
                   key={n.id}
                   type="button"
-                  onClick={() => router.push('/dashboard/calendar')}
+                  onClick={() => goToReservationDay(n.reservation.start_time)}
                   className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50"
                 >
-                  <Clock className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                  <Icon className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm text-foreground">{describe(n.reservation)}</p>
                     <p className="text-xs text-muted-foreground">
@@ -170,9 +180,10 @@ export default function NotificationsPage() {
                   </div>
                 </button>
               ))}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })}
 
       <div className="space-y-3">
         <div className="flex items-center gap-2">
@@ -218,8 +229,9 @@ export default function NotificationsPage() {
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => router.push('/dashboard/calendar')}
-                    className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50"
+                    onClick={() => item.reservation && goToReservationDay(item.reservation.start_time)}
+                    disabled={!item.reservation}
+                    className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 disabled:cursor-default disabled:hover:bg-transparent"
                   >
                     <Icon
                       className={cn(

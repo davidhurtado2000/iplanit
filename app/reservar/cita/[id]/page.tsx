@@ -19,7 +19,7 @@ import { Building2, Clock, Loader2, CheckCircle2, XCircle, AlertTriangle, Parkin
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/context/language-context'
 import { capitalizeFirst } from '@/lib/utils'
-import { getStatusBadgeVariant, getStatusLabel } from '@/lib/reservation-status'
+import { StatusBadge } from '@/components/dashboard/status-badge'
 import { sendReservationNotification } from '@/lib/email/notify'
 
 interface PublicReservationStatus {
@@ -171,9 +171,7 @@ export default function ManageReservationPage() {
 
           <div className="flex items-center gap-2 text-sm">
             <span className="font-medium">{tr.manageStatusLabel}:</span>
-            <Badge variant={getStatusBadgeVariant(reservation.status)}>
-              {getStatusLabel(reservation.status, t.reservation)}
-            </Badge>
+            <StatusBadge status={reservation.status} labels={t.reservation} />
           </div>
 
           {reservation.has_parking && (

@@ -47,9 +47,15 @@
 .dark {
   --background: oklch(0.12 0.02 250);
   --foreground: oklch(0.95 0.01 240);
-  --card: oklch(0.16 0.02 250);
+  /* 0.16 -> 0.19: cards were barely lighter than the page background,
+     making every section/card in a dense screen (e.g. Settings) read as
+     one undifferentiated block. Still comfortably under --border's 0.25
+     and --muted's 0.22, so the light -> dark hierarchy (border > muted >
+     card > background) stays intact, just with more headroom between
+     each step. */
+  --card: oklch(0.19 0.02 250);
   --card-foreground: oklch(0.95 0.01 240);
-  --popover: oklch(0.16 0.02 250);
+  --popover: oklch(0.19 0.02 250);
   --popover-foreground: oklch(0.95 0.01 240);
   --primary: oklch(0.6 0.18 250);
   --primary-foreground: oklch(0.99 0 0);

@@ -1,6 +1,7 @@
 'use client'
 
-import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useCallback, useEffect, useMemo, useRef, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
@@ -17,7 +18,7 @@ import { ReservationModal } from '@/components/dashboard/reservation-modal'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
 import { useDashboardData } from '@/context/dashboard-data-context'
-import { getStatusBadgeVariant, getStatusLabel } from '@/lib/reservation-status'
+import { StatusBadge } from '@/components/dashboard/status-badge'
 import { capitalizeFirst } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import type { CalendarView } from '@/lib/types'
@@ -77,9 +78,23 @@ const VIEW_CONFIG: { value: CalendarView; icon: React.ElementType }[] = [
   { value: 'list', icon: List },
 ]
 
-export default function CalendarPage() {
+// Split out from the default export so useSearchParams() (needed to read
+// ?date= from a notification click) has the Suspense boundary Next.js
+// requires around it - without this, `next build` fails outright rather
+// than just warning ("useSearchParams() should be wrapped in a suspense
+// boundary"), since it opts the page out of static prerendering.
+function CalendarPageInner() {
   const { currentBusiness, businesses, switchBusiness } = useBusinesses()
   const { t, locale } = useLanguage()
+  // ?date=YYYY-MM-DD - set when arriving from a notification click
+  // (notification-bell.tsx / notifications/page.tsx) so the calendar opens
+  // straight on that reservation's day instead of always defaulting to
+  // today. Noon UTC avoids the date shifting a day off near midnight in
+  // timezones behind/ahead of UTC (same trick already used in
+  // reservation-modal.tsx for the same reason).
+  const searchParams = useSearchParams()
+  const dateParam = searchParams.get('date')
+  const initialDate = useMemo(() => (dateParam ? new Date(`${dateParam}T12:00:00Z`) : undefined), [dateParam])
   const {
     reservations,
     clients,
@@ -206,13 +221,15 @@ export default function CalendarPage() {
     serviceId: string | null
     reservationId: string
   } | null>(null)
-  // Set when a reservation is created by clicking directly on an empty slot
-  // in DayView's grid (see handleCreateAtSlot) - resourceId and the exact
-  // clicked time are handed to the modal as prefills/hints, the date drives
-  // which day the modal's own slot picker opens on.
+  // Set when a reservation is created by clicking (or mouse-dragging) an
+  // empty slot in DayView's grid (see handleCreateAtSlot) - resourceId and
+  // the exact clicked/dragged time(s) are handed to the modal as
+  // prefills/hints, the date drives which day the modal's own slot picker
+  // opens on. endHint is only set for a real drag.
   const [createPrefill, setCreatePrefill] = useState<{
     resourceId: string | null
     startHint: string
+    endHint?: string
     date: string
   } | null>(null)
 
@@ -241,14 +258,19 @@ export default function CalendarPage() {
     setIsModalOpen(true)
   }
 
-  // Clicking directly on an empty slot in DayView's grid (calendar-view.tsx)
-  // - resourceId is null for the "no resource" fallback column. Only ever
-  // fires for a slot DayView already confirmed is inside business hours and
-  // not in the past (see its own click handler) - this just wires that
-  // into the same create flow as the toolbar buttons, always as a booking
-  // (a click on the grid is unambiguous "book this", unlike a visit, which
-  // stays an explicit button since it's the less common case).
-  const handleCreateAtSlot = (resourceId: string | null, dateTimeLocal: string) => {
+  // Clicking (or mouse-dragging) an empty slot in DayView's grid
+  // (calendar-view.tsx) - resourceId is null for the "no resource"
+  // fallback column. Only ever fires for a slot DayView already confirmed
+  // is inside business hours and not in the past (see its own handlers) -
+  // this just wires that into the same create flow as the toolbar buttons,
+  // always as a booking (a click/drag on the grid is unambiguous "book
+  // this", unlike a visit, which stays an explicit button since it's the
+  // less common case). A drag's end time still gets passed through as
+  // endHint even though the type defaults to booking - it prefills the
+  // form's visitDurationMinutes regardless, so it's already there and
+  // correct if the user switches to "Visita" inside the modal, harmless
+  // otherwise since that field goes unused for a real booking.
+  const handleCreateAtSlot = (resourceId: string | null, dateTimeLocal: string, endDateTimeLocal?: string) => {
     // In vista expandida, a clicked column can belong to a sede other than
     // the currently active one - same switch-first reasoning as
     // handleSelectReservation, so the reservation actually gets created
@@ -262,7 +284,7 @@ export default function CalendarPage() {
     setModalMode('create')
     setModalInitialType('booking')
     setFollowUpPrefill(null)
-    setCreatePrefill({ resourceId, startHint: dateTimeLocal, date: dateTimeLocal.split('T')[0] })
+    setCreatePrefill({ resourceId, startHint: dateTimeLocal, endHint: endDateTimeLocal, date: dateTimeLocal.split('T')[0] })
     setIsModalOpen(true)
   }
 
@@ -421,7 +443,12 @@ export default function CalendarPage() {
 
       <div className="grid gap-4 lg:grid-cols-[1fr_280px] lg:gap-6">
         {/* Calendar */}
-        <div className="relative">
+        {/* min-w-0 is required here: a CSS grid item defaults to
+            min-width:auto, so without it, DayView's own wide content
+            (more resources = more 160px columns) forces this whole grid
+            item - and the entire page - to grow wider instead of letting
+            the calendar's own overflow-auto handle the extra width. */}
+        <div className="relative min-w-0">
           {loadingMoreReservations && (
             <div className="absolute right-2 top-2 z-10 rounded-full bg-background/90 px-2.5 py-1 text-xs text-muted-foreground shadow-sm">
               {t.calendar.loadingMore}
@@ -444,6 +471,7 @@ export default function CalendarPage() {
             businessNameById={isExpanded ? businessNameById : undefined}
             businessColorIndexById={isExpanded ? businessColorIndexById : undefined}
             businessHours={businessHours}
+            initialDate={initialDate}
           />
         </div>
 
@@ -493,9 +521,7 @@ export default function CalendarPage() {
                                 {isVisit && <Eye className="h-3 w-3 shrink-0" />}
                                 {client?.name ?? t.calendar.unknownClient}
                               </p>
-                              <Badge variant={getStatusBadgeVariant(reservation.status)} className="h-4 shrink-0 px-1.5 text-[9px]">
-                                {getStatusLabel(reservation.status, t.reservation)}
-                              </Badge>
+                              <StatusBadge status={reservation.status} labels={t.reservation} className="h-4 shrink-0 px-1.5 text-[9px]" />
                             </div>
                             <p className="text-xs text-muted-foreground truncate">
                               {service
@@ -548,7 +574,23 @@ export default function CalendarPage() {
         onCreateFollowUp={handleCreateFollowUp}
         prefillResourceId={createPrefill?.resourceId ?? undefined}
         prefillStartHint={createPrefill?.startHint}
+        prefillEndHint={createPrefill?.endHint}
       />
     </div>
+  )
+}
+
+export default function CalendarPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="space-y-6">
+          <Skeleton className="h-12 w-64" />
+          <Skeleton className="h-96 w-full" />
+        </div>
+      }
+    >
+      <CalendarPageInner />
+    </Suspense>
   )
 }

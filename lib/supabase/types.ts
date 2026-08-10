@@ -384,6 +384,7 @@ export interface Database {
           service_id: string | null
           client_id: string
           resource_id: string | null
+          worker_id: string | null
           parking_resource_id: string | null
           series_id: string | null
           follow_up_of_reservation_id: string | null
@@ -406,6 +407,7 @@ export interface Database {
           service_id?: string | null
           client_id: string
           resource_id?: string | null
+          worker_id?: string | null
           parking_resource_id?: string | null
           series_id?: string | null
           follow_up_of_reservation_id?: string | null
@@ -428,6 +430,7 @@ export interface Database {
           service_id?: string | null
           client_id?: string
           resource_id?: string | null
+          worker_id?: string | null
           parking_resource_id?: string | null
           series_id?: string | null
           follow_up_of_reservation_id?: string | null
@@ -470,6 +473,39 @@ export interface Database {
         }
         Relationships: []
       }
+      activity_log: {
+        Row: {
+          id: string
+          business_id: string
+          user_id: string | null
+          actor_name: string
+          action: 'created' | 'updated' | 'deleted'
+          entity_type: 'service' | 'client' | 'resource' | 'business' | 'business_hours' | 'staff' | 'worker'
+          entity_label: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          business_id: string
+          user_id?: string | null
+          actor_name: string
+          action: 'created' | 'updated' | 'deleted'
+          entity_type: 'service' | 'client' | 'resource' | 'business' | 'business_hours' | 'staff' | 'worker'
+          entity_label?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          business_id?: string
+          user_id?: string | null
+          actor_name?: string
+          action?: 'created' | 'updated' | 'deleted'
+          entity_type?: 'service' | 'client' | 'resource' | 'business' | 'business_hours' | 'staff'
+          entity_label?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       reservation_series: {
         Row: {
           id: string
@@ -477,6 +513,7 @@ export interface Database {
           client_id: string
           service_id: string
           resource_id: string | null
+          worker_id: string | null
           days_of_week: number[]
           session_count: number
           notes: string | null
@@ -489,6 +526,7 @@ export interface Database {
           client_id: string
           service_id: string
           resource_id?: string | null
+          worker_id?: string | null
           days_of_week: number[]
           session_count: number
           notes?: string | null
@@ -501,6 +539,7 @@ export interface Database {
           client_id?: string
           service_id?: string
           resource_id?: string | null
+          worker_id?: string | null
           days_of_week?: number[]
           session_count?: number
           notes?: string | null
@@ -569,6 +608,96 @@ export interface Database {
           is_closed?: boolean
           created_at?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      workers: {
+        Row: {
+          id: string
+          business_id: string
+          name: string
+          color: string
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          business_id: string
+          name: string
+          color?: string
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          business_id?: string
+          name?: string
+          color?: string
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      worker_hours: {
+        Row: {
+          id: string
+          business_id: string
+          worker_id: string
+          day_of_week: number
+          open_time: string
+          close_time: string
+          is_closed: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          business_id: string
+          worker_id: string
+          day_of_week: number
+          open_time: string
+          close_time: string
+          is_closed?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          business_id?: string
+          worker_id?: string
+          day_of_week?: number
+          open_time?: string
+          close_time?: string
+          is_closed?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      worker_services: {
+        Row: {
+          id: string
+          business_id: string
+          worker_id: string
+          service_id: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          business_id: string
+          worker_id: string
+          service_id: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          business_id?: string
+          worker_id?: string
+          service_id?: string
+          created_at?: string
         }
         Relationships: []
       }

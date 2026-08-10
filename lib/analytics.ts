@@ -1,4 +1,4 @@
-import type { Reservation, Service, BusinessHour, Client, Resource } from '@/context/dashboard-data-context'
+import type { Reservation, Service, BusinessHour, Client, Resource, Worker } from '@/context/dashboard-data-context'
 
 export type DateRangeOption = '7d' | '30d' | '90d' | 'ytd' | 'all'
 
@@ -414,5 +414,75 @@ export function getResourceBreakdown(
       revenue,
       bookedHours: Math.round((bookedMs / (1000 * 60 * 60)) * 10) / 10,
     }))
+    .sort((a, b) => b.revenue - a.revenue)
+}
+
+export interface WorkerBreakdownRow {
+  workerId: string
+  name: string
+  count: number
+  revenue: number
+  bookedHours: number
+  /** Of `count`, how many finished as 'completed' vs 'no_show' vs
+   * 'cancelled' - the "eficiencia" view getResourceBreakdown deliberately
+   * doesn't have (it's about volume/revenue, not outcomes). completionRate
+   * excludes still-pending/confirmed reservations from its denominator (only
+   * count of resolved ones - completed+no_show+cancelled), so it doesn't
+   * dip artificially low for a worker whose upcoming bookings just haven't
+   * happened yet. Null (not 0%) when there's nothing resolved yet to rate. */
+  completedCount: number
+  noShowCount: number
+  cancelledCount: number
+  completionRate: number | null
+}
+
+/**
+ * Same reservations/revenue/hours breakdown as getResourceBreakdown, but
+ * grouped by worker - a separate dimension (see Worker in dashboard-data-
+ * context.tsx: who did the work, independent of which room/equipment was
+ * used). Adds outcome rates on top, since "who's reliable" is exactly the
+ * kind of per-person question a resource (a room) never needs answered.
+ */
+export function getWorkerBreakdown(
+  reservations: Reservation[],
+  workers: Pick<Worker, 'id' | 'name'>[],
+  from: Date,
+  to: Date
+): WorkerBreakdownRow[] {
+  const inRange = filterReservations(reservations, from, to).filter((r) => r.type !== 'visit' && r.worker_id)
+  const byWorker = new Map<
+    string,
+    { count: number; revenue: number; bookedMs: number; completed: number; noShow: number; cancelled: number }
+  >()
+
+  for (const r of inRange) {
+    const workerId = r.worker_id as string
+    const entry = byWorker.get(workerId) ?? { count: 0, revenue: 0, bookedMs: 0, completed: 0, noShow: 0, cancelled: 0 }
+    entry.count += 1
+    entry.bookedMs += new Date(r.end_time).getTime() - new Date(r.start_time).getTime()
+    if (r.status !== 'no_show') {
+      entry.revenue += (r.price || r.price_usd) ?? 0
+    }
+    if (r.status === 'completed') entry.completed += 1
+    else if (r.status === 'no_show') entry.noShow += 1
+    else if (r.status === 'cancelled') entry.cancelled += 1
+    byWorker.set(workerId, entry)
+  }
+
+  return Array.from(byWorker.entries())
+    .map(([workerId, { count, revenue, bookedMs, completed, noShow, cancelled }]) => {
+      const resolved = completed + noShow + cancelled
+      return {
+        workerId,
+        name: workers.find((w) => w.id === workerId)?.name ?? '—',
+        count,
+        revenue,
+        bookedHours: Math.round((bookedMs / (1000 * 60 * 60)) * 10) / 10,
+        completedCount: completed,
+        noShowCount: noShow,
+        cancelledCount: cancelled,
+        completionRate: resolved > 0 ? Math.round((completed / resolved) * 100) : null,
+      }
+    })
     .sort((a, b) => b.revenue - a.revenue)
 }

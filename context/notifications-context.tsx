@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useMemo, useState, useCallback } 
 import { useBusinessContext } from './business-context'
 import { useDashboardData, type Reservation } from './dashboard-data-context'
 
-export type NotificationType = 'new_reservation' | 'client_cancelled' | 'starting_soon'
+export type NotificationType = 'new_reservation' | 'client_cancelled' | 'starting_soon' | 'confirmed'
 
 export interface NotificationItem {
   id: string
@@ -80,6 +80,19 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
         const startsAt = new Date(r.start_time).getTime()
         if (startsAt > now && startsAt - now <= STARTING_SOON_MS) {
           items.push({ id: `starting_soon:${r.id}`, type: 'starting_soon', reservation: r, timestamp: r.start_time })
+        }
+      }
+
+      // No confirmed_at column exists, so updated_at is used as a "recently
+      // confirmed" proxy (see the Reservation.updated_at comment). Guarded
+      // against updated_at ~= created_at so a reservation created directly
+      // as confirmed doesn't also fire this - only a REAL pending ->
+      // confirmed transition sometime after creation counts.
+      if (r.status === 'confirmed') {
+        const updatedAt = new Date(r.updated_at).getTime()
+        const createdAt = new Date(r.created_at).getTime()
+        if (updatedAt - createdAt > 2000 && now - updatedAt <= RECENT_WINDOW_MS) {
+          items.push({ id: `confirmed:${r.id}`, type: 'confirmed', reservation: r, timestamp: r.updated_at })
         }
       }
     }

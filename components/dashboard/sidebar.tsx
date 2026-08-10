@@ -24,6 +24,8 @@ import {
   BarChart3,
   ParkingSquare,
   Layers,
+  History,
+  UserCog,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
@@ -54,9 +56,11 @@ const NAV_ITEMS = [
   { key: 'calendar' as const, href: '/dashboard/calendar', icon: Calendar },
   { key: 'services' as const, href: '/dashboard/services', icon: Briefcase },
   { key: 'resources' as const, href: '/dashboard/resources', icon: Layers },
+  { key: 'workers' as const, href: '/dashboard/workers', icon: UserCog },
   { key: 'clients' as const, href: '/dashboard/clients', icon: Users },
   { key: 'parking' as const, href: '/dashboard/parking', icon: ParkingSquare },
   { key: 'analytics' as const, href: '/dashboard/analytics', icon: BarChart3 },
+  { key: 'activity' as const, href: '/dashboard/activity', icon: History },
   { key: 'settings' as const, href: '/dashboard/settings', icon: Settings },
 ]
 
@@ -92,8 +96,11 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
   // Cochera only shows once the business has actually turned it on
   // (Configuracion > Negocio) - otherwise it's just an empty section.
   const visibleNavItems = NAV_ITEMS.filter((item) => {
-    if (currentBusiness?.role === 'sales' && (item.key === 'services' || item.key === 'resources' || item.key === 'analytics')) return false
+    if (currentBusiness?.role === 'sales' && (item.key === 'services' || item.key === 'resources' || item.key === 'workers' || item.key === 'analytics')) return false
     if (item.key === 'parking' && !currentBusiness?.offers_parking) return false
+    // Actividad is an accountability trail of what the team did - only the
+    // owner sees it, same reasoning as activity_log's RLS (scripts/056).
+    if (item.key === 'activity' && currentBusiness?.role !== 'owner') return false
     return true
   })
 
@@ -314,31 +321,44 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         <div className="border-t border-sidebar-border p-2">
           <div
             className={cn(
-              'flex items-center gap-3 rounded-lg p-2',
+              'flex items-center gap-3 rounded-lg',
               isCollapsed ? 'justify-center' : ''
             )}
           >
-            <Avatar className="h-9 w-9">
-              <AvatarImage src={profile?.avatar_url || undefined} alt={userName} />
-              <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground">
-                {getInitials(userName)}
-              </AvatarFallback>
-            </Avatar>
-            {!isCollapsed && (
-              <div className="flex-1 overflow-hidden">
-                <p className="truncate text-sm font-medium text-sidebar-foreground">
-                  {userName}
-                </p>
-                <p className="truncate text-xs text-sidebar-foreground/60">{userEmail}</p>
-              </div>
-            )}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Link
+                  href="/dashboard/settings"
+                  className={cn(
+                    'flex min-w-0 flex-1 items-center gap-3 rounded-lg p-2 transition-colors hover:bg-sidebar-accent/50',
+                    isCollapsed ? 'flex-none' : ''
+                  )}
+                >
+                  <Avatar className="h-9 w-9 shrink-0">
+                    <AvatarImage src={profile?.avatar_url || undefined} alt={userName} />
+                    <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground">
+                      {getInitials(userName)}
+                    </AvatarFallback>
+                  </Avatar>
+                  {!isCollapsed && (
+                    <div className="min-w-0 flex-1 overflow-hidden">
+                      <p className="truncate text-sm font-medium text-sidebar-foreground">
+                        {userName}
+                      </p>
+                      <p className="truncate text-xs text-sidebar-foreground/60">{userEmail}</p>
+                    </div>
+                  )}
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent>{t.nav.settings}</TooltipContent>
+            </Tooltip>
             {!isCollapsed && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    className="mr-2 h-8 w-8 shrink-0 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
                     onClick={signOut}
                   >
                     <LogOut className="h-4 w-4" />

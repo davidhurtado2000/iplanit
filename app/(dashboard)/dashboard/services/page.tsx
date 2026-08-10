@@ -70,6 +70,7 @@ import {
   Loader2,
   X,
   Copy,
+  Palette,
 } from 'lucide-react'
 
 interface Service {
@@ -481,26 +482,16 @@ export default function ServicesPage() {
       const insertBusinessId = targetBusinessId || currentBusiness.id
 
       if (editingService) {
+        // Editing a service (even one duplicated to other sedes) only ever
+        // touches this one row - duplicates are fully independent once
+        // created (duplicate_group_id, scripts/054, is kept purely as an
+        // informational "also at Sede X" pointer, not a live sync).
         const { error } = await supabase
           .from('services')
           .update(serviceData)
           .eq('id', editingService.id)
         if (error) throw error
         serviceId = editingService.id
-
-        // Name/description/color are the shared "identity" of a service
-        // that's offered at more than one sede (scripts/054's
-        // duplicate_group_id) - keep every sibling in sync so it reads as
-        // ONE service everywhere, while price/duration/resources/buffers
-        // stay genuinely independent per sede (different rent/staff cost
-        // per location is a real scenario, not something to force-merge).
-        if (editingService.duplicate_group_id) {
-          await supabase
-            .from('services')
-            .update({ name: serviceData.name, description: serviceData.description, color: serviceData.color })
-            .eq('duplicate_group_id', editingService.duplicate_group_id)
-            .neq('id', editingService.id)
-        }
       } else {
         // Duplicate tracking (scripts/054) - reuse the source's existing
         // group if it's already part of one (a service can be duplicated
@@ -568,6 +559,7 @@ export default function ServicesPage() {
       await Promise.all([refetchServicesAndResources(), refetchServiceResources(), refetchServiceDurationOptions()])
       setIsServiceModalOpen(false)
       setDuplicateSourceId(null)
+      toast.success(editingService ? t.services.updateSuccess : t.services.createSuccess)
     } catch (err: any) {
       console.error('[v0] Error saving service:', err)
       // PLN03 = free-plan service limit trigger (scripts/048) - only
@@ -578,6 +570,7 @@ export default function ServicesPage() {
         setShowUpgradeModal(true)
       } else {
         setSaveError(t.saveError)
+        toast.error(t.saveError)
       }
     } finally {
       setSaving(false)
@@ -783,11 +776,6 @@ export default function ServicesPage() {
               {editingService ? t.services.editServiceDesc : t.services.newServiceDesc}
             </DialogDescription>
           </DialogHeader>
-          {editingService?.duplicate_group_id && duplicateSiblings[editingService.duplicate_group_id]?.length > 0 && (
-            <p className="-mt-2 rounded-md bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
-              {t.services.syncedIdentityHint}
-            </p>
-          )}
           <form onSubmit={handleSaveService} className="space-y-6">
             <FormSection title={t.services.sectionBasicInfo}>
               {!editingService && hasMultipleSedes && (
@@ -930,9 +918,11 @@ export default function ServicesPage() {
                   {durationOptions.map((option, index) => (
                     <div key={index} className="flex items-center gap-2">
                       <DurationInput
+                        key={`${editingService?.id ?? duplicateSourceId ?? 'new'}-${index}`}
                         value={option.duration}
                         onChange={(minutes) => updateDurationOption(index, 'duration', minutes)}
                         className="flex-1"
+                        initialUnit={!editingService && !duplicateSourceId ? 'hours' : undefined}
                       />
                       <Input
                         type="number"
@@ -975,9 +965,11 @@ export default function ServicesPage() {
                 <div className="space-y-2">
                   <Label htmlFor="service-duration">{t.services.durationLabel}</Label>
                   <DurationInput
+                    key={editingService?.id ?? duplicateSourceId ?? 'new'}
                     id="service-duration"
                     value={serviceForm.duration}
                     onChange={(minutes) => setServiceForm({ ...serviceForm, duration: minutes === '' ? 0 : minutes })}
+                    initialUnit={!editingService && !duplicateSourceId ? 'hours' : undefined}
                   />
                 </div>
                 {isUSD ? (
@@ -1087,7 +1079,7 @@ export default function ServicesPage() {
             <FormSection title={t.services.sectionAppearance}>
               <div className="space-y-2">
                 <Label>{t.services.colorLabel}</Label>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   {SERVICE_COLORS.map((color) => (
                     <button
                       key={color}
@@ -1101,6 +1093,36 @@ export default function ServicesPage() {
                       onClick={() => setServiceForm({ ...serviceForm, color })}
                     />
                   ))}
+                  {/* 9th swatch: a real color wheel via the native color
+                      input (zero extra dependency, every browser already
+                      ships one) - shows a rainbow ring until a custom color
+                      is picked, then shows that color solid so it reads the
+                      same as the 8 presets once chosen. */}
+                  <label
+                    className={cn(
+                      'relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-2 transition-transform',
+                      !SERVICE_COLORS.includes(serviceForm.color)
+                        ? 'scale-110 border-foreground'
+                        : 'border-transparent hover:scale-105'
+                    )}
+                    style={{
+                      background: !SERVICE_COLORS.includes(serviceForm.color)
+                        ? serviceForm.color
+                        : 'conic-gradient(from 0deg, #EF4444, #F59E0B, #84CC16, #10B981, #06B6D4, #3B82F6, #8B5CF6, #EC4899, #EF4444)',
+                    }}
+                    title={t.services.customColorLabel}
+                  >
+                    {SERVICE_COLORS.includes(serviceForm.color) && (
+                      <Palette className="h-3.5 w-3.5 text-white drop-shadow" />
+                    )}
+                    <input
+                      type="color"
+                      value={SERVICE_COLORS.includes(serviceForm.color) ? '#3B82F6' : serviceForm.color}
+                      onChange={(e) => setServiceForm({ ...serviceForm, color: e.target.value })}
+                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                      aria-label={t.services.customColorLabel}
+                    />
+                  </label>
                 </div>
               </div>
 
