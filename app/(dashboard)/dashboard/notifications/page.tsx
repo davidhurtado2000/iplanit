@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Bell, CalendarPlus, XCircle, Clock, Check, Loader2 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
+import { PageHeader } from '@/components/dashboard/page-header'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -149,10 +150,7 @@ export default function NotificationsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">{t.notifications.title}</h1>
-        <p className="text-muted-foreground">{t.notifications.pageSubtitle}</p>
-      </div>
+      <PageHeader title={t.notifications.title} subtitle={t.notifications.pageSubtitle} />
 
       {(['starting_soon', 'confirmed'] as const).map((liveType) => {
         const liveItems = liveNotifications.filter((n) => n.type === liveType)

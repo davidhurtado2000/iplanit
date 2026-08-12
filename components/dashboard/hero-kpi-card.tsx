@@ -35,8 +35,8 @@ export function HeroKpiCard({
   return (
     <Card className={className}>
       <CardContent className="p-5">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-muted-foreground">{label}</span>
+        <div className="flex items-center justify-between gap-2">
+          <span className="min-w-0 truncate text-sm font-medium text-muted-foreground">{label}</span>
           <div className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-full', iconClassName)}>
             <Icon className="h-4 w-4" />
           </div>

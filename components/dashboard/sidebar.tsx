@@ -45,6 +45,7 @@ import { UpgradeModal } from '@/components/upgrade-modal'
 import { PremiumBadge } from '@/components/premium-feature'
 import { NotificationBell } from '@/components/dashboard/notification-bell'
 import { useLanguage } from '@/context/language-context'
+import { getWorkerLabel } from '@/lib/worker-label'
 
 interface SidebarProps {
   isCollapsed: boolean
@@ -71,6 +72,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
   const { user, profile, loading: authLoading, signOut } = useAuth()
   const { businesses, currentBusiness, switchBusiness, loading: businessLoading } = useBusinesses()
   const { t, locale } = useLanguage()
+  const workerLabel = getWorkerLabel(currentBusiness, t)
 
   useEffect(() => {
     setNow(new Date())
@@ -259,7 +261,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         {/* Navigation */}
         <nav className="flex-1 space-y-1 p-2">
           {visibleNavItems.map((item) => {
-            const label = t.nav[item.key]
+            const label = item.key === 'workers' ? workerLabel.plural : t.nav[item.key]
             const isActive = pathname === item.href
             const NavLink = (
               <Link

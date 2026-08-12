@@ -5,6 +5,7 @@ import React from "react"
 import { useState, useMemo, useEffect } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/dashboard/page-header'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -632,29 +633,27 @@ export default function ServicesPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">{t.services.title}</h1>
-          <p className="text-muted-foreground">{t.services.subtitle}</p>
-        </div>
-      </div>
-
-      {/* Search and Actions */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative max-w-sm flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder={t.services.searchServices}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-        <Button onClick={handleNewServiceClick} className="gap-2">
-          <Plus className="h-4 w-4" />
-          {t.services.newService}
-        </Button>
-      </div>
+      <PageHeader
+        title={t.services.title}
+        subtitle={t.services.subtitle}
+        search={
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder={t.services.searchServices}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+        }
+        actions={
+          <Button onClick={handleNewServiceClick} className="w-full gap-2 sm:w-auto">
+            <Plus className="h-4 w-4" />
+            {t.services.newService}
+          </Button>
+        }
+      />
 
       {filteredServices.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed py-16 text-center">
@@ -879,7 +878,7 @@ export default function ServicesPage() {
                     }}
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="service-min-hours">{t.services.minHoursLabel}</Label>
                     <Input
@@ -961,7 +960,7 @@ export default function ServicesPage() {
                 )}
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="service-duration">{t.services.durationLabel}</Label>
                   <DurationInput
@@ -1017,7 +1016,7 @@ export default function ServicesPage() {
             <FormSection title={t.services.sectionAdvanced}>
               <div className="space-y-2">
                 <Label>{t.services.bufferLabel}</Label>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="service-buffer-before" className="text-xs font-normal text-muted-foreground">
                       {t.services.bufferBeforeLabel}

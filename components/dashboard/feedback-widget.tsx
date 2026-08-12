@@ -58,13 +58,21 @@ export function FeedbackWidget() {
       <PopoverTrigger asChild>
         <Button
           size="icon"
-          className="fixed bottom-20 right-4 z-40 h-12 w-12 rounded-full shadow-lg lg:bottom-6 lg:right-6"
+          // Docked to the right edge, vertically centered, instead of the
+          // bottom-right corner - that spot is already where toasts land
+          // (components/ui/toast.tsx) and is the conventional home for a
+          // primary action (WhatsApp's send button, most FABs), so a
+          // feedback button there kept reading as "the" action instead of
+          // an aside. A half-pill edge tab is a well-worn pattern for a
+          // secondary, always-available action (Intercom/Canny-style) that
+          // doesn't compete with either.
+          className="fixed right-0 top-1/2 z-40 h-11 w-11 -translate-y-1/2 rounded-l-full rounded-r-none shadow-lg"
           title={t.feedback.buttonLabel}
         >
           <MessageSquarePlus className="h-5 w-5" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80">
+      <PopoverContent side="left" align="center" sideOffset={8} className="w-80">
         {sent ? (
           <div className="flex flex-col items-center gap-2 py-4 text-center">
             <Check className="h-6 w-6 text-green-600" />

@@ -4,16 +4,21 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Calendar } from '@/components/ui/calendar'
+import type { DateRange } from 'react-day-picker'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { PremiumFeature } from '@/components/premium-feature'
 import { HeroKpiCard } from '@/components/dashboard/hero-kpi-card'
+import { PageHeader } from '@/components/dashboard/page-header'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { CalendarDays, DollarSign, Gauge, Users, Building2, Download, ArrowUp, ArrowDown } from 'lucide-react'
+import { CalendarDays, CalendarRange, DollarSign, Gauge, Users, Building2, Download, ArrowUp, ArrowDown } from 'lucide-react'
 import { useBusinesses } from '@/hooks/use-businesses'
+import { getWorkerLabel } from '@/lib/worker-label'
 import {
   useDashboardData,
   type Reservation,
@@ -44,6 +49,7 @@ import {
   getTopClients,
   getResourceBreakdown,
   getWorkerBreakdown,
+  getSellerBreakdown,
   type DateRangeOption,
   type TrendResult,
 } from '@/lib/analytics'
@@ -123,7 +129,13 @@ export default function AnalyticsPage() {
   } = useDashboardData()
   const { t, locale } = useLanguage()
   const tr = t.analytics
-  const [range, setRange] = useState<DateRangeOption>('30d')
+  const workerLabel = getWorkerLabel(currentBusiness, t)
+  const [range, setRange] = useState<DateRangeOption | 'custom'>('30d')
+  // Only meaningful while range === 'custom' - kept separate from `range`
+  // itself so switching back to a preset doesn't lose whatever dates were
+  // last picked (reopening "Personalizado" restores them).
+  const [customRange, setCustomRange] = useState<DateRange | undefined>(undefined)
+  const [customRangeOpen, setCustomRangeOpen] = useState(false)
   // "all" is a sentinel, not a real id - Radix Select can't use an empty
   // string as an item value (see the same convention in reservation-modal's
   // resource picker).
@@ -176,6 +188,27 @@ export default function AnalyticsPage() {
   // path for.
   const filterableWorkers = businessWorkers
 
+  // Who booked/sold a reservation (sold_by) is a user id, not a row in any
+  // list this page already loads - resolved via get_seller_names()
+  // (scripts/059-reservation-sold-by.sql) instead of a plain table query
+  // since profiles RLS only lets a user read their own row (a staff member
+  // couldn't otherwise see the owner's name, and vice versa). Same
+  // not-org-wide scoping as filterableWorkers above, for the same reason.
+  const [sellerNameById, setSellerNameById] = useState<Record<string, string>>({})
+  useEffect(() => {
+    if (!currentBusiness) return
+    let cancelled = false
+    supabase
+      .rpc('get_seller_names', { target_business_id: currentBusiness.id })
+      .then(({ data }) => {
+        if (cancelled || !data) return
+        setSellerNameById(Object.fromEntries(data.map((row: { user_id: string; name: string }) => [row.user_id, row.name])))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [currentBusiness?.id])
+
   // Every metric on this page reads from this instead of the raw
   // `reservations` list, so the service/resource filters apply consistently
   // everywhere at once (charts, KPIs, trends, and the CSV export) rather
@@ -190,7 +223,22 @@ export default function AnalyticsPage() {
     [reservations, serviceFilter, resourceFilter]
   )
 
-  const { from, to } = useMemo(() => getRangeBounds(range), [range])
+  const { from, to } = useMemo(() => {
+    if (range === 'custom') {
+      // A picked end day comes back at local midnight - stretch it to the
+      // end of that day so "hasta el 6 de agosto" actually includes the
+      // 6th's reservations instead of cutting off at 00:00.
+      if (customRange?.from && customRange?.to) {
+        const to = new Date(customRange.to)
+        to.setHours(23, 59, 59, 999)
+        return { from: customRange.from, to }
+      }
+      // Not yet a complete range (still mid-pick) - fall back to a sane
+      // default rather than crashing every downstream metric.
+      return getRangeBounds('30d')
+    }
+    return getRangeBounds(range)
+  }, [range, customRange])
   // "vs. previous period" needs data older than what's loaded by default
   // (dashboard-data-context only keeps ±90 days), and now that the range
   // picker also supports "this year"/"all time", the CURRENT period alone
@@ -307,6 +355,10 @@ export default function AnalyticsPage() {
     () => getWorkerBreakdown(filteredReservations, filterableWorkers, from, to),
     [filteredReservations, filterableWorkers, from, to]
   )
+  const sellerBreakdown = useMemo(
+    () => getSellerBreakdown(filteredReservations, sellerNameById, from, to),
+    [filteredReservations, sellerNameById, from, to]
+  )
 
   // Previous-period equivalents, purely to compute the trend badges below -
   // none of these are rendered on their own.
@@ -416,12 +468,11 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-4 pb-20 sm:space-y-6 lg:pb-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-foreground sm:text-2xl">{tr.title}</h1>
-          <p className="text-sm text-muted-foreground">{tr.subtitle}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+      <PageHeader
+        title={tr.title}
+        subtitle={tr.subtitle}
+        actions={
+          <>
           <Select value={serviceFilter} onValueChange={setServiceFilter}>
             <SelectTrigger className="w-[calc(50%-4px)] sm:w-[170px]">
               <SelectValue />
@@ -448,7 +499,14 @@ export default function AnalyticsPage() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={range} onValueChange={(value) => setRange(value as DateRangeOption)}>
+          <Select
+            value={range}
+            onValueChange={(value) => {
+              const next = value as DateRangeOption | 'custom'
+              setRange(next)
+              if (next === 'custom') setCustomRangeOpen(true)
+            }}
+          >
             <SelectTrigger className="w-full sm:w-[170px]">
               <SelectValue />
             </SelectTrigger>
@@ -458,8 +516,39 @@ export default function AnalyticsPage() {
               <SelectItem value="90d">{tr.range90d}</SelectItem>
               <SelectItem value="ytd">{tr.rangeYtd}</SelectItem>
               <SelectItem value="all">{tr.rangeAll}</SelectItem>
+              <SelectItem value="custom">{tr.rangeCustom}</SelectItem>
             </SelectContent>
           </Select>
+          {range === 'custom' && (
+            <Popover open={customRangeOpen} onOpenChange={setCustomRangeOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="w-full justify-start gap-2 sm:w-auto">
+                  <CalendarRange className="h-4 w-4 shrink-0" />
+                  {customRange?.from && customRange?.to
+                    ? `${customRange.from.toLocaleDateString(locale, { day: 'numeric', month: 'short' })} – ${customRange.to.toLocaleDateString(locale, { day: 'numeric', month: 'short' })}`
+                    : tr.rangeCustomPick}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="range"
+                  selected={customRange}
+                  onSelect={setCustomRange}
+                  defaultMonth={customRange?.from}
+                  numberOfMonths={2}
+                />
+                <div className="flex justify-end border-t p-2">
+                  <Button
+                    size="sm"
+                    disabled={!customRange?.from || !customRange?.to}
+                    onClick={() => setCustomRangeOpen(false)}
+                  >
+                    {tr.rangeCustomApply}
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
           {hasMultipleSedes && (
             <div className="flex items-center gap-2 rounded-lg border px-3 py-2">
               <Switch checked={allSedes} onCheckedChange={setAllSedes} id="all-sedes-toggle" />
@@ -468,8 +557,9 @@ export default function AnalyticsPage() {
               </label>
             </div>
           )}
-        </div>
-      </div>
+          </>
+        }
+      />
 
       <PremiumFeature featureName={tr.premiumTitle}>
         <div className="space-y-8">
@@ -482,7 +572,7 @@ export default function AnalyticsPage() {
               </Button>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               <HeroKpiCard
                 label={tr.kpiRevenue}
                 icon={DollarSign}
@@ -515,7 +605,7 @@ export default function AnalyticsPage() {
             </div>
 
             <Card>
-              <CardContent className="grid grid-cols-2 gap-x-4 gap-y-4 p-4 sm:grid-cols-5 sm:gap-y-0 sm:divide-x">
+              <CardContent className="grid grid-cols-2 gap-x-4 gap-y-4 p-4 md:grid-cols-5 md:gap-y-0 md:divide-x">
                 <MiniStat
                   label={tr.kpiTopService}
                   value={topService?.name ?? '—'}
@@ -721,10 +811,10 @@ export default function AnalyticsPage() {
 
           {filterableWorkers.length > 0 && (
             <div className="space-y-4">
-              <SectionHeading>{tr.sectionWorkers}</SectionHeading>
+              <SectionHeading>{workerLabel.plural}</SectionHeading>
               <Card>
                 <CardHeader>
-                  <CardTitle>{tr.workerBreakdownTitle}</CardTitle>
+                  <CardTitle>{tr.workerBreakdownTitlePrefix} {workerLabel.singular.toLowerCase()}</CardTitle>
                   <CardDescription>{tr.workerBreakdownDesc}</CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -734,7 +824,7 @@ export default function AnalyticsPage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>{tr.workerBreakdownColWorker}</TableHead>
+                          <TableHead>{workerLabel.singular}</TableHead>
                           <TableHead className="text-right">{tr.workerBreakdownColCount}</TableHead>
                           <TableHead className="text-right">{tr.workerBreakdownColHours}</TableHead>
                           <TableHead className="text-right">{tr.workerBreakdownColRevenue}</TableHead>
@@ -756,6 +846,38 @@ export default function AnalyticsPage() {
                       </TableBody>
                     </Table>
                   )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {sellerBreakdown.length > 0 && (
+            <div className="space-y-4">
+              <SectionHeading>{tr.sectionSellers}</SectionHeading>
+              <Card>
+                <CardHeader>
+                  <CardTitle>{tr.sellerBreakdownTitle}</CardTitle>
+                  <CardDescription>{tr.sellerBreakdownDesc}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{tr.sellerBreakdownColSeller}</TableHead>
+                        <TableHead className="text-right">{tr.sellerBreakdownColCount}</TableHead>
+                        <TableHead className="text-right">{tr.sellerBreakdownColRevenue}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {sellerBreakdown.map((s) => (
+                        <TableRow key={s.sellerId}>
+                          <TableCell className="font-medium">{s.name}</TableCell>
+                          <TableCell className="text-right">{s.count}</TableCell>
+                          <TableCell className="text-right">{currencySymbol} {s.revenue.toFixed(0)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </CardContent>
               </Card>
             </div>

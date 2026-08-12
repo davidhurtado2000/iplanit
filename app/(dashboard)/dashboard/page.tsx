@@ -27,6 +27,7 @@ import { UpgradeModal } from '@/components/upgrade-modal'
 import { OnboardingBanner } from '@/components/dashboard/onboarding-banner'
 import { ReservationModal } from '@/components/dashboard/reservation-modal'
 import { HeroKpiCard } from '@/components/dashboard/hero-kpi-card'
+import { PageHeader } from '@/components/dashboard/page-header'
 import { VISIT_BLOCK_COLOR } from '@/components/dashboard/calendar-view'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useAuth } from '@/hooks/use-auth'
@@ -153,20 +154,18 @@ export default function DashboardPage() {
   return (
     <div className="space-y-4 pb-20 sm:space-y-6 lg:pb-6">
       {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-foreground sm:text-2xl">{t.dashboard.title}</h1>
-          <p className="text-sm text-muted-foreground">
-            {t.welcome}, {displayName}
-          </p>
-        </div>
-        <Button asChild size="sm" className="w-full sm:w-auto">
-          <Link href="/dashboard/calendar">
-            <Calendar className="mr-2 h-4 w-4" />
-            {t.dashboard.viewCalendar}
-          </Link>
-        </Button>
-      </div>
+      <PageHeader
+        title={t.dashboard.title}
+        subtitle={`${t.welcome}, ${displayName}`}
+        actions={
+          <Button asChild size="sm" className="w-full sm:w-auto">
+            <Link href="/dashboard/calendar">
+              <Calendar className="mr-2 h-4 w-4" />
+              {t.dashboard.viewCalendar}
+            </Link>
+          </Button>
+        }
+      />
 
       {/* Onboarding Banner */}
       <OnboardingBanner

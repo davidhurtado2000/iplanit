@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
+import { getWorkerLabel } from '@/lib/worker-label'
 import {
   Calendar,
   LayoutDashboard,
@@ -38,16 +39,21 @@ interface MobileNavProps {
 }
 
 // Order matters: the bottom tab bar only shows the first 5 (see
-// NAV_ITEMS.slice(0, 5) below), so analytics/parking go last to keep the
-// existing 5 quick-access items unchanged - both still reachable from the
-// full menu.
+// NAV_ITEMS.slice(0, 5) below). Dashboard/Calendar/Clients are daily
+// actions no matter the business; Services is where pricing/offerings
+// actually change, so it earns a slot Resources/Workers don't (those are
+// roster setup, touched far less often once configured). Settings and
+// Activity are the weakest candidates for one-tap access - both are rare,
+// occasional visits, and Settings is still one tap away in the full menu -
+// so Analytics (checking today's/this week's numbers, something an
+// engaged owner actually opens often) takes the 5th slot instead.
 const NAV_ITEMS = [
   { key: 'dashboard' as const, href: '/dashboard', icon: LayoutDashboard },
   { key: 'calendar' as const, href: '/dashboard/calendar', icon: Calendar },
-  { key: 'services' as const, href: '/dashboard/services', icon: Briefcase },
   { key: 'clients' as const, href: '/dashboard/clients', icon: Users },
-  { key: 'settings' as const, href: '/dashboard/settings', icon: Settings },
+  { key: 'services' as const, href: '/dashboard/services', icon: Briefcase },
   { key: 'analytics' as const, href: '/dashboard/analytics', icon: BarChart3 },
+  { key: 'settings' as const, href: '/dashboard/settings', icon: Settings },
   { key: 'parking' as const, href: '/dashboard/parking', icon: ParkingSquare },
   { key: 'resources' as const, href: '/dashboard/resources', icon: Layers },
   { key: 'workers' as const, href: '/dashboard/workers', icon: UserCog },
@@ -60,6 +66,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
   const { user, profile, signOut } = useAuth()
   const { currentBusiness, loading: businessLoading } = useBusinesses()
   const { t } = useLanguage()
+  const workerLabel = getWorkerLabel(currentBusiness, t)
 
   const userPlan = profile?.plan || 'free'
   const userName = profile?.full_name || user?.email?.split('@')[0] || t.mobileNav.defaultUser
@@ -88,6 +95,8 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
       {/* Fixed Top Bar */}
       <div className="fixed inset-x-0 top-0 z-50 flex h-14 items-center justify-between border-b bg-background px-4 lg:hidden">
         <Link href="/dashboard" className="flex items-center gap-2">
+          <img src="/favicon-96x96.png" alt="" className="h-7 w-7 shrink-0 dark:hidden" />
+          <img src="/favicon-96x96-white.png" alt="" className="hidden h-7 w-7 shrink-0 dark:block" />
           <img src="/logotipo_modolight.png" alt="iPlanit" className="h-6 w-auto dark:hidden" />
           <img src="/logotipo_mododark.png" alt="iPlanit" className="hidden h-6 w-auto dark:block" />
         </Link>
@@ -178,7 +187,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
                       )}
                     >
                       <item.icon className="h-5 w-5 shrink-0" />
-                      <span>{t.nav[item.key]}</span>
+                      <span>{item.key === 'workers' ? workerLabel.plural : t.nav[item.key]}</span>
                       {item.key === 'analytics' && <PremiumBadge className="ml-auto" />}
                     </Link>
                   )
@@ -242,7 +251,9 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
                 )}
               >
                 <item.icon className={cn('h-5 w-5', isActive && 'text-primary')} />
-                <span className="truncate max-w-[60px]">{t.nav[item.key].slice(0, 6)}</span>
+                <span className="truncate max-w-[60px]">
+                  {(item.key === 'workers' ? workerLabel.plural : t.nav[item.key]).slice(0, 6)}
+                </span>
               </Link>
             )
           })}

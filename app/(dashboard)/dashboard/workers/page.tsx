@@ -5,6 +5,7 @@ import React from "react"
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/dashboard/page-header'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -38,6 +39,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
+import { getWorkerLabel } from '@/lib/worker-label'
 import { useDashboardData } from '@/context/dashboard-data-context'
 import { TimeSelect } from '@/components/dashboard/time-select'
 import { createClient } from '@/lib/supabase/client'
@@ -88,6 +90,7 @@ interface Worker {
 export default function WorkersPage() {
   const { currentBusiness } = useBusinesses()
   const { t } = useLanguage()
+  const workerLabel = getWorkerLabel(currentBusiness, t)
   const {
     workers,
     workerHours,
@@ -305,28 +308,27 @@ export default function WorkersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">{t.workers.title}</h1>
-          <p className="text-muted-foreground">{t.workers.explainer}</p>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative max-w-sm flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder={t.workers.searchPlaceholder}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-        <Button onClick={() => handleOpenWorkerModal()} className="gap-2">
-          <Plus className="h-4 w-4" />
-          {t.workers.newWorker}
-        </Button>
-      </div>
+      <PageHeader
+        title={workerLabel.plural}
+        subtitle={t.workers.explainer}
+        search={
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder={t.workers.searchPlaceholder}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+        }
+        actions={
+          <Button onClick={() => handleOpenWorkerModal()} className="w-full gap-2 sm:w-auto">
+            <Plus className="h-4 w-4" />
+            {t.workers.newWorker}
+          </Button>
+        }
+      />
 
       {filteredWorkers.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed py-16 text-center">

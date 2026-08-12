@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   DropdownMenu,
@@ -19,7 +20,8 @@ import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
 import { useDashboardData } from '@/context/dashboard-data-context'
 import { StatusBadge } from '@/components/dashboard/status-badge'
-import { capitalizeFirst } from '@/lib/utils'
+import { capitalizeFirst, cn } from '@/lib/utils'
+import { sedeAbbr, sedeTint } from '@/lib/sede-colors'
 import { createClient } from '@/lib/supabase/client'
 import type { CalendarView } from '@/lib/types'
 import { Plus, CalendarDays, CalendarRange, Calendar as CalendarIcon, Clock, ChevronDown, Building2, List, Eye, Loader2 } from 'lucide-react'
@@ -48,10 +50,15 @@ interface Client {
 
 interface Service {
   id: string
+  business_id: string
   name: string
   duration_minutes: number
   price: number
   color: string
+  is_active: boolean
+  pricing_mode: 'fixed' | 'preset' | 'hourly'
+  hourly_rate: number | null
+  hourly_rate_usd: number | null
 }
 
 interface Resource {
@@ -100,6 +107,7 @@ function CalendarPageInner() {
     clients,
     services,
     resources: allResources,
+    serviceResources,
     calendarStartHour,
     calendarEndHour,
     businessHours,
@@ -231,7 +239,18 @@ function CalendarPageInner() {
     startHint: string
     endHint?: string
     date: string
+    serviceId?: string
   } | null>(null)
+
+  // "Vista previa de servicio" sidebar card (next to "Hoy") - lets DayView
+  // show a ghost block sized to this service's duration on hover, and
+  // preselects it when a slot is clicked/tapped (see handleCreateAtSlot) -
+  // see calendar-view.tsx's own previewService doc comment for why this
+  // lives here instead of inside that component. Just the id here (a hook,
+  // must stay unconditional) - the actual service object is resolved below
+  // from effectiveServices, once vista expandida's org-wide swap is in
+  // scope, so switching to another sede's service still resolves correctly.
+  const [previewServiceId, setPreviewServiceId] = useState<string>('none')
 
   // Build view options with translated labels
   const VIEW_OPTIONS = VIEW_CONFIG.map(({ value, icon }) => ({
@@ -270,7 +289,7 @@ function CalendarPageInner() {
   // form's visitDurationMinutes regardless, so it's already there and
   // correct if the user switches to "Visita" inside the modal, harmless
   // otherwise since that field goes unused for a real booking.
-  const handleCreateAtSlot = (resourceId: string | null, dateTimeLocal: string, endDateTimeLocal?: string) => {
+  const handleCreateAtSlot = (resourceId: string | null, dateTimeLocal: string, endDateTimeLocal?: string, serviceId?: string) => {
     // In vista expandida, a clicked column can belong to a sede other than
     // the currently active one - same switch-first reasoning as
     // handleSelectReservation, so the reservation actually gets created
@@ -284,7 +303,7 @@ function CalendarPageInner() {
     setModalMode('create')
     setModalInitialType('booking')
     setFollowUpPrefill(null)
-    setCreatePrefill({ resourceId, startHint: dateTimeLocal, endHint: endDateTimeLocal, date: dateTimeLocal.split('T')[0] })
+    setCreatePrefill({ resourceId, startHint: dateTimeLocal, endHint: endDateTimeLocal, date: dateTimeLocal.split('T')[0], serviceId })
     setIsModalOpen(true)
   }
 
@@ -342,7 +361,17 @@ function CalendarPageInner() {
     fetchOrgData(true)
   }
 
-  if (loading) {
+  // Skipped while a modal is open: clicking an empty slot that belongs to a
+  // different sede than the active one (vista expandida) calls
+  // switchBusiness() below in handleCreateAtSlot, which changes
+  // currentBusiness.id - dashboard-data-context re-fetches everything for
+  // the new business and flips `loading` true for that round trip. Without
+  // this guard, that flash tore down the whole page (calendar, sidebar, AND
+  // the reservation modal that had just opened in the same click) and
+  // rebuilt it a moment later - correct data, but it looked and felt like
+  // the app had crashed and reloaded. The modal reads its own data from
+  // context hooks that resolve once the fetch completes, same as before.
+  if (loading && !isModalOpen) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-12 w-64" />
@@ -369,6 +398,48 @@ function CalendarPageInner() {
   const effectiveResources = isExpanded ? orgData!.resources : resources
   const effectiveServices = isExpanded ? orgData!.services : services
   const effectiveClients = isExpanded ? orgData!.clients : clients
+  // Same "can this actually be booked" bar reservation-modal.tsx's own
+  // service picker holds services to (isServiceBookable there) - without
+  // this, picking an inactive service (or an hourly one with no rate set)
+  // here would preselect a service_id the modal's picker excludes, so the
+  // form opened with it already selected instead. Deliberately skips that
+  // function's preset-duration-options check: those aren't fetched org-wide
+  // (fetchOrgData has no service_duration_options query), so applying it
+  // here would wrongly hide a perfectly bookable preset service from
+  // another sede while vista expandida is on.
+  const previewableServices = effectiveServices.filter(
+    (s) => s.is_active && (s.pricing_mode !== 'hourly' || !!(s.hourly_rate || s.hourly_rate_usd))
+  )
+  const previewService =
+    previewServiceId !== 'none' ? previewableServices.find((s) => s.id === previewServiceId) : undefined
+  // Vista expandida mixes every sede's services into one list - grouped by
+  // sede here (same order as orgBusinessIds, same abbreviation/tint as the
+  // calendar's own resource-column sede badges) so two same-ish-looking
+  // service names from different sedes don't read as one option, and stay
+  // distinguishable once the dropdown is closed too, since Radix mirrors a
+  // SelectItem's children into the trigger.
+  const previewServicesBySede = isExpanded
+    ? orgBusinessIds
+        .map((businessId) => ({
+          businessId,
+          businessName: businessNameById[businessId] ?? '',
+          services: previewableServices.filter((s) => s.business_id === businessId),
+        }))
+        .filter((group) => group.services.length > 0)
+    : null
+  // Which resources previewService is actually linked to (service_resources,
+  // scripts/008) - an empty list here means "unrestricted, works with any
+  // resource" (same convention as worker_services - see services/page.tsx's
+  // resourcesAssociatedHint), NOT "works with none", so DayView only needs
+  // to warn about resources OUTSIDE this list, never treat an empty list
+  // itself as a restriction. Deliberately skipped in vista expandida:
+  // fetchOrgData doesn't fetch service_resources for other sedes, so this
+  // would otherwise flag a perfectly valid resource on another sede as
+  // incompatible just because its link row was never loaded.
+  const previewAllowedResourceIds =
+    previewService && !isExpanded
+      ? serviceResources.filter((sr) => sr.service_id === previewService.id).map((sr) => sr.resource_id)
+      : []
 
   // Build lookup maps for display
   const clientsMap = Object.fromEntries(effectiveClients.map((c) => [c.id, c]))
@@ -472,6 +543,8 @@ function CalendarPageInner() {
             businessColorIndexById={isExpanded ? businessColorIndexById : undefined}
             businessHours={businessHours}
             initialDate={initialDate}
+            previewService={previewService}
+            previewAllowedResourceIds={previewAllowedResourceIds}
           />
         </div>
 
@@ -557,6 +630,73 @@ function CalendarPageInner() {
               )}
             </CardContent>
           </Card>
+
+          {/* Its own card, not folded into the calendar's toolbar - a
+              deliberate mode the user turns on ("I'm about to book a
+              haircut, show me where 30 minutes would land") deserves more
+              room than a cramped filter dropdown next to the date
+              navigation. Day-view only: Week/Month don't have an hour grid
+              to preview against. */}
+          {view === 'day' && previewableServices.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">{t.calendar.previewServicePlaceholder}</CardTitle>
+                <p className="text-xs text-muted-foreground">{t.calendar.previewServiceHint}</p>
+              </CardHeader>
+              <CardContent>
+                <Select value={previewServiceId} onValueChange={setPreviewServiceId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={t.calendar.previewServiceNone} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">{t.calendar.previewServiceNone}</SelectItem>
+                    {previewServicesBySede ? (
+                      previewServicesBySede.map((group) => {
+                        const tint = sedeTint(businessColorIndexById[group.businessId])
+                        return (
+                          <SelectGroup key={group.businessId}>
+                            <SelectLabel>{group.businessName}</SelectLabel>
+                            {group.services.map((s) => (
+                              <SelectItem key={s.id} value={s.id}>
+                                <span className="flex min-w-0 items-center gap-2">
+                                  <span
+                                    className="h-2 w-2 shrink-0 rounded-full"
+                                    style={{ backgroundColor: s.color || '#3B82F6' }}
+                                  />
+                                  <span className="min-w-0 truncate">{s.name}</span>
+                                  <span
+                                    className={cn(
+                                      'ml-auto shrink-0 rounded px-1 text-[10px] font-bold',
+                                      tint ? tint.bg : 'bg-muted',
+                                      tint ? tint.text : 'text-muted-foreground'
+                                    )}
+                                  >
+                                    {sedeAbbr(group.businessName)}
+                                  </span>
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        )
+                      })
+                    ) : (
+                      previewableServices.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          <span className="flex items-center gap-2">
+                            <span
+                              className="h-2 w-2 shrink-0 rounded-full"
+                              style={{ backgroundColor: s.color || '#3B82F6' }}
+                            />
+                            {s.name}
+                          </span>
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
 
@@ -569,7 +709,7 @@ function CalendarPageInner() {
         onSave={handleReservationSaved}
         initialType={modalInitialType}
         prefillClientId={followUpPrefill?.clientId}
-        prefillServiceId={followUpPrefill?.serviceId}
+        prefillServiceId={followUpPrefill?.serviceId ?? createPrefill?.serviceId}
         followUpOfReservationId={followUpPrefill?.reservationId}
         onCreateFollowUp={handleCreateFollowUp}
         prefillResourceId={createPrefill?.resourceId ?? undefined}

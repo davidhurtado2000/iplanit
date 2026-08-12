@@ -5,6 +5,7 @@ import React from "react"
 import { useState, useMemo } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/dashboard/page-header'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -328,29 +329,27 @@ export default function ResourcesPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">{t.services.resourcesTab}</h1>
-          <p className="text-muted-foreground">{t.services.resourcesExplainer}</p>
-        </div>
-      </div>
-
-      {/* Search and Actions */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative max-w-sm flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder={t.services.searchResources}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-        <Button onClick={handleNewResourceClick} className="gap-2">
-          <Plus className="h-4 w-4" />
-          {t.services.newResource}
-        </Button>
-      </div>
+      <PageHeader
+        title={t.services.resourcesTab}
+        subtitle={t.services.resourcesExplainer}
+        search={
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder={t.services.searchResources}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+        }
+        actions={
+          <Button onClick={handleNewResourceClick} className="w-full gap-2 sm:w-auto">
+            <Plus className="h-4 w-4" />
+            {t.services.newResource}
+          </Button>
+        }
+      />
 
       {/* Resources Grid */}
       {filteredResources.length === 0 ? (

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, type FormEvent, type ChangeEvent } from 'react'
 import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/dashboard/page-header'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -302,6 +303,8 @@ export default function SettingsPage() {
     currency: 'PEN' as 'PEN' | 'USD',
     cancellation_policy_hours: 24,
     offers_parking: false,
+    worker_label_singular: '',
+    worker_label_plural: '',
   })
   const [slugError, setSlugError] = useState('')
 
@@ -362,6 +365,8 @@ export default function SettingsPage() {
         currency: currentBusiness.currency || (currentBusiness.country === 'US' ? 'USD' : 'PEN'),
         cancellation_policy_hours: currentBusiness.cancellation_policy_hours ?? 24,
         offers_parking: currentBusiness.offers_parking ?? false,
+        worker_label_singular: currentBusiness.worker_label_singular || '',
+        worker_label_plural: currentBusiness.worker_label_plural || '',
       })
       setNotifications({
         emailConfirmations: currentBusiness.notify_confirmations ?? true,
@@ -679,6 +684,8 @@ export default function SettingsPage() {
             currency: business.currency,
             cancellation_policy_hours: business.cancellation_policy_hours,
             offers_parking: business.offers_parking,
+            worker_label_singular: business.worker_label_singular.trim() || null,
+            worker_label_plural: business.worker_label_plural.trim() || null,
           })
         } catch (businessErr: any) {
           if (businessErr?.code === '23505') {
@@ -937,10 +944,7 @@ export default function SettingsPage() {
       ) : (
         <>
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">{t.settings.title}</h1>
-        <p className="text-muted-foreground">{t.settings.subtitle}</p>
-      </div>
+      <PageHeader title={t.settings.title} subtitle={t.settings.subtitle} />
 
       <Tabs defaultValue="profile" className="space-y-6">
         <TabsList
@@ -1251,6 +1255,32 @@ export default function SettingsPage() {
                       </Select>
                       <p className="text-xs text-muted-foreground">{t.settings.businessCurrencyHint}</p>
                     </div>
+                  </FormSection>
+
+                  <Separator />
+
+                  <FormSection title={t.settings.sectionTerminology} bordered>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="worker-label-singular">{t.settings.workerLabelSingularField}</Label>
+                        <Input
+                          id="worker-label-singular"
+                          value={business.worker_label_singular}
+                          onChange={(e) => setBusiness({ ...business, worker_label_singular: e.target.value })}
+                          placeholder={t.settings.workerLabelSingularPlaceholder}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="worker-label-plural">{t.settings.workerLabelPluralField}</Label>
+                        <Input
+                          id="worker-label-plural"
+                          value={business.worker_label_plural}
+                          onChange={(e) => setBusiness({ ...business, worker_label_plural: e.target.value })}
+                          placeholder={t.settings.workerLabelPluralPlaceholder}
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{t.settings.workerLabelHint}</p>
                   </FormSection>
 
                   <Separator />
@@ -1603,7 +1633,7 @@ export default function SettingsPage() {
                     value={String(notifications.reminderHours)}
                     onValueChange={(value) => setNotifications({ ...notifications, reminderHours: Number(value) })}
                   >
-                    <SelectTrigger className="w-[200px]">
+                    <SelectTrigger className="w-full sm:w-[200px]">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

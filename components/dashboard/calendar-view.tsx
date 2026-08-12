@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -11,8 +12,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ChevronLeft, ChevronRight, CalendarOff, ParkingSquare, Search, Eye, HelpCircle, Clock, Check, CheckCheck, X, Minus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CalendarOff, ParkingSquare, Search, Eye, HelpCircle, Clock, Check, CheckCheck, X, Minus, Ban } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import type { CalendarView } from '@/lib/types'
 import { cn, capitalizeFirst } from '@/lib/utils'
 import { useLanguage } from '@/context/language-context'
@@ -103,7 +105,7 @@ function blockHeight(startStr: string, endStr: string) {
 // ─── Interfaces ────────────────────────────────────────────────────────────
 interface Resource { id: string; name: string; type: 'room' | 'person' | 'equipment' | 'virtual' | 'parking'; color: string; business_id?: string }
 interface Client   { id: string; name: string }
-interface Service  { id: string; name: string; duration_minutes: number; color: string }
+interface Service  { id: string; name: string; duration_minutes: number; color: string; business_id?: string }
 
 interface CalendarViewProps {
   view: CalendarView
@@ -135,10 +137,12 @@ interface CalendarViewProps {
    * loaded) is treated as permissively open, same fallback used elsewhere. */
   businessHours?: BusinessHourRow[]
   /** Seeds the initially-shown date (e.g. a notification linking to a
-   * specific reservation's day) instead of always starting on today.
-   * Read once on mount only - changing this prop after mount does not
-   * re-navigate, since the user's own in-page navigation should win from
-   * then on. */
+   * specific reservation's day) instead of always starting on today, and
+   * re-navigates whenever it changes to a new value (e.g. a second
+   * notification click while already on this page) - see the effect by
+   * currentDate's useState. It's memoized on the query param upstream
+   * (calendar/page.tsx), so unrelated re-renders don't clobber the user's
+   * own in-page navigation. */
   initialDate?: Date
   /** DayView only - fires on a plain click (single point) OR a mouse-drag
    * (LettuceMeet/Google-Calendar style range select) on an empty part of
@@ -151,8 +155,30 @@ interface CalendarViewProps {
    * few px of movement) - a plain click omits it, same as before. Touch/pen
    * input always omits it too (see DayView - dragging is mouse-only, to
    * avoid fighting the grid's native touch-scroll gesture). Undefined
-   * disables the interaction entirely (no hover affordance either). */
-  onCreateAtSlot?: (resourceId: string | null, dateTimeLocal: string, endDateTimeLocal?: string) => void
+   * disables the interaction entirely (no hover affordance either).
+   * serviceId is set when DayView's own "preview a service" picker
+   * (mouse-only ghost block sized to that service's duration - see
+   * previewService below) has a service selected at click time; the
+   * modal's own duration/pricing logic takes it from there, so this never
+   * needs an endDateTimeLocal to go with it. */
+  onCreateAtSlot?: (resourceId: string | null, dateTimeLocal: string, endDateTimeLocal?: string, serviceId?: string) => void
+  /** DayView only (vista Dia) - the service picked in the parent's own
+   * "vista previa de servicio" card (see calendar/page.tsx's sidebar,
+   * next to the "Hoy" card - deliberately its own card there, not folded
+   * into this component's toolbar, so it reads as a distinct mode the
+   * user turns on rather than another cramped filter). Controlled from
+   * outside rather than owned here so that card can sit beside the
+   * calendar instead of inside it. */
+  previewService?: Pick<Service, 'id' | 'name' | 'duration_minutes' | 'color' | 'business_id'>
+  /** Resource ids previewService (above) is actually linked to
+   * (service_resources) - empty means unrestricted (works with any
+   * resource), same "no rows = no restriction" convention as
+   * worker_services elsewhere. Only meaningful together with
+   * previewService; DayView uses it to visually flag resource columns
+   * previewService ISN'T linked to and block creating there, so the user
+   * finds out from the calendar itself instead of an empty resource picker
+   * inside the reservation form. */
+  previewAllowedResourceIds?: string[]
 }
 
 // ─── Main component ────────────────────────────────────────────────────────
@@ -174,10 +200,23 @@ export function CalendarViewComponent({
   businessHours,
   initialDate,
   onCreateAtSlot,
+  previewService,
+  previewAllowedResourceIds,
 }: CalendarViewProps) {
   const { t, locale } = useLanguage()
   const [currentDate, setCurrentDate] = useState(() => initialDate ?? new Date())
   const [selectedResourceId, setSelectedResourceId] = useState<string>('all')
+
+  // A notification click updates the URL's ?date= while this component may
+  // already be mounted showing a different day - the useState initializer
+  // above only runs once, so without this effect a second (or later)
+  // notification click while already on the calendar page silently did
+  // nothing. initialDate is memoized on the query param in calendar/page.tsx,
+  // so this only fires on a genuine new target date, never on unrelated
+  // re-renders - the user's own in-page navigation still isn't clobbered.
+  useEffect(() => {
+    if (initialDate) setCurrentDate(initialDate)
+  }, [initialDate])
 
   // Let the parent know what range is on screen so it can make sure that
   // data is actually loaded (see ensureReservationsInRange in
@@ -392,7 +431,7 @@ export function CalendarViewComponent({
         </Popover>
       </div>
 
-      {view === 'day'   && <DayView   date={currentDate} reservations={reservations} resources={resources} selectedResourceId={selectedResourceId} clientsMap={clientsMap} servicesMap={servicesMap} resourcesMap={resourcesMap} onSelectReservation={onSelectReservation} startHour={startHour} endHour={endHour} timezone={timezone} t={t} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} businessHours={businessHours} onCreateAtSlot={onCreateAtSlot} />}
+      {view === 'day'   && <DayView   date={currentDate} reservations={reservations} resources={resources} selectedResourceId={selectedResourceId} clientsMap={clientsMap} servicesMap={servicesMap} resourcesMap={resourcesMap} onSelectReservation={onSelectReservation} startHour={startHour} endHour={endHour} timezone={timezone} t={t} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} businessHours={businessHours} onCreateAtSlot={onCreateAtSlot} previewService={previewService} previewAllowedResourceIds={previewAllowedResourceIds} />}
       {view === 'week'  && <WeekView  date={currentDate} reservations={reservations} clientsMap={clientsMap} servicesMap={servicesMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
       {view === 'month' && <MonthView date={currentDate} reservations={reservations} servicesMap={servicesMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
     </div>
@@ -404,6 +443,7 @@ function DayView({
   date, reservations, resources, selectedResourceId,
   clientsMap, servicesMap, resourcesMap, onSelectReservation,
   startHour, endHour, timezone, t, businessNameById, businessColorIndexById, businessHours, onCreateAtSlot,
+  previewService, previewAllowedResourceIds,
 }: {
   date: Date
   reservations: any[]
@@ -420,7 +460,23 @@ function DayView({
   businessNameById?: Record<string, string>
   businessColorIndexById?: Record<string, number>
   businessHours?: BusinessHourRow[]
-  onCreateAtSlot?: (resourceId: string | null, dateTimeLocal: string, endDateTimeLocal?: string) => void
+  onCreateAtSlot?: (resourceId: string | null, dateTimeLocal: string, endDateTimeLocal?: string, serviceId?: string) => void
+  /** Toolbar's "preview a service" picker (see CalendarViewComponent) -
+   * when set, hovering an empty part of the grid (mouse only - touch has
+   * no hover event, but still benefits: a single tap opens the create
+   * modal with this service already selected, so its duration is already
+   * correct without needing a precise drag) shows a ghost block sized to
+   * this service's duration, and a click/tap passes its id through
+   * onCreateAtSlot so the modal opens with it preselected. */
+  previewService?: Pick<Service, 'id' | 'name' | 'duration_minutes' | 'color' | 'business_id'>
+  /** Empty = previewService works with any resource (or none selected).
+   * Non-empty = the only resource columns previewService is actually
+   * linked to (service_resources) - every other column gets a muted
+   * "not offered here" treatment instead of the normal ghost preview, and
+   * a click there is blocked with an explanatory toast rather than
+   * opening the form with a resource/service combination that doesn't
+   * make sense together. */
+  previewAllowedResourceIds?: string[]
 }) {
   // Use business timezone so "dateStr" matches the day the user sees, not UTC midnight
   const dateStr = toDateStr(date, timezone)
@@ -451,7 +507,7 @@ function DayView({
 
   // Build columns
   const columns = useMemo(() => {
-    let cols: Array<{ id: string | null; label: string; color?: string; sedeLabel?: string; sedeColorIndex?: number }> = []
+    let cols: Array<{ id: string | null; label: string; color?: string; sedeLabel?: string; sedeColorIndex?: number; businessId?: string }> = []
 
     if (selectedResourceId !== 'all') {
       const res = resourcesMap[selectedResourceId]
@@ -461,6 +517,7 @@ function DayView({
         color: res?.color,
         sedeLabel: res?.business_id ? businessNameById?.[res.business_id] : undefined,
         sedeColorIndex: res?.business_id ? businessColorIndexById?.[res.business_id] : undefined,
+        businessId: res?.business_id,
       }]
     }
 
@@ -471,6 +528,7 @@ function DayView({
         color: r.color,
         sedeLabel: r.business_id ? businessNameById?.[r.business_id] : undefined,
         sedeColorIndex: r.business_id ? businessColorIndexById?.[r.business_id] : undefined,
+        businessId: r.business_id,
       }))
       if (dayRes.some(r => !r.resource_id)) {
         cols.push({ id: null, label: t.calendar.noResourceColumn })
@@ -506,10 +564,15 @@ function DayView({
       ? dayRes
       : dayRes.filter(r => r.resource_id === colId)
 
-  const COL_WIDTH  = 160
+  // Columns grow to fill available width (so 1-2 resources fill the
+  // screen instead of hugging the left edge) and only fall back to the
+  // outer overflow-auto's horizontal scroll once more columns exist than
+  // fit at MIN_COL_WIDTH each - see totalWidth below, used as that
+  // scroll container's floor.
+  const MIN_COL_WIDTH = 120
   const GUTTER     = 48
   const gridHeight = HOURS.length * HOUR_HEIGHT + GRID_TOP_PAD
-  const totalWidth = GUTTER + columns.length * COL_WIDTH
+  const totalWidth = GUTTER + columns.length * MIN_COL_WIDTH
 
   // Shades the part of the rendered grid that falls before opening / after
   // closing - the grid's own start/end (effStartHour/effEndHour) can be
@@ -534,6 +597,31 @@ function DayView({
   // plain-click path via the native `click` event fired after `pointerup`.
   const DRAG_THRESHOLD_PX = 10
   const [drag, setDrag] = useState<{ colId: string | null; startY: number; currentY: number } | null>(null)
+  // Mouse-only ghost-preview position for previewService (see its own doc
+  // comment above) - a plain hover, never a drag, so it's tracked
+  // independently of `drag` above.
+  const [hoverPreview, setHoverPreview] = useState<{ colId: string | null; y: number } | null>(null)
+
+  // Right-edge fade so a phone/tablet user with more resource columns than
+  // fit on screen (see MIN_COL_WIDTH above) can tell there's more to swipe
+  // to, without it fighting the native touch-scroll gesture the way a JS
+  // drag listener would (see the drag-to-select comment below) - it's
+  // pointer-events-none and purely visual.
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [showRightFade, setShowRightFade] = useState(false)
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const update = () => setShowRightFade(el.scrollWidth - el.clientWidth - el.scrollLeft > 1)
+    update()
+    el.addEventListener('scroll', update)
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => {
+      el.removeEventListener('scroll', update)
+      ro.disconnect()
+    }
+  }, [columns.length])
   // Set right before calling onCreateAtSlot from a mouse pointerup, so the
   // synthetic `click` event that follows every pointer sequence (mouse
   // AND touch) doesn't also fire handleClick and double-create.
@@ -549,23 +637,61 @@ function DayView({
     return `${dateStr}T${hh}:${mm}`
   }
 
+  // Two independent reasons a column can be off-limits for previewService:
+  // 'sede' when vista expandida mixes columns from other sedes in (the
+  // service only exists/is only sold at its own sede - see calendar/
+  // page.tsx's grouped "vista previa de servicio" picker, which is exactly
+  // where the user picks a service that may belong to a sede other than
+  // whichever column they later hover), or 'resource' when the service has
+  // specific resource_service links (scripts/008) that don't include this
+  // one - see previewAllowedResourceIds' own doc comment for why an EMPTY
+  // list there means unrestricted, not "none". Only a real resource column
+  // (not the "no resource" fallback, id null) can fail either check.
+  const getColIncompatibleReason = (colId: string | null): 'sede' | 'resource' | null => {
+    if (!previewService) return null
+    const col = columns.find(c => c.id === colId)
+    if (col?.businessId && previewService.business_id && col.businessId !== previewService.business_id) {
+      return 'sede'
+    }
+    if (previewAllowedResourceIds?.length && colId !== null && !previewAllowedResourceIds.includes(colId)) {
+      return 'resource'
+    }
+    return null
+  }
+
   // Shared by both the drag finish and the plain-click fallback. Rejects
   // outright only when there's no overlap with business hours at all
   // (matches the old click-only behavior); a drag that partially overlaps
   // is clamped to the open portion instead of losing the whole gesture.
   const finalizeSlot = (colId: string | null, startY: number, endY: number, isDrag: boolean) => {
     if (!onCreateAtSlot) return
+    const incompatibleReason = getColIncompatibleReason(colId)
+    if (incompatibleReason) {
+      toast.error(
+        incompatibleReason === 'sede'
+          ? t.calendar.previewServiceWrongSede.replace('{service}', previewService!.name)
+          : t.calendar.previewServiceResourceMismatch.replace('{service}', previewService!.name)
+      )
+      return
+    }
     let startMin = yToMinutes(Math.min(startY, endY))
     let endMin = yToMinutes(Math.max(startY, endY))
     if (dayHoursRange) {
-      if (startMin >= dayHoursRange.closeMinutes || endMin <= dayHoursRange.openMinutes) return
+      if (startMin >= dayHoursRange.closeMinutes || endMin <= dayHoursRange.openMinutes) {
+        // Silently doing nothing here reads as "did my click even register?"
+        // - only worth a toast when previewService is active, since that's
+        // the one flow where the user is deliberately aiming for a specific
+        // block, not just idly clicking around.
+        if (previewService) toast.error(t.calendar.previewServiceOutsideHours)
+        return
+      }
       startMin = Math.max(startMin, dayHoursRange.openMinutes)
       endMin = Math.min(endMin, dayHoursRange.closeMinutes)
     }
     if (isDrag && endMin > startMin) {
       onCreateAtSlot(colId, minutesToLocal(startMin), minutesToLocal(endMin))
     } else {
-      onCreateAtSlot(colId, minutesToLocal(startMin))
+      onCreateAtSlot(colId, minutesToLocal(startMin), undefined, previewService?.id)
     }
   }
 
@@ -577,14 +703,20 @@ function DayView({
   }
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>, colId: string | null) => {
-    if (!drag || drag.colId !== colId) return
-    // Pointer capture keeps these events targeting this column even once
-    // the cursor leaves it, so offsetY (relative to whatever element is
-    // actually under the pointer) is no longer reliable - measuring
-    // against this column's own rect directly is.
-    const rect = e.currentTarget.getBoundingClientRect()
-    const y = e.clientY - rect.top
-    setDrag((prev) => (prev ? { ...prev, currentY: y } : prev))
+    if (drag && drag.colId === colId) {
+      // Pointer capture keeps these events targeting this column even once
+      // the cursor leaves it, so offsetY (relative to whatever element is
+      // actually under the pointer) is no longer reliable - measuring
+      // against this column's own rect directly is.
+      const rect = e.currentTarget.getBoundingClientRect()
+      const y = e.clientY - rect.top
+      setDrag((prev) => (prev ? { ...prev, currentY: y } : prev))
+      return
+    }
+    if (previewService && e.pointerType === 'mouse' && !drag) {
+      const rect = e.currentTarget.getBoundingClientRect()
+      setHoverPreview({ colId, y: e.clientY - rect.top })
+    }
   }
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>, colId: string | null) => {
@@ -609,8 +741,11 @@ function DayView({
   }
 
   return (
-    <div className="rounded-lg border bg-card">
-      <div className="overflow-auto max-h-[640px] rounded-lg">
+    <div className="relative rounded-lg border bg-card">
+      {showRightFade && (
+        <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-8 bg-gradient-to-l from-card to-transparent" />
+      )}
+      <div ref={scrollRef} className="overflow-auto max-h-[640px] rounded-lg">
         <div style={{ minWidth: totalWidth }}>
 
           {/* Column headers (sticky top) */}
@@ -628,10 +763,10 @@ function DayView({
                     <div
                       key={i}
                       className={cn(
-                        'flex min-w-0 flex-shrink-0 items-center justify-center border-r px-2 py-1.5 text-center',
+                        'flex min-w-0 items-center justify-center border-r px-2 py-1.5 text-center',
                         tint ? tint.bg : 'bg-card'
                       )}
-                      style={{ width: group.count * COL_WIDTH }}
+                      style={{ flex: `${group.count} 1 ${group.count * MIN_COL_WIDTH}px` }}
                     >
                       {group.sedeLabel && (
                         <span className={cn('min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide', tint ? tint.text : 'text-foreground')}>
@@ -645,21 +780,36 @@ function DayView({
             )}
             <div className="flex border-b">
               <div className="flex-shrink-0 border-r bg-muted/40" style={{ width: GUTTER }} />
-              {columns.map(col => (
-                <div
-                  key={String(col.id)}
-                  className="flex min-w-0 flex-shrink-0 items-center justify-center gap-1.5 border-r last:border-r-0 px-3 py-2.5 text-center text-xs font-semibold bg-muted/40"
-                  style={{ width: COL_WIDTH, color: col.color || undefined }}
-                >
-                  {col.color && (
-                    <span
-                      className="h-2 w-2 shrink-0 rounded-full"
-                      style={{ backgroundColor: col.color }}
-                    />
-                  )}
-                  <span className={cn('min-w-0 truncate', col.color ? '' : 'text-muted-foreground')}>{col.label}</span>
-                </div>
-              ))}
+              {columns.map(col => {
+                const incompatibleReason = getColIncompatibleReason(col.id)
+                const incompatible = !!incompatibleReason
+                const incompatibleMessage = incompatibleReason === 'sede'
+                  ? t.calendar.previewServiceWrongSede.replace('{service}', previewService?.name ?? '')
+                  : t.calendar.previewServiceResourceMismatch.replace('{service}', previewService?.name ?? '')
+                return (
+                  <div
+                    key={String(col.id)}
+                    className={cn(
+                      'flex min-w-0 items-center justify-center gap-1.5 border-r last:border-r-0 px-3 py-2.5 text-center text-xs font-semibold bg-muted/40',
+                      incompatible && 'opacity-40'
+                    )}
+                    style={{ flex: `1 1 ${MIN_COL_WIDTH}px`, color: incompatible ? undefined : col.color || undefined }}
+                    title={incompatible ? incompatibleMessage : undefined}
+                  >
+                    {incompatible ? (
+                      <Ban className="h-3 w-3 shrink-0 text-muted-foreground" />
+                    ) : (
+                      col.color && (
+                        <span
+                          className="h-2 w-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: col.color }}
+                        />
+                      )
+                    )}
+                    <span className={cn('min-w-0 truncate', col.color && !incompatible ? '' : 'text-muted-foreground')}>{col.label}</span>
+                  </div>
+                )
+              })}
             </div>
           </div>
 
@@ -708,20 +858,26 @@ function DayView({
             {/* Resource columns */}
             {columns.map(col => {
               const colRes = getColRes(col.id)
+              const incompatibleReason = getColIncompatibleReason(col.id)
+              const incompatible = !!incompatibleReason
               return (
                 <div
                   key={String(col.id)}
                   className={cn(
-                    'relative flex-shrink-0 border-r last:border-r-0',
-                    onCreateAtSlot && 'cursor-pointer hover:bg-muted/30'
+                    'relative border-r last:border-r-0',
+                    incompatible ? 'cursor-not-allowed' : onCreateAtSlot && 'cursor-pointer hover:bg-muted/30'
                   )}
-                  style={{ width: COL_WIDTH, height: gridHeight, touchAction: onCreateAtSlot ? 'pan-y' : undefined }}
+                  style={{ flex: `1 1 ${MIN_COL_WIDTH}px`, height: gridHeight, touchAction: onCreateAtSlot ? 'pan-y' : undefined }}
                   onClick={(e) => handleClick(e, col.id)}
                   onPointerDown={(e) => handlePointerDown(e, col.id)}
                   onPointerMove={(e) => handlePointerMove(e, col.id)}
                   onPointerUp={(e) => handlePointerUp(e, col.id)}
                   onPointerCancel={() => setDrag(null)}
+                  onPointerLeave={() => setHoverPreview((p) => (p?.colId === col.id ? null : p))}
                 >
+                  {incompatible && (
+                    <div className="pointer-events-none absolute inset-0 z-[5] bg-muted/40" />
+                  )}
                   {drag && drag.colId === col.id && Math.abs(drag.currentY - drag.startY) >= DRAG_THRESHOLD_PX && (
                     <div
                       className="pointer-events-none absolute inset-x-0 z-10 rounded border-2 border-primary/60 bg-primary/15"
@@ -731,6 +887,43 @@ function DayView({
                       }}
                     />
                   )}
+                  {previewService && !drag && hoverPreview?.colId === col.id && (() => {
+                    const snappedMin = yToMinutes(hoverPreview.y)
+                    const top = GRID_TOP_PAD + (snappedMin - effStartHour * 60) * (HOUR_HEIGHT / 60)
+                    const height = previewService.duration_minutes * (HOUR_HEIGHT / 60)
+                    const hh = String(Math.floor(snappedMin / 60)).padStart(2, '0')
+                    const mm = String(((snappedMin % 60) + 60) % 60).padStart(2, '0')
+                    if (incompatible) {
+                      return (
+                        <div
+                          className="pointer-events-none absolute left-1 right-1 z-10 flex items-center gap-1.5 overflow-hidden rounded-lg border-2 border-dashed border-muted-foreground/40 bg-background/90 px-2.5 py-1.5 text-left text-xs font-medium text-muted-foreground shadow-sm"
+                          style={{ top, height: Math.max(height, 22) }}
+                        >
+                          <Ban className="h-3.5 w-3.5 shrink-0" />
+                          <span className="truncate">
+                            {incompatibleReason === 'sede'
+                              ? t.calendar.previewServiceNotThisSede
+                              : t.calendar.previewServiceNotOfferedHere}
+                          </span>
+                        </div>
+                      )
+                    }
+                    return (
+                      <div
+                        className="pointer-events-none absolute left-1 right-1 z-10 overflow-hidden rounded-lg border-2 border-dashed px-2.5 py-1.5 text-left text-xs font-medium shadow-sm"
+                        style={{
+                          top,
+                          height: Math.max(height, 22),
+                          borderColor: previewService.color || undefined,
+                          backgroundColor: `${previewService.color || '#3B82F6'}26`,
+                          color: previewService.color || undefined,
+                        }}
+                      >
+                        <span className="block truncate">{previewService.name}</span>
+                        <span className="block truncate text-[10px] opacity-80">{hh}:{mm}</span>
+                      </div>
+                    )
+                  })()}
                   {/* Out-of-hours shading - flat, no stripes, so it never
                       reads as "visit" (VISIT_BLOCK_COLOR's diagonal stripe
                       is already that signal elsewhere in this file).
@@ -872,7 +1065,7 @@ function WeekView({
 
   return (
     <div className="rounded-lg border bg-card overflow-x-auto">
-      <div className="grid min-w-[560px]" style={{ gridTemplateColumns: 'repeat(7, 1fr)' }}>
+      <div className="grid min-w-0 sm:min-w-[560px]" style={{ gridTemplateColumns: 'repeat(7, 1fr)' }}>
         {weekDays.map((d, i) => {
           // Use business timezone to get the correct local date string for this column
           const dateStr = toDateStr(d, timezone)
@@ -894,7 +1087,7 @@ function WeekView({
               <div className="mb-2 flex flex-col items-center">
                 <span className="text-[11px] text-muted-foreground">{dayLabels[i]}</span>
                 <span className={cn(
-                  'flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold transition-colors',
+                  'flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold transition-colors sm:text-sm',
                   isToday ? 'bg-primary text-primary-foreground' : 'group-hover:bg-muted'
                 )}>
                   {dayNum}
@@ -906,7 +1099,7 @@ function WeekView({
                 )}
               </div>
               <div className="space-y-0.5">
-                {dayRes.slice(0, 4).map(r => {
+                {dayRes.slice(0, 3).map(r => {
                   const client  = clientsMap[r.client_id]
                   const service = servicesMap[r.service_id]
                   const { h, m } = getTzHourMin(r.start_time, timezone)
@@ -917,7 +1110,7 @@ function WeekView({
                       key={r.id}
                       title={getStatusLabel(r.status, t.reservation)}
                       className={cn(
-                        'flex w-full items-center gap-1 truncate rounded px-1.5 py-0.5 text-[10px] font-medium text-white',
+                        'flex w-full items-center gap-1 truncate rounded px-1.5 py-0.5 text-[9px] font-medium text-white sm:text-[10px]',
                         statusBorderClass(r.status),
                         (r.status === 'cancelled' || r.status === 'no_show') && 'opacity-45 saturate-50'
                       )}
@@ -941,8 +1134,8 @@ function WeekView({
                     </div>
                   )
                 })}
-                {dayRes.length > 4 && (
-                  <p className="text-[10px] text-muted-foreground pl-1">+{dayRes.length - 4} {t.calendar.moreLabel}</p>
+                {dayRes.length > 3 && (
+                  <p className="text-[10px] text-muted-foreground pl-1">+{dayRes.length - 3} {t.calendar.moreLabel}</p>
                 )}
               </div>
             </button>
@@ -1163,39 +1356,39 @@ function ListView({
         </Select>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full text-sm">
-          <thead className="border-b bg-muted/40">
-            <tr>
-              <th className="whitespace-nowrap p-2 text-left font-medium">{t.calendar.colDate}</th>
-              <th className="p-2 text-left font-medium">{t.calendar.colClient}</th>
-              <th className="p-2 text-left font-medium">{t.calendar.colService}</th>
+      <div className="overflow-hidden rounded-lg border">
+        <Table>
+          <TableHeader className="bg-muted/40">
+            <TableRow>
+              <TableHead>{t.calendar.colDate}</TableHead>
+              <TableHead className="whitespace-normal">{t.calendar.colClient}</TableHead>
+              <TableHead className="whitespace-normal">{t.calendar.colService}</TableHead>
               {businessNameById && (
-                <th className="p-2 text-left font-medium">{t.calendar.sedeColumnLabel}</th>
+                <TableHead className="whitespace-normal">{t.calendar.sedeColumnLabel}</TableHead>
               )}
-              <th className="p-2 text-left font-medium">{t.calendar.colStatus}</th>
-              <th className="p-2 text-left font-medium" />
-            </tr>
-          </thead>
-          <tbody>
+              <TableHead>{t.calendar.colStatus}</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {pageRows.map((r) => {
               const client = clientsMap[r.client_id]
               const service = servicesMap[r.service_id]
               const { h, m } = getTzHourMin(r.start_time, timezone)
               return (
-                <tr
+                <TableRow
                   key={r.id}
                   onClick={() => onSelectReservation(r)}
-                  className="cursor-pointer border-b last:border-0 hover:bg-muted/40"
+                  className="cursor-pointer"
                 >
-                  <td className="whitespace-nowrap p-2">
+                  <TableCell>
                     {capitalizeFirst(
                       new Date(r.start_time).toLocaleDateString(locale, { timeZone: timezone, day: 'numeric', month: 'short' })
                     )}{' '}
                     {String(h).padStart(2, '0')}:{String(m).padStart(2, '0')}
-                  </td>
-                  <td className="p-2">{client?.name ?? '—'}</td>
-                  <td className="p-2">
+                  </TableCell>
+                  <TableCell className="whitespace-normal">{client?.name ?? '—'}</TableCell>
+                  <TableCell className="whitespace-normal">
                     <span className="flex items-center gap-1.5">
                       {r.type === 'visit' ? (
                         <Eye className="h-3 w-3 shrink-0 text-slate-500" />
@@ -1208,9 +1401,9 @@ function ListView({
                           ? t.reservation.typeVisit
                           : '—'}
                     </span>
-                  </td>
+                  </TableCell>
                   {businessNameById && (
-                    <td className="p-2">
+                    <TableCell className="whitespace-normal">
                       {businessNameById[r.business_id] ? (
                         <span
                           className={cn(
@@ -1225,26 +1418,26 @@ function ListView({
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}
-                    </td>
+                    </TableCell>
                   )}
-                  <td className="p-2">
+                  <TableCell>
                     <StatusBadge status={r.status} labels={t.reservation} />
-                  </td>
-                  <td className="p-2 text-right">
+                  </TableCell>
+                  <TableCell className="text-right">
                     {r.parking_resource_id && <ParkingSquare className="ml-auto h-3.5 w-3.5 text-muted-foreground" />}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )
             })}
             {pageRows.length === 0 && (
-              <tr>
-                <td colSpan={businessNameById ? 6 : 5} className="p-6 text-center text-muted-foreground">
+              <TableRow>
+                <TableCell colSpan={businessNameById ? 6 : 5} className="p-6 text-center text-muted-foreground">
                   {t.calendar.noReservationsFound}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             )}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
 
       {totalPages > 1 && (

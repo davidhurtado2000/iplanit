@@ -417,6 +417,54 @@ export function getResourceBreakdown(
     .sort((a, b) => b.revenue - a.revenue)
 }
 
+export interface SellerBreakdownRow {
+  sellerId: string
+  name: string
+  count: number
+  revenue: number
+}
+
+/**
+ * Reservations grouped by who booked/sold them (sold_by - see
+ * scripts/059-reservation-sold-by.sql), not who performs the service
+ * (worker_id, see getWorkerBreakdown above). Deliberately simpler than the
+ * worker breakdown (no hours/completion-rate) - a seller's performance is
+ * about volume and revenue booked, not about how the appointment itself
+ * played out, which is the performing worker's outcome to own. `sellerNames`
+ * is a plain id->name lookup rather than a typed entity list (unlike
+ * workers) because "sellers" aren't a table of their own - they're
+ * whichever staff user happened to be logged in at booking time, resolved
+ * by the caller from business_members + the business owner.
+ */
+export function getSellerBreakdown(
+  reservations: Reservation[],
+  sellerNames: Record<string, string>,
+  from: Date,
+  to: Date
+): SellerBreakdownRow[] {
+  const inRange = filterReservations(reservations, from, to).filter((r) => r.type !== 'visit' && r.sold_by)
+  const bySeller = new Map<string, { count: number; revenue: number }>()
+
+  for (const r of inRange) {
+    const sellerId = r.sold_by as string
+    const entry = bySeller.get(sellerId) ?? { count: 0, revenue: 0 }
+    entry.count += 1
+    if (r.status !== 'no_show') {
+      entry.revenue += (r.price || r.price_usd) ?? 0
+    }
+    bySeller.set(sellerId, entry)
+  }
+
+  return Array.from(bySeller.entries())
+    .map(([sellerId, { count, revenue }]) => ({
+      sellerId,
+      name: sellerNames[sellerId] ?? '—',
+      count,
+      revenue,
+    }))
+    .sort((a, b) => b.revenue - a.revenue)
+}
+
 export interface WorkerBreakdownRow {
   workerId: string
   name: string

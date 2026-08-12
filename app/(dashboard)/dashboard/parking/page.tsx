@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/dashboard/page-header'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -180,16 +181,16 @@ export default function ParkingPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">{t.parking.title}</h1>
-          <p className="text-muted-foreground">{t.parking.subtitle}</p>
-        </div>
-        <Button onClick={() => handleOpenModal()} className="gap-2">
-          <Plus className="h-4 w-4" />
-          {t.parking.newSpot}
-        </Button>
-      </div>
+      <PageHeader
+        title={t.parking.title}
+        subtitle={t.parking.subtitle}
+        actions={
+          <Button onClick={() => handleOpenModal()} className="w-full gap-2 sm:w-auto">
+            <Plus className="h-4 w-4" />
+            {t.parking.newSpot}
+          </Button>
+        }
+      />
 
       <HeroKpiCard
         label={t.parking.occupancyTitle}

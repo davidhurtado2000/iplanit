@@ -33,6 +33,12 @@ interface Business {
    * reservations (internal and public booking page). */
   offers_parking: boolean
   logo_url: string | null
+  /** Per-business override for "Trabajador"/"Trabajadores" (e.g. "Profesor",
+   * "Doctor", "Barbero") - see scripts/058-worker-label-customization.sql.
+   * Null means "use the built-in Spanish/English default" everywhere these
+   * are read (see lib/worker-label.ts). */
+  worker_label_singular: string | null
+  worker_label_plural: string | null
   /** Email notification preferences - see scripts/041-email-notifications.sql.
    * Sending itself only actually happens once RESEND_API_KEY is configured;
    * these toggles are meaningful regardless so a business can turn one off

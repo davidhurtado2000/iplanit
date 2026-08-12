@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Confetti } from '@/components/confetti'
+import { LanguageToggle } from '@/components/language-toggle'
 import { useLanguage } from '@/context/language-context'
 import { capitalizeFirst, cn } from '@/lib/utils'
 import { parseInTimezone } from '@/lib/timezone'
@@ -98,7 +99,7 @@ export default function PublicBookingPage() {
   const params = useParams<{ slug: string }>()
   const slug = params?.slug
   const supabase = createClient()
-  const { language, setLanguage, t, locale } = useLanguage()
+  const { language, t, locale } = useLanguage()
   const tr = t.publicBooking
 
   const [loading, setLoading] = useState(true)
@@ -346,27 +347,6 @@ export default function PublicBookingPage() {
   const optionPriceLabel = (option: PublicDurationOption) =>
     option.price_usd ? `$ ${option.price_usd}` : option.price ? `S/ ${option.price}` : ''
 
-  const LanguageToggle = (
-    <div className="mb-4 flex w-full max-w-lg justify-end">
-      <div className="inline-flex overflow-hidden rounded-md border text-xs font-medium">
-        <button
-          type="button"
-          onClick={() => setLanguage('es')}
-          className={`px-2.5 py-1 ${language === 'es' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:bg-muted'}`}
-        >
-          ES
-        </button>
-        <button
-          type="button"
-          onClick={() => setLanguage('en')}
-          className={`border-l px-2.5 py-1 ${language === 'en' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:bg-muted'}`}
-        >
-          EN
-        </button>
-      </div>
-    </div>
-  )
-
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-muted/30">
@@ -387,7 +367,7 @@ export default function PublicBookingPage() {
 
   return (
     <div className="flex min-h-screen flex-col items-center bg-muted/30 px-4 py-10">
-      {LanguageToggle}
+      <LanguageToggle />
 
       <div className="mb-6 flex w-full max-w-lg flex-col items-center text-center">
         <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10">
@@ -476,7 +456,7 @@ export default function PublicBookingPage() {
           </CardContent>
         ) : (
           <>
-            <CardHeader>
+            <CardHeader className="px-4 sm:px-6">
               <CardTitle>
                 {step === 'service' && tr.stepService}
                 {step === 'duration' && tr.stepDuration}
@@ -494,7 +474,7 @@ export default function PublicBookingPage() {
                 {step === 'contact' && tr.stepContactDesc}
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 px-4 sm:px-6">
               {step === 'service' && (
                 <div className="space-y-2">
                   {services.length === 0 ? (
@@ -526,14 +506,16 @@ export default function PublicBookingPage() {
 
               {step === 'duration' && selectedService && (
                 <div className="space-y-4">
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="-ml-3 gap-1 text-muted-foreground hover:text-foreground"
                     onClick={() => setStep('service')}
-                    className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
                   >
                     <ChevronLeft className="h-4 w-4" />
                     {tr.back}
-                  </button>
+                  </Button>
                   <div className="space-y-2">
                     {selectedService.duration_options.length === 0 ? (
                       <p className="py-6 text-center text-sm text-muted-foreground">{tr.noDurationOptions}</p>
@@ -559,14 +541,16 @@ export default function PublicBookingPage() {
 
               {step === 'hours' && selectedService && (
                 <div className="space-y-4">
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="-ml-3 gap-1 text-muted-foreground hover:text-foreground"
                     onClick={() => setStep('service')}
-                    className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
                   >
                     <ChevronLeft className="h-4 w-4" />
                     {tr.back}
-                  </button>
+                  </Button>
                   <div className="space-y-2">
                     <Label htmlFor="pb-hours">{tr.hoursLabel}</Label>
                     <Input
@@ -607,14 +591,16 @@ export default function PublicBookingPage() {
 
               {step === 'resource' && selectedService && (
                 <div className="space-y-4">
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="-ml-3 gap-1 text-muted-foreground hover:text-foreground"
                     onClick={() => setStep(stepBeforeResource(selectedService))}
-                    className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
                   >
                     <ChevronLeft className="h-4 w-4" />
                     {tr.back}
-                  </button>
+                  </Button>
                   <div className="space-y-2">
                     {selectedService.resources.map((res) => (
                       <button
@@ -637,16 +623,18 @@ export default function PublicBookingPage() {
 
               {step === 'datetime' && selectedService && (
                 <div className="space-y-4">
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="-ml-3 gap-1 text-muted-foreground hover:text-foreground"
                     onClick={() =>
                       setStep(selectedService.resources.length > 1 ? 'resource' : stepBeforeResource(selectedService))
                     }
-                    className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
                   >
                     <ChevronLeft className="h-4 w-4" />
                     {tr.back}
-                  </button>
+                  </Button>
 
                   <div className="flex items-center justify-between gap-2 rounded-lg border p-2">
                     <Button
@@ -694,7 +682,6 @@ export default function PublicBookingPage() {
                           key={slot.toISOString()}
                           type="button"
                           variant={selectedSlot?.getTime() === slot.getTime() ? 'default' : 'outline'}
-                          size="sm"
                           onClick={() => setSelectedSlot(slot)}
                         >
                           {slot.toLocaleTimeString(locale, { timeZone: tz, hour: '2-digit', minute: '2-digit' })}
@@ -716,14 +703,16 @@ export default function PublicBookingPage() {
 
               {step === 'contact' && selectedService && selectedSlot && (
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="-ml-3 gap-1 text-muted-foreground hover:text-foreground"
                     onClick={() => setStep('datetime')}
-                    className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
                   >
                     <ChevronLeft className="h-4 w-4" />
                     {tr.back}
-                  </button>
+                  </Button>
 
                   <div className="rounded-lg border bg-muted/40 p-3 text-sm">
                     <p className="font-medium">
@@ -763,7 +752,7 @@ export default function PublicBookingPage() {
                       disabled={submitting}
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label htmlFor="pb-email">{tr.emailLabel}</Label>
                       <Input

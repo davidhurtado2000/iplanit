@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Briefcase, Users, Layers, Building2, Clock, UserPlus, UserCog, History, Loader2 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
+import { PageHeader } from '@/components/dashboard/page-header'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -143,10 +144,7 @@ export default function ActivityPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">{t.activity.title}</h1>
-        <p className="text-muted-foreground">{t.activity.pageSubtitle}</p>
-      </div>
+      <PageHeader title={t.activity.title} subtitle={t.activity.pageSubtitle} />
 
       <div className="space-y-3">
         <div className="flex items-center gap-2">

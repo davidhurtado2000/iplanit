@@ -125,6 +125,8 @@ export interface Database {
           cancellation_policy_hours: number
           offers_parking: boolean
           logo_url: string | null
+          worker_label_singular: string | null
+          worker_label_plural: string | null
           plan: 'free' | 'premium'
           type: string | null
           notify_confirmations: boolean
@@ -153,6 +155,8 @@ export interface Database {
           cancellation_policy_hours?: number
           offers_parking?: boolean
           logo_url?: string | null
+          worker_label_singular?: string | null
+          worker_label_plural?: string | null
           plan?: 'free' | 'premium'
           type?: string | null
           notify_confirmations?: boolean
@@ -181,6 +185,8 @@ export interface Database {
           cancellation_policy_hours?: number
           offers_parking?: boolean
           logo_url?: string | null
+          worker_label_singular?: string | null
+          worker_label_plural?: string | null
           plan?: 'free' | 'premium'
           type?: string | null
           notify_confirmations?: boolean
@@ -385,6 +391,7 @@ export interface Database {
           client_id: string
           resource_id: string | null
           worker_id: string | null
+          sold_by: string | null
           parking_resource_id: string | null
           series_id: string | null
           follow_up_of_reservation_id: string | null
@@ -408,6 +415,7 @@ export interface Database {
           client_id: string
           resource_id?: string | null
           worker_id?: string | null
+          sold_by?: string | null
           parking_resource_id?: string | null
           series_id?: string | null
           follow_up_of_reservation_id?: string | null
@@ -431,6 +439,7 @@ export interface Database {
           client_id?: string
           resource_id?: string | null
           worker_id?: string | null
+          sold_by?: string | null
           parking_resource_id?: string | null
           series_id?: string | null
           follow_up_of_reservation_id?: string | null
@@ -514,6 +523,7 @@ export interface Database {
           service_id: string
           resource_id: string | null
           worker_id: string | null
+          sold_by: string | null
           days_of_week: number[]
           session_count: number
           notes: string | null
@@ -527,6 +537,7 @@ export interface Database {
           service_id: string
           resource_id?: string | null
           worker_id?: string | null
+          sold_by?: string | null
           days_of_week: number[]
           session_count: number
           notes?: string | null
@@ -540,6 +551,7 @@ export interface Database {
           service_id?: string
           resource_id?: string | null
           worker_id?: string | null
+          sold_by?: string | null
           days_of_week?: number[]
           session_count?: number
           notes?: string | null
@@ -764,6 +776,10 @@ export interface Database {
       business_member_role: {
         Args: { target_business_id: string }
         Returns: string
+      }
+      get_seller_names: {
+        Args: { target_business_id: string }
+        Returns: { user_id: string; name: string }[]
       }
       get_public_business: {
         Args: { p_slug: string }

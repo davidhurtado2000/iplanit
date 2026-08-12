@@ -57,6 +57,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
+import { getWorkerLabel } from '@/lib/worker-label'
 import { useDashboardData, type ClientDocumentType, type Reservation } from '@/context/dashboard-data-context'
 import { StatusBadge } from '@/components/dashboard/status-badge'
 import { capitalizeFirst, cn } from '@/lib/utils'
@@ -174,9 +175,10 @@ export function ReservationModal({
   prefillEndHint,
 }: ReservationModalProps) {
   const supabase = createClient()
-  const { profile } = useAuth()
+  const { user, profile } = useAuth()
   const { currentBusiness } = useBusinesses()
   const { t, locale } = useLanguage()
+  const workerLabel = getWorkerLabel(currentBusiness, t)
   const { clients, services, resources: allResources, serviceResources, serviceDurationOptions, businessHours, workers, workerHours, workerServices, reservations, refetchClients } = useDashboardData()
   // Parking is a separate concept from a service's linked resource (see the
   // needsParking switch below) - never offered as a pickable resource here.
@@ -562,6 +564,41 @@ export function ReservationModal({
     })
   }
 
+  // Plain <textarea> never continues a "- " bullet on Enter the way a real
+  // editor would - only intervene when the cursor is on a bullet line (no
+  // active selection, so a normal Enter-replaces-selection still works
+  // everywhere else). An empty bullet ("- " with nothing typed after it)
+  // exits the list instead of repeating forever, same convention as
+  // Notion/Google Docs.
+  const handleNotesKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== 'Enter' || e.shiftKey) return
+    const el = e.currentTarget
+    const { selectionStart: start, selectionEnd: end, value } = el
+    if (start !== end) return
+    const lineStart = value.lastIndexOf('\n', start - 1) + 1
+    const match = value.slice(lineStart, start).match(/^(-\s)(.*)$/)
+    if (!match) return
+    e.preventDefault()
+    const [, marker, rest] = match
+    if (rest.trim() === '') {
+      const next = value.slice(0, lineStart) + value.slice(start)
+      setFormData((prev) => ({ ...prev, notes: next }))
+      requestAnimationFrame(() => {
+        el.focus()
+        el.setSelectionRange(lineStart, lineStart)
+      })
+      return
+    }
+    const insertion = `\n${marker}`
+    const next = value.slice(0, start) + insertion + value.slice(end)
+    setFormData((prev) => ({ ...prev, notes: next }))
+    requestAnimationFrame(() => {
+      el.focus()
+      const cursor = start + insertion.length
+      el.setSelectionRange(cursor, cursor)
+    })
+  }
+
   const selectedServiceDurationOptions = serviceDurationOptions.filter((o) => o.service_id === formData.service_id)
   const selectedDurationOption = selectedServiceDurationOptions.find((o) => o.id === formData.duration_option_id)
   // Effective duration: a visit's duration always comes from
@@ -806,6 +843,7 @@ export function ReservationModal({
         service_id: formData.service_id,
         resource_id: formData.resource_id || null,
         worker_id: formData.worker_id || null,
+        sold_by: user?.id ?? null,
         days_of_week: repeatDays,
         session_count: sessionCount,
         notes: formData.notes || null,
@@ -857,6 +895,7 @@ export function ReservationModal({
         service_id: formData.service_id,
         resource_id: formData.resource_id || null,
         worker_id: formData.worker_id || null,
+        sold_by: user?.id ?? null,
         series_id: series.id,
         start_time: occStart.toISOString(),
         end_time: occEnd.toISOString(),
@@ -1032,7 +1071,11 @@ export function ReservationModal({
       if (effectiveMode === 'create') {
         const { data: created, error } = await supabase
           .from('reservations')
-          .insert([{ ...reservationData, status: 'pending', follow_up_of_reservation_id: followUpOfReservationId || null }])
+          // sold_by only belongs here, not in the shared reservationData
+          // above - same reasoning as status: adding it there would
+          // silently overwrite the original creator with whoever last
+          // edited the reservation.
+          .insert([{ ...reservationData, status: 'pending', follow_up_of_reservation_id: followUpOfReservationId || null, sold_by: user?.id ?? null }])
           .select('id')
           .single()
 
@@ -1182,7 +1225,7 @@ export function ReservationModal({
   return (
     <>
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{getTitle()}</DialogTitle>
           <DialogDescription>{getDesc()}</DialogDescription>
@@ -1265,7 +1308,7 @@ export function ReservationModal({
               {viewWorker && (
                 <div className="flex items-center gap-3 text-sm">
                   <UserCog className="h-4 w-4" style={{ color: viewWorker.color || undefined }} />
-                  <span className="font-medium">{t.reservation.workerLabel}</span>
+                  <span className="font-medium">{workerLabel.singular}:</span>
                   <span>{viewWorker.name}</span>
                 </div>
               )}
@@ -1504,7 +1547,7 @@ export function ReservationModal({
                         />
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div className="space-y-1.5">
                           <Label htmlFor="new-client-email" className="text-xs">{t.clients.emailLabel}</Label>
                           <Input
@@ -1527,7 +1570,7 @@ export function ReservationModal({
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div className="space-y-1.5">
                           <Label htmlFor="new-client-doc-type" className="text-xs">{t.clients.documentTypeLabel}</Label>
                           <Select
@@ -1911,7 +1954,7 @@ export function ReservationModal({
             {workers.length > 0 && (
               <div className="space-y-2">
                 <Label htmlFor="worker">
-                  {t.reservation.workerSelect}{' '}
+                  {workerLabel.singular}{' '}
                   <span className="text-muted-foreground font-normal">{t.reservation.resourceOptional}</span>
                 </Label>
                 <Select
@@ -2055,11 +2098,11 @@ export function ReservationModal({
                       <Input
                         id="sessionCount"
                         type="number"
-                        min={2}
+                        min={1}
                         max={52}
                         value={sessionCount}
                         onChange={(e) =>
-                          setSessionCount(Math.max(2, Math.min(52, Number(e.target.value) || 2)))
+                          setSessionCount(Math.max(1, Math.min(52, Number(e.target.value) || 1)))
                         }
                         className="w-24"
                       />
@@ -2141,6 +2184,7 @@ export function ReservationModal({
                 placeholder={t.reservation.notesPlaceholder}
                 value={formData.notes}
                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                onKeyDown={handleNotesKeyDown}
                 rows={3}
               />
             </div>

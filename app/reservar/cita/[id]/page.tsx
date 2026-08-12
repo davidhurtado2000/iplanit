@@ -21,6 +21,7 @@ import { useLanguage } from '@/context/language-context'
 import { capitalizeFirst } from '@/lib/utils'
 import { StatusBadge } from '@/components/dashboard/status-badge'
 import { sendReservationNotification } from '@/lib/email/notify'
+import { LanguageToggle } from '@/components/language-toggle'
 
 interface PublicReservationStatus {
   id: string
@@ -40,7 +41,7 @@ export default function ManageReservationPage() {
   const params = useParams<{ id: string }>()
   const id = params?.id
   const supabase = createClient()
-  const { language, setLanguage, t, locale } = useLanguage()
+  const { language, t, locale } = useLanguage()
   const tr = t.publicBooking
 
   const [loading, setLoading] = useState(true)
@@ -99,27 +100,6 @@ export default function ManageReservationPage() {
     }
   }
 
-  const LanguageToggle = (
-    <div className="mb-4 flex w-full max-w-lg justify-end">
-      <div className="inline-flex overflow-hidden rounded-md border text-xs font-medium">
-        <button
-          type="button"
-          onClick={() => setLanguage('es')}
-          className={`px-2.5 py-1 ${language === 'es' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:bg-muted'}`}
-        >
-          ES
-        </button>
-        <button
-          type="button"
-          onClick={() => setLanguage('en')}
-          className={`border-l px-2.5 py-1 ${language === 'en' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:bg-muted'}`}
-        >
-          EN
-        </button>
-      </div>
-    </div>
-  )
-
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-muted/30">
@@ -142,17 +122,17 @@ export default function ManageReservationPage() {
 
   return (
     <div className="flex min-h-screen flex-col items-center bg-muted/30 px-4 py-10">
-      {LanguageToggle}
+      <LanguageToggle />
 
       <Card className="w-full max-w-lg">
-        <CardHeader>
+        <CardHeader className="px-4 sm:px-6">
           <CardTitle className="flex items-center gap-2">
             <Building2 className="h-5 w-5 text-primary" />
             {reservation.business_name}
           </CardTitle>
           <CardDescription>{reservation.service_name}</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 px-4 sm:px-6">
           <div className="flex items-center gap-3 rounded-lg border bg-muted/40 p-3 text-sm">
             <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
             <span>

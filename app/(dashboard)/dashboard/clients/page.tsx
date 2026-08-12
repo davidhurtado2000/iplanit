@@ -77,6 +77,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { PremiumButton } from '@/components/premium-feature'
 import { HeroKpiCard } from '@/components/dashboard/hero-kpi-card'
+import { PageHeader } from '@/components/dashboard/page-header'
 import { UpgradeModal } from '@/components/upgrade-modal'
 import { isPlanLimitReached } from '@/lib/plan-limits'
 import { toCsv, downloadCsv, parseCsv } from '@/lib/csv'
@@ -656,36 +657,36 @@ export default function ClientsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">{t.clients.title}</h1>
-          <p className="text-muted-foreground">{t.clients.subtitle}</p>
-        </div>
-        <div className="flex gap-2">
-          <PremiumButton
-            variant="outline"
-            className="gap-2"
-            featureName={t.clients.importCsv}
-            onClick={() => setIsImportOpen(true)}
-          >
-            <Upload className="h-4 w-4" />
-            {t.clients.importCsv}
-          </PremiumButton>
-          <PremiumButton
-            variant="outline"
-            className="gap-2"
-            featureName={t.clients.exportCsv}
-            onClick={handleExportCsv}
-          >
-            <Download className="h-4 w-4" />
-            {t.clients.exportCsv}
-          </PremiumButton>
-          <Button onClick={handleNewClientClick} className="gap-2">
-            <Plus className="h-4 w-4" />
-            {t.clients.newClient}
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title={t.clients.title}
+        subtitle={t.clients.subtitle}
+        actions={
+          <>
+            <PremiumButton
+              variant="outline"
+              className="w-full gap-2 sm:w-auto"
+              featureName={t.clients.importCsv}
+              onClick={() => setIsImportOpen(true)}
+            >
+              <Upload className="h-4 w-4" />
+              {t.clients.importCsv}
+            </PremiumButton>
+            <PremiumButton
+              variant="outline"
+              className="w-full gap-2 sm:w-auto"
+              featureName={t.clients.exportCsv}
+              onClick={handleExportCsv}
+            >
+              <Download className="h-4 w-4" />
+              {t.clients.exportCsv}
+            </PremiumButton>
+            <Button onClick={handleNewClientClick} className="w-full gap-2 sm:w-auto">
+              <Plus className="h-4 w-4" />
+              {t.clients.newClient}
+            </Button>
+          </>
+        }
+      />
 
       {/* Stats */}
       <div className="grid gap-4 md:grid-cols-3">
@@ -1144,7 +1145,7 @@ export default function ClientsPage() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="documentType">{t.clients.documentTypeLabel}</Label>
                 <Select
@@ -1220,7 +1221,7 @@ export default function ClientsPage() {
           ) : importPreview ? (
             <div className="space-y-4">
               <p className="truncate text-sm text-muted-foreground">{importPreview.fileName}</p>
-              <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="grid grid-cols-1 gap-2 text-center sm:grid-cols-3">
                 <div className="rounded-lg border p-2">
                   <p className="text-lg font-semibold">{importPreview.rows.length}</p>
                   <p className="text-xs text-muted-foreground">{t.clients.importNew}</p>
@@ -1290,7 +1291,7 @@ export default function ClientsPage() {
 
       {/* Client Detail Modal */}
       <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{t.clients.detailTitle}</DialogTitle>
           </DialogHeader>

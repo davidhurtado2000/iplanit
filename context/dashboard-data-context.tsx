@@ -21,6 +21,13 @@ export interface Reservation {
   /** Who actually performed the service - independent of resource_id (see
    * Worker above). Null when no specific worker was assigned. */
   worker_id: string | null
+  /** Who booked/sold this reservation (auth.users.id) - distinct from
+   * worker_id: a sales rep can book a class taught by a teacher. Set
+   * automatically from the logged-in staff user at creation time (see
+   * reservation-modal.tsx), never a manual field - null for reservations
+   * made through the public booking page (no staff session exists there),
+   * and for anything created before scripts/059-reservation-sold-by.sql. */
+  sold_by: string | null
   /** Independent of resource_id - a separately-booked parking spot, see
    * scripts/035-parking.sql. Null unless the business offers parking and
    * one was requested/assigned. */
