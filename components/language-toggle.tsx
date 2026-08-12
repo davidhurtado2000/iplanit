@@ -18,21 +18,21 @@ export function LanguageToggle({ className }: { className?: string }) {
       <div className="inline-flex overflow-hidden rounded-md border">
         <Button
           type="button"
-          variant={language === 'es' ? 'default' : 'ghost'}
-          size="sm"
-          className="rounded-none px-3 text-xs"
-          onClick={() => setLanguage('es')}
-        >
-          ES
-        </Button>
-        <Button
-          type="button"
           variant={language === 'en' ? 'default' : 'ghost'}
           size="sm"
-          className="rounded-none border-l px-3 text-xs"
+          className="rounded-none px-3 text-xs"
           onClick={() => setLanguage('en')}
         >
           EN
+        </Button>
+        <Button
+          type="button"
+          variant={language === 'es' ? 'default' : 'ghost'}
+          size="sm"
+          className="rounded-none border-l px-3 text-xs"
+          onClick={() => setLanguage('es')}
+        >
+          ES
         </Button>
       </div>
     </div>

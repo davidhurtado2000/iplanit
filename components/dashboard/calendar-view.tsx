@@ -422,7 +422,7 @@ export function CalendarViewComponent({
               </div>
               {businessNameById && (
                 <div className="flex items-center gap-2 text-xs text-foreground">
-                  <span className="shrink-0 rounded border px-0.5 text-[8px] font-bold leading-none">SD</span>
+                  <span className="shrink-0 rounded border px-0.5 text-[8px] font-bold leading-none">AB</span>
                   <span>{t.calendar.legendSedeLabel}</span>
                 </div>
               )}

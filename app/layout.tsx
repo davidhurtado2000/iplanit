@@ -18,10 +18,22 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'iPlanit - Gestión de Reservas y Agendas',
+  title: 'iPlanit - Booking and Scheduling Management',
   description:
-    'Plataforma SaaS para la gestión de reservas, citas y agendas para negocios de servicios',
+    'SaaS platform for managing bookings, appointments, and schedules for service businesses',
   generator: 'v0.app',
+  openGraph: {
+    type: 'website',
+    title: 'iPlanit - Booking and Scheduling Management',
+    description:
+      'SaaS platform for managing bookings, appointments, and schedules for service businesses',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'iPlanit - Booking and Scheduling Management',
+    description:
+      'SaaS platform for managing bookings, appointments, and schedules for service businesses',
+  },
   icons: {
     icon: [
       { url: '/favicon.svg', type: 'image/svg+xml' },

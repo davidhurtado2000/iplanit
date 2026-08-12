@@ -18,6 +18,7 @@ import {
 import { Eye, EyeOff, Loader2, PartyPopper } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import { Confetti } from '@/components/confetti'
+import { LanguageToggle } from '@/components/language-toggle'
 import { PasswordStrength } from '@/components/password-strength'
 import { useLanguage } from '@/context/language-context'
 import { translateAuthError, isDuplicateSignupUser, withAuthLockRetry } from '@/lib/supabase/auth-errors'
@@ -66,40 +67,8 @@ export default function RegisterPage() {
   })
   const [error, setError] = useState('')
   const [acceptedTerms, setAcceptedTerms] = useState(false)
-  // Tracks whether the user touched the ES/EN toggle themselves - until they
-  // do, picking a business country below auto-picks a matching language
-  // default (US -> en, everything else -> es). Once they've made an
-  // explicit choice, country changes stop overriding it.
-  const [languageManuallySet, setLanguageManuallySet] = useState(false)
 
   const passwordChecks = getPasswordChecks(formData.password)
-
-  const LanguageToggle = (
-    <div className="mb-4 flex w-full max-w-md justify-end">
-      <div className="inline-flex overflow-hidden rounded-md border text-xs font-medium">
-        <button
-          type="button"
-          onClick={() => {
-            setLanguage('es')
-            setLanguageManuallySet(true)
-          }}
-          className={`px-2.5 py-1 ${language === 'es' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:bg-muted'}`}
-        >
-          ES
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setLanguage('en')
-            setLanguageManuallySet(true)
-          }}
-          className={`border-l px-2.5 py-1 ${language === 'en' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:bg-muted'}`}
-        >
-          EN
-        </button>
-      </div>
-    </div>
-  )
 
   const handleNext = () => {
     if (!formData.name || !formData.email || !formData.password) {
@@ -225,7 +194,7 @@ export default function RegisterPage() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
-      {LanguageToggle}
+      <LanguageToggle className="max-w-md" />
 
       <div className="mb-8 flex items-center gap-2">
         <img src="/favicon-96x96.png" alt="" className="h-9 w-9" />
@@ -351,12 +320,7 @@ export default function RegisterPage() {
                   <Label htmlFor="country">{tr.businessCountry}</Label>
                   <Select
                     value={formData.country}
-                    onValueChange={(value) => {
-                      setFormData({ ...formData, country: value })
-                      if (!languageManuallySet) {
-                        setLanguage(value === 'US' ? 'en' : 'es')
-                      }
-                    }}
+                    onValueChange={(value) => setFormData({ ...formData, country: value })}
                     disabled={isLoading}
                   >
                     <SelectTrigger>
@@ -367,6 +331,27 @@ export default function RegisterPage() {
                       <SelectItem value="US">{tr.countryUS}</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+
+                {/* Explicit choice, not inferred from business country (used
+                    to auto-pick es/en from PE/US) - that silently defaulted
+                    most Peru signups to Spanish without anyone actually
+                    choosing it. This is what gets saved as the account's
+                    language (see submitSignUp below); the small ES/EN
+                    toggle above only changes what THIS page previews in,
+                    same distinction Settings > Perfil already draws. */}
+                <div className="space-y-2">
+                  <Label htmlFor="preferred-language">{tr.preferredLanguageLabel}</Label>
+                  <Select value={language} onValueChange={(value) => setLanguage(value as 'en' | 'es')} disabled={isLoading}>
+                    <SelectTrigger id="preferred-language">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="en">{t.language.en}</SelectItem>
+                      <SelectItem value="es">{t.language.es}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">{tr.preferredLanguageHint}</p>
                 </div>
 
                 <div className="space-y-2">

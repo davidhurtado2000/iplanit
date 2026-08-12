@@ -1,12 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { Calendar } from 'lucide-react'
 import { useLanguage } from '@/context/language-context'
+import { LanguageToggle } from '@/components/language-toggle'
 import type { LegalDocument } from '@/lib/legal-content'
 
 export function LegalPage({ es, en }: { es: LegalDocument; en: LegalDocument }) {
-  const { language, setLanguage } = useLanguage()
+  const { language } = useLanguage()
   const doc = language === 'es' ? es : en
 
   return (
@@ -14,27 +14,12 @@ export function LegalPage({ es, en }: { es: LegalDocument; en: LegalDocument }) 
       <div className="mx-auto max-w-2xl">
         <div className="mb-8 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-              <Calendar className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <span className="text-lg font-bold text-foreground">iPlanit</span>
+            <img src="/favicon-96x96.png" alt="" className="h-8 w-8 shrink-0 dark:hidden" />
+            <img src="/favicon-96x96-white.png" alt="" className="hidden h-8 w-8 shrink-0 dark:block" />
+            <img src="/logotipo_modolight.png" alt="iPlanit" className="h-6 w-auto dark:hidden" />
+            <img src="/logotipo_mododark.png" alt="iPlanit" className="hidden h-6 w-auto dark:block" />
           </Link>
-          <div className="inline-flex overflow-hidden rounded-md border text-xs font-medium">
-            <button
-              type="button"
-              onClick={() => setLanguage('es')}
-              className={`px-2.5 py-1 ${language === 'es' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:bg-muted'}`}
-            >
-              ES
-            </button>
-            <button
-              type="button"
-              onClick={() => setLanguage('en')}
-              className={`border-l px-2.5 py-1 ${language === 'en' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:bg-muted'}`}
-            >
-              EN
-            </button>
-          </div>
+          <LanguageToggle className="mb-0 w-auto justify-start" />
         </div>
 
         <h1 className="text-2xl font-bold text-foreground sm:text-3xl">{doc.title}</h1>

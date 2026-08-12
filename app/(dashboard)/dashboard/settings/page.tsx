@@ -1061,7 +1061,7 @@ export default function SettingsPage() {
                       type="email"
                       value={profileForm.email}
                       disabled
-                      placeholder="tu@email.com"
+                      placeholder={t.settings.emailFieldPlaceholder}
                     />
                     <p className="mt-1 text-xs text-muted-foreground">
                       {t.settings.emailHint}
@@ -1080,8 +1080,8 @@ export default function SettingsPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="es">{t.language.es}</SelectItem>
                       <SelectItem value="en">{t.language.en}</SelectItem>
+                      <SelectItem value="es">{t.language.es}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1295,7 +1295,7 @@ export default function SettingsPage() {
                           setSlugError('')
                           setBusiness({ ...business, slug: e.target.value })
                         }}
-                        placeholder="mi-negocio"
+                        placeholder={t.settings.slugPlaceholder}
                         className={slugError ? 'border-destructive focus-visible:ring-destructive' : ''}
                       />
                       {slugError ? (

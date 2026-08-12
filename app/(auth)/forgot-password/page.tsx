@@ -9,12 +9,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2, Mail } from 'lucide-react'
+import { LanguageToggle } from '@/components/language-toggle'
 import { supabase } from '@/lib/supabase/client'
 import { useLanguage } from '@/context/language-context'
 import { translateAuthError, withAuthLockRetry } from '@/lib/supabase/auth-errors'
 
 export default function ForgotPasswordPage() {
-  const { language, setLanguage, t } = useLanguage()
+  const { language, t } = useLanguage()
   const tr = t.auth.forgotPassword
   const [email, setEmail] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -55,24 +56,7 @@ export default function ForgotPasswordPage() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
-      <div className="mb-4 flex w-full max-w-md justify-end">
-        <div className="inline-flex overflow-hidden rounded-md border text-xs font-medium">
-          <button
-            type="button"
-            onClick={() => setLanguage('es')}
-            className={`px-2.5 py-1 ${language === 'es' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:bg-muted'}`}
-          >
-            ES
-          </button>
-          <button
-            type="button"
-            onClick={() => setLanguage('en')}
-            className={`border-l px-2.5 py-1 ${language === 'en' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:bg-muted'}`}
-          >
-            EN
-          </button>
-        </div>
-      </div>
+      <LanguageToggle className="max-w-md" />
 
       <div className="mb-8 flex items-center gap-2">
         <img src="/favicon-96x96.png" alt="" className="h-9 w-9" />

@@ -103,7 +103,7 @@ export const TERMS_ES: LegalDocument = {
     {
       heading: '13. Contacto',
       body: [
-        'Si tienes preguntas sobre estos Términos, escríbenos a davidhurtadouni@gmail.com.',
+        'Si tienes preguntas sobre estos Términos, escríbenos a davidsoftwareservicesllc@gmail.com.',
       ],
     },
   ],
@@ -193,7 +193,7 @@ export const TERMS_EN: LegalDocument = {
     {
       heading: '13. Contact',
       body: [
-        'If you have questions about these Terms, write to us at davidhurtadouni@gmail.com.',
+        'If you have questions about these Terms, write to us at davidsoftwareservicesllc@gmail.com.',
       ],
     },
   ],
@@ -233,7 +233,7 @@ export const PRIVACY_ES: LegalDocument = {
     {
       heading: '5. Tus Derechos',
       body: [
-        'Puedes solicitar en cualquier momento acceder, corregir o eliminar tus datos, o los de tu negocio, escribiéndonos a davidhurtadouni@gmail.com. Si estás en Perú, esto aplica conforme a la Ley N.º 29733 de Protección de Datos Personales; si estás en Estados Unidos, conforme a las leyes de privacidad de tu estado.',
+        'Puedes solicitar en cualquier momento acceder, corregir o eliminar tus datos, o los de tu negocio, escribiéndonos a davidsoftwareservicesllc@gmail.com. Si estás en Perú, esto aplica conforme a la Ley N.º 29733 de Protección de Datos Personales; si estás en Estados Unidos, conforme a las leyes de privacidad de tu estado.',
         'Puedes exportar tus datos de clientes y reservas en cualquier momento desde la sección de Reportes (plan Premium).',
       ],
     },
@@ -258,7 +258,7 @@ export const PRIVACY_ES: LegalDocument = {
     {
       heading: '9. Contacto',
       body: [
-        'Para cualquier consulta sobre privacidad, escríbenos a davidhurtadouni@gmail.com.',
+        'Para cualquier consulta sobre privacidad, escríbenos a davidsoftwareservicesllc@gmail.com.',
       ],
     },
   ],
@@ -298,7 +298,7 @@ export const PRIVACY_EN: LegalDocument = {
     {
       heading: '5. Your Rights',
       body: [
-        'You can request to access, correct, or delete your data, or your business\'s data, at any time by writing to davidhurtadouni@gmail.com. If you are in Peru, this applies under Law No. 29733 on Personal Data Protection; if you are in the United States, under your state\'s privacy laws.',
+        'You can request to access, correct, or delete your data, or your business\'s data, at any time by writing to davidsoftwareservicesllc@gmail.com. If you are in Peru, this applies under Law No. 29733 on Personal Data Protection; if you are in the United States, under your state\'s privacy laws.',
         'You can export your client and reservation data at any time from the Reports section (Premium plan).',
       ],
     },
@@ -323,7 +323,7 @@ export const PRIVACY_EN: LegalDocument = {
     {
       heading: '9. Contact',
       body: [
-        'For any privacy questions, write to us at davidhurtadouni@gmail.com.',
+        'For any privacy questions, write to us at davidsoftwareservicesllc@gmail.com.',
       ],
     },
   ],

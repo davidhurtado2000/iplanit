@@ -300,7 +300,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
           <div className="mx-2 mb-2 rounded-lg bg-gradient-to-r from-amber-500/20 to-orange-500/20 p-3">
             <div className="flex items-center gap-2">
               <Crown className="h-4 w-4 text-amber-400" />
-              <span className="text-xs font-medium text-sidebar-foreground">Plan Premium</span>
+              <span className="text-xs font-medium text-sidebar-foreground">{t.settings.premiumPlanName}</span>
             </div>
           </div>
         )}
@@ -312,7 +312,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
               onClick={() => setShowUpgradeModal(true)}
             >
               <Crown className="h-4 w-4" />
-              Plan Premium
+              {t.settings.premiumPlanName}
             </Button>
           </div>
         )}

@@ -1108,7 +1108,7 @@ export function ReservationModal({
         onClose()
         setShowUpgradeModal(true)
       } else {
-        setError(error?.message || 'Ocurrió un error al guardar la reserva. Intenta de nuevo.')
+        setError(error?.message || t.reservation.genericSaveError)
       }
     } finally {
       setIsLoading(false)
