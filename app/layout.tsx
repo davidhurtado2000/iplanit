@@ -18,6 +18,7 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://iplanit.io'),
   title: 'iPlanit - Booking and Scheduling Management',
   description:
     'SaaS platform for managing bookings, appointments, and schedules for service businesses',

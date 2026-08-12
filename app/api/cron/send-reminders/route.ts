@@ -10,6 +10,13 @@ import type { Database } from '@/lib/supabase/types'
 // invocations when that env var is set, which is checked below so this
 // can't be hit by anyone who finds the URL.
 export async function GET(request: Request) {
+  // Fail closed, not open: without this check, an unset CRON_SECRET would
+  // make the required header the literal, guessable string "Bearer
+  // undefined" instead of rejecting every request outright.
+  if (!process.env.CRON_SECRET) {
+    console.error('[iplanit] CRON_SECRET is not set - refusing all requests')
+    return NextResponse.json({ error: 'not_configured' }, { status: 500 })
+  }
   if (request.headers.get('authorization') !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
