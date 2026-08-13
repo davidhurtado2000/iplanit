@@ -105,6 +105,12 @@ const DAY_KEY_TO_NUMBER: Record<DayOfWeek, number> = {
   sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6,
 }
 
+// Same values as components/upgrade-modal.tsx - shown in the change-plan
+// confirmation dialog below so an existing subscriber sees the real price
+// before a proration charge fires, not just after.
+const PRO_PRICE_USD = 25
+const PREMIUM_PRICE_USD = 40
+
 export default function SettingsPage() {
   const { user, profile: authProfile, loading: authLoading, refreshProfile } = useAuth()
   const { currentBusiness, businesses, loading: businessLoading, updateBusiness, fetchBusinesses, switchBusiness } = useBusinesses()
@@ -114,6 +120,11 @@ export default function SettingsPage() {
   const router = useRouter()
   const [isPortalLoading, setIsPortalLoading] = useState(false)
   const [isChangingPlan, setIsChangingPlan] = useState(false)
+  // Non-null opens the confirmation dialog below - set by the 3 upgrade
+  // links instead of calling handleChangePlan directly, so a subscriber
+  // always sees the new price and proration disclosure before the charge
+  // fires, never after.
+  const [pendingPlanChange, setPendingPlanChange] = useState<'pro' | 'premium' | null>(null)
   const [mounted, setMounted] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
@@ -1737,7 +1748,7 @@ export default function SettingsPage() {
                         type="button"
                         className="flex items-center gap-1 text-xs text-primary underline hover:text-primary/80 disabled:opacity-50"
                         disabled={isChangingPlan}
-                        onClick={() => handleChangePlan('premium')}
+                        onClick={() => setPendingPlanChange('premium')}
                       >
                         {isChangingPlan && <Loader2 className="h-3 w-3 animate-spin" />}
                         {t.settings.upgradeToPremiumBtn}
@@ -1937,7 +1948,7 @@ export default function SettingsPage() {
                       type="button"
                       className="flex items-center gap-1 text-xs text-primary underline hover:text-primary/80 disabled:opacity-50"
                       disabled={isChangingPlan}
-                      onClick={() => handleChangePlan('premium')}
+                      onClick={() => setPendingPlanChange('premium')}
                     >
                       {isChangingPlan && <Loader2 className="h-3 w-3 animate-spin" />}
                       {t.settings.premiumUpsellFromProLabel}
@@ -2057,7 +2068,7 @@ export default function SettingsPage() {
                       type="button"
                       className="underline disabled:opacity-50"
                       disabled={isChangingPlan}
-                      onClick={() => handleChangePlan('premium')}
+                      onClick={() => setPendingPlanChange('premium')}
                     >
                       {t.settings.upgradeToPremiumBtn}
                     </button>
@@ -2238,6 +2249,43 @@ export default function SettingsPage() {
             <Button onClick={handleCreateSede} disabled={isCreatingSede || !newSede.name.trim()} className="gap-2">
               {isCreatingSede && <Loader2 className="h-4 w-4 animate-spin" />}
               {t.settings.sedes.createBtn}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={pendingPlanChange !== null} onOpenChange={(open) => !open && setPendingPlanChange(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t.settings.changePlanConfirmTitle}</DialogTitle>
+            <DialogDescription>
+              {pendingPlanChange &&
+                t.settings.changePlanConfirmDesc
+                  .replace(
+                    '{plan}',
+                    pendingPlanChange === 'premium' ? t.settings.premiumPlanName : t.settings.proPlanName
+                  )
+                  .replaceAll(
+                    '{price}',
+                    String(pendingPlanChange === 'premium' ? PREMIUM_PRICE_USD : PRO_PRICE_USD)
+                  )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingPlanChange(null)} disabled={isChangingPlan}>
+              {t.settings.changePlanCancelBtn}
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!pendingPlanChange) return
+                await handleChangePlan(pendingPlanChange)
+                setPendingPlanChange(null)
+              }}
+              disabled={isChangingPlan}
+              className="gap-2"
+            >
+              {isChangingPlan && <Loader2 className="h-4 w-4 animate-spin" />}
+              {t.settings.changePlanConfirmBtn}
             </Button>
           </DialogFooter>
         </DialogContent>
