@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -21,6 +22,10 @@ import {
   BarChart3,
   Lock,
   Eye,
+  Copy,
+  Check,
+  ExternalLink,
+  Link2,
 } from 'lucide-react'
 import Link from 'next/link'
 import { UpgradeModal } from '@/components/upgrade-modal'
@@ -104,6 +109,100 @@ export default function DashboardPage() {
   const clientsMap = useMemo(() => Object.fromEntries(clients.map((c) => [c.id, c])), [clients])
   const servicesMap = useMemo(() => Object.fromEntries(services.map((s) => [s.id, s])), [services])
 
+  // Pro+Premium teaser card, same locked/unlocked pattern as the Analytics
+  // card below - computed entirely client-side from data already loaded by
+  // useDashboardData(), no extra query, no email, no AI cost involved.
+  //
+  // Calendar week (Monday-Sunday), not a rolling "last 7 days ending now" -
+  // an earlier version anchored the window at `now`, which silently
+  // excluded every future reservation (tomorrow, later this week) since
+  // those have start_time > now. Working in local YYYY-MM-DD strings (same
+  // trick as todayReservations above) sidesteps Date-object timezone
+  // pitfalls entirely - string comparison already sorts correctly for that
+  // format.
+  const weekSummary = useMemo(() => {
+    if (!currentBusiness) return null
+    const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date())
+    const todayNoonUtc = new Date(todayStr + 'T12:00:00Z')
+    const dow = todayNoonUtc.getUTCDay() // 0=Sun...6=Sat
+    const offsetToMonday = dow === 0 ? 6 : dow - 1
+
+    const mondayThisWeek = new Date(todayNoonUtc)
+    mondayThisWeek.setUTCDate(todayNoonUtc.getUTCDate() - offsetToMonday)
+    const toDateStr = (d: Date) => d.toISOString().slice(0, 10)
+
+    const startOfThisWeek = toDateStr(mondayThisWeek)
+    const sundayThisWeek = new Date(mondayThisWeek)
+    sundayThisWeek.setUTCDate(mondayThisWeek.getUTCDate() + 6)
+    const endOfThisWeek = toDateStr(sundayThisWeek)
+    const mondayLastWeek = new Date(mondayThisWeek)
+    mondayLastWeek.setUTCDate(mondayThisWeek.getUTCDate() - 7)
+    const startOfLastWeek = toDateStr(mondayLastWeek)
+
+    const localDateOf = (isoTime: string) =>
+      new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(isoTime))
+
+    const thisWeek = reservations.filter((r) => {
+      const d = localDateOf(r.start_time)
+      return d >= startOfThisWeek && d <= endOfThisWeek && r.status !== 'cancelled'
+    })
+    const lastWeekCount = reservations.filter((r) => {
+      const d = localDateOf(r.start_time)
+      return d >= startOfLastWeek && d < startOfThisWeek && r.status !== 'cancelled'
+    }).length
+
+    const serviceCounts = new Map<string, number>()
+    thisWeek.forEach((r) => {
+      if (r.service_id) serviceCounts.set(r.service_id, (serviceCounts.get(r.service_id) ?? 0) + 1)
+    })
+    let topServiceId: string | null = null
+    let topServiceCount = 0
+    serviceCounts.forEach((count, id) => {
+      if (count > topServiceCount) {
+        topServiceCount = count
+        topServiceId = id
+      }
+    })
+
+    const dayCounts = new Map<string, number>()
+    thisWeek.forEach((r) => {
+      dayCounts.set(localDateOf(r.start_time), (dayCounts.get(localDateOf(r.start_time)) ?? 0) + 1)
+    })
+    let busiestDate: string | null = null
+    let busiestCount = 0
+    dayCounts.forEach((count, date) => {
+      if (count > busiestCount) {
+        busiestCount = count
+        busiestDate = date
+      }
+    })
+
+    return {
+      thisWeekCount: thisWeek.length,
+      lastWeekCount,
+      topServiceName: topServiceId ? servicesMap[topServiceId]?.name ?? null : null,
+      busiestDayLabel: busiestDate
+        ? capitalizeFirst(
+            new Intl.DateTimeFormat(locale, { weekday: 'long', timeZone: tz }).format(
+              new Date(busiestDate + 'T12:00:00Z')
+            )
+          )
+        : null,
+    }
+  }, [reservations, currentBusiness?.id, tz, locale, servicesMap])
+
+  const bookingLink =
+    currentBusiness?.slug && typeof window !== 'undefined'
+      ? `${window.location.origin}/reservar/${currentBusiness.slug}`
+      : ''
+  const [linkCopied, setLinkCopied] = useState(false)
+  const handleCopyLink = async () => {
+    if (!bookingLink) return
+    await navigator.clipboard.writeText(bookingLink)
+    setLinkCopied(true)
+    setTimeout(() => setLinkCopied(false), 2000)
+  }
+
   const [followUpPrefill, setFollowUpPrefill] = useState<{
     clientId: string
     serviceId: string | null
@@ -148,6 +247,7 @@ export default function DashboardPage() {
 
   const plan = (profile?.plan ?? 'free') as 'free' | 'pro' | 'premium'
   const isPremium = plan === 'premium'
+  const isProOrPremium = plan === 'pro' || plan === 'premium'
   const displayName = profile?.full_name?.split(' ')[0] || user.email?.split('@')[0] || 'Usuario'
   const displayEmail = profile?.email || user.email || ''
 
@@ -357,6 +457,112 @@ export default function DashboardPage() {
               <p className="mt-1 truncate text-sm font-medium">{displayEmail}</p>
               <p className="text-xs text-muted-foreground">{t.dashboard.activeAccount}</p>
             </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Tu semana (Pro+Premium) + link de reservas (todos los planes) - la
+          primera se calcula 100% del lado del cliente con datos que
+          useDashboardData() ya cargó (sin queries nuevas, sin email, sin
+          IA); la segunda reutiliza el mismo bookingLink/handleCopyLink que
+          ya existe en Settings, solo que aquí a la vista sin tener que
+          entrar a Configuración. */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-primary" />
+              {t.dashboard.weekSummaryTitle}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isProOrPremium ? (
+              weekSummary && weekSummary.thisWeekCount > 0 ? (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 sm:divide-x">
+                  <div className="sm:pr-4">
+                    <p className="text-xs font-medium text-muted-foreground">{t.dashboard.weekSummaryReservations}</p>
+                    <div className="mt-1 flex items-baseline gap-1.5">
+                      <span className="text-xl font-semibold">{weekSummary.thisWeekCount}</span>
+                      {weekSummary.thisWeekCount !== weekSummary.lastWeekCount && (
+                        <span
+                          className={`flex items-center gap-0.5 text-xs font-medium ${
+                            weekSummary.thisWeekCount > weekSummary.lastWeekCount
+                              ? 'text-green-600'
+                              : 'text-muted-foreground'
+                          }`}
+                        >
+                          {weekSummary.thisWeekCount > weekSummary.lastWeekCount ? (
+                            <TrendingUp className="h-3 w-3" />
+                          ) : (
+                            <TrendingDown className="h-3 w-3" />
+                          )}
+                          {weekSummary.thisWeekCount > weekSummary.lastWeekCount ? '+' : ''}
+                          {weekSummary.thisWeekCount - weekSummary.lastWeekCount}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">{t.dashboard.weekSummaryVsLastWeek}</p>
+                  </div>
+                  <div className="sm:px-4">
+                    <p className="text-xs font-medium text-muted-foreground">{t.dashboard.weekSummaryTopService}</p>
+                    <p className="mt-1 truncate text-xl font-semibold">{weekSummary.topServiceName ?? '—'}</p>
+                  </div>
+                  <div className="sm:pl-4">
+                    <p className="text-xs font-medium text-muted-foreground">{t.dashboard.weekSummaryBusiestDay}</p>
+                    <p className="mt-1 truncate text-xl font-semibold">{weekSummary.busiestDayLabel ?? '—'}</p>
+                  </div>
+                </div>
+              ) : (
+                <p className="py-6 text-center text-sm text-muted-foreground">{t.dashboard.weekSummaryNoData}</p>
+              )
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setUpgradeModalPlan('pro')
+                  setShowUpgradeModal(true)
+                }}
+                className="flex w-full items-center gap-3 py-2 text-left"
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted">
+                  <Lock className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-foreground">{t.dashboard.weekSummaryUnlockDesc}</p>
+                  <p className="text-xs text-muted-foreground">{t.dashboard.clickToUnlock}</p>
+                </div>
+              </button>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Link2 className="h-5 w-5 text-primary" />
+              {t.settings.bookingLinkTitle}
+            </CardTitle>
+            <CardDescription>{t.settings.bookingLinkDesc}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {bookingLink ? (
+              <div className="space-y-2">
+                <Input value={bookingLink} readOnly className="font-mono text-xs" />
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={handleCopyLink} className="flex-1 gap-2">
+                    {linkCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                    {linkCopied ? t.settings.linkCopied : t.settings.copyLink}
+                  </Button>
+                  <Button type="button" variant="outline" size="icon" asChild>
+                    <a href={bookingLink} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">{t.dashboard.notConfigured}</p>
+            )}
           </CardContent>
         </Card>
       </div>
