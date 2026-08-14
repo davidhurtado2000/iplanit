@@ -1090,6 +1090,7 @@ const TRANSLATIONS = {
         signUp: 'Registrate',
         magicLinkSent: '¡Link de acceso enviado a tu email! Revisa tu bandeja de entrada.',
         registeredWelcome: '¡Cuenta creada exitosamente! Revisa tu correo para confirmarla y luego inicia sesión.',
+        sessionExpired: 'Tu sesión expiró. Inicia sesión de nuevo para continuar.',
         forgotPassword: '¿Olvidaste tu contraseña?',
       },
       forgotPassword: {
@@ -2294,6 +2295,7 @@ const TRANSLATIONS = {
         signUp: 'Sign up',
         magicLinkSent: 'Sign-in link sent to your email! Check your inbox.',
         registeredWelcome: 'Account created successfully! Check your email to confirm it, then sign in.',
+        sessionExpired: 'Your session expired. Please sign in again to continue.',
         forgotPassword: 'Forgot your password?',
       },
       forgotPassword: {

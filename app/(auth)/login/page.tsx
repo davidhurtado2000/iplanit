@@ -30,6 +30,8 @@ function LoginForm() {
   useEffect(() => {
     if (searchParams.get('registered') === 'true') {
       setMessage(tr.registeredWelcome)
+    } else if (searchParams.get('expired') === '1') {
+      setMessage(tr.sessionExpired)
     }
     // Only re-run when the query param or language actually change, not on
     // every tr identity change (tr is a fresh object each render).

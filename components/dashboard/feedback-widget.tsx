@@ -89,6 +89,7 @@ export function FeedbackWidget() {
               onChange={(e) => setMessage(e.target.value)}
               placeholder={t.feedback.placeholder}
               rows={4}
+              maxLength={2000}
               disabled={submitting}
             />
             <Button

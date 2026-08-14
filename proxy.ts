@@ -76,7 +76,17 @@ export async function proxy(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   if (isProtectedRoute && !user) {
-    return NextResponse.redirect(new URL('/login', request.url))
+    const loginUrl = new URL('/login', request.url)
+    // A stale sb-*-auth-token cookie means there WAS a session that's now
+    // invalid/expired (e.g. a background tab whose refresh timer got
+    // throttled long enough for the token to lapse - see the comment in
+    // context/auth-context.tsx) - worth telling the person why they got
+    // bounced instead of silently landing on the login form, as if their
+    // click on "Go to dashboard" had done nothing. No cookie at all just
+    // means they were never signed in, which needs no explanation.
+    const hadSession = request.cookies.getAll().some((c) => c.name.startsWith('sb-') && c.name.includes('-auth-token'))
+    if (hadSession) loginUrl.searchParams.set('expired', '1')
+    return NextResponse.redirect(loginUrl)
   }
 
   if (isAuthRoute && user) {

@@ -21,6 +21,20 @@ export interface ReservationEmailData {
   manageUrl?: string
 }
 
+// Only needed for the feedback notification below - every other template
+// in this file interpolates names/dates that come from typed form fields
+// (client name, service name), but a feedback message is open free text
+// that could contain HTML, so it has to be escaped before landing in an
+// email body.
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 function formatDateTime(startTime: string, timezone: string, language: EmailLanguage): string {
   const locale = language === 'es' ? 'es-PE' : 'en-US'
   return new Intl.DateTimeFormat(locale, {
@@ -256,6 +270,41 @@ export function buildReminderEmail(data: ReservationEmailData): { subject: strin
        }</p>
        ${detailsCard([serviceRow(data), ['Date and time', when]])}
        ${manageButton(manageUrl, 'en', reservationType)}`
+    ),
+  }
+}
+
+export interface FeedbackEmailData {
+  message: string
+  userEmail: string
+  userName: string | null
+  businessName: string | null
+  pageUrl: string | null
+  createdAt: string
+}
+
+// Internal, founder-facing only (never sent to a client) - always in
+// Spanish rather than branching on the submitter's language, since the one
+// reader is always David regardless of who sent the feedback.
+export function buildFeedbackNotificationEmail(data: FeedbackEmailData): { subject: string; html: string } {
+  const { message, userEmail, userName, businessName, pageUrl, createdAt } = data
+  const when = new Intl.DateTimeFormat('es-PE', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(createdAt))
+
+  return {
+    subject: `Nuevo feedback${businessName ? ` - ${businessName}` : ''}`,
+    html: emailLayout(
+      'es',
+      'Nuevo feedback recibido',
+      `<p style="font-size: 14px; color: #374151; white-space: pre-wrap; margin: 0 0 16px 0;">${escapeHtml(message)}</p>
+       ${detailsCard([
+         ['De', userName ? `${escapeHtml(userName)} (${escapeHtml(userEmail)})` : escapeHtml(userEmail)],
+         ['Negocio', businessName ? escapeHtml(businessName) : null],
+         ['Pagina', pageUrl ? escapeHtml(pageUrl) : null],
+         ['Fecha', when],
+       ])}`
     ),
   }
 }
