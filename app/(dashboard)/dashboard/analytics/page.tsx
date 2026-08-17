@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -11,12 +11,27 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PremiumFeature } from '@/components/premium-feature'
 import { HeroKpiCard } from '@/components/dashboard/hero-kpi-card'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { CalendarDays, CalendarRange, DollarSign, Gauge, Users, Building2, Download, ArrowUp, ArrowDown } from 'lucide-react'
+import {
+  CalendarDays,
+  CalendarRange,
+  DollarSign,
+  Gauge,
+  Users,
+  Building2,
+  Download,
+  ArrowUp,
+  ArrowDown,
+  Flame,
+  UserX,
+  ShieldAlert,
+  PieChart,
+} from 'lucide-react'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { getWorkerLabel } from '@/lib/worker-label'
 import {
@@ -25,6 +40,7 @@ import {
   type Client,
   type Service,
   type Resource,
+  type BusinessHour,
 } from '@/context/dashboard-data-context'
 import { useLanguage } from '@/context/language-context'
 import { createClient } from '@/lib/supabase/client'
@@ -38,6 +54,9 @@ import {
   computeTrend,
   getDailyDemand,
   getHourlyDemand,
+  getRevenueOverTime,
+  getDemandHeatmap,
+  formatHourLabel,
   getServiceBreakdown,
   getTotalRevenue,
   getOccupancy,
@@ -46,12 +65,16 @@ import {
   getCancellationRate,
   getAverageTicket,
   getClientRetention,
+  getRevenueBySegment,
   getTopClients,
+  getAtRiskClients,
+  getClientReliability,
   getResourceBreakdown,
   getWorkerBreakdown,
   getSellerBreakdown,
   type DateRangeOption,
   type TrendResult,
+  type HeatmapCell,
 } from '@/lib/analytics'
 
 const supabase = createClient()
@@ -113,6 +136,79 @@ function MiniStat({
 
 function SectionHeading({ children }: { children: ReactNode }) {
   return <h2 className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">{children}</h2>
+}
+
+// 2024-01-01 is a known Monday, used purely as a reference date to generate
+// correctly-ordered Mon-Sun weekday labels via Intl - never used for any
+// real reservation data, just label text.
+const REFERENCE_MONDAY = new Date(2024, 0, 1)
+const MONDAY_FIRST_DOW = [1, 2, 3, 4, 5, 6, 0]
+
+/**
+ * Day-of-week x hour-of-day grid, restricted to the business's own open
+ * hours (falls back to 8am-8pm if none are configured) so the grid stays a
+ * compact, glanceable size instead of showing 24 mostly-empty rows.
+ * Intensity is plain opacity on --primary rather than a second color scale -
+ * avoids introducing new design tokens for a single chart, and --primary is
+ * already theme-aware (light/dark) everywhere else in the app.
+ */
+function DemandHeatmap({
+  cells,
+  businessHours,
+  locale,
+  timezone,
+}: {
+  cells: HeatmapCell[]
+  businessHours: BusinessHour[]
+  locale: string
+  timezone: string
+}) {
+  const openHours = businessHours.filter((bh) => !bh.is_closed)
+  const minHour =
+    openHours.length > 0 ? Math.min(...openHours.map((bh) => parseInt(bh.open_time.split(':')[0], 10))) : 8
+  const maxHourExclusive =
+    openHours.length > 0 ? Math.max(...openHours.map((bh) => parseInt(bh.close_time.split(':')[0], 10))) : 20
+  const hours = Array.from({ length: Math.max(1, maxHourExclusive - minHour) }, (_, i) => minHour + i)
+
+  const maxCount = Math.max(1, ...cells.map((c) => c.count))
+  const countByKey = new Map(cells.map((c) => [`${c.dayOfWeek}-${c.hour}`, c.count]))
+  const dayLabels = MONDAY_FIRST_DOW.map((dow) =>
+    new Intl.DateTimeFormat(locale, { weekday: 'short' }).format(
+      new Date(REFERENCE_MONDAY.getFullYear(), REFERENCE_MONDAY.getMonth(), REFERENCE_MONDAY.getDate() + dow)
+    )
+  )
+
+  return (
+    <div className="overflow-x-auto">
+      <div
+        className="inline-grid min-w-full gap-1"
+        style={{ gridTemplateColumns: `2.5rem repeat(7, minmax(2rem, 1fr))` }}
+      >
+        <div />
+        {dayLabels.map((label, i) => (
+          <div key={i} className="truncate text-center text-[10px] font-medium text-muted-foreground capitalize">
+            {label}
+          </div>
+        ))}
+        {hours.map((hour) => (
+          <Fragment key={hour}>
+            <div className="pr-1 text-right text-[10px] leading-6 text-muted-foreground">{formatHourLabel(hour)}</div>
+            {MONDAY_FIRST_DOW.map((dow, i) => {
+              const count = countByKey.get(`${dow}-${hour}`) ?? 0
+              return (
+                <div
+                  key={dow}
+                  className="aspect-square rounded-sm bg-primary"
+                  style={{ opacity: count === 0 ? 0.06 : 0.15 + (count / maxCount) * 0.75 }}
+                  title={`${dayLabels[i]} ${formatHourLabel(hour)}: ${count}`}
+                />
+              )
+            })}
+          </Fragment>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 export default function AnalyticsPage() {
@@ -256,6 +352,16 @@ export default function AnalyticsPage() {
       ensureReservationsInRange(prevFrom, to)
     }
   }, [range, from, to, prevFrom, ensureReservationsInRange])
+  // getAtRiskClients ignores the range picker entirely and looks back up to
+  // 180 days on its own (see its doc comment) - independent of whatever the
+  // effect above already fetched for the *selected* range, which could be
+  // as narrow as 7 days and wouldn't otherwise cover that lookback. Without
+  // this, half of getAtRiskClients's own 45-180 day window would silently
+  // have no data to look at whenever a short range is selected.
+  useEffect(() => {
+    ensureReservationsInRange(new Date(Date.now() - 180 * 24 * 60 * 60 * 1000), new Date())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ensureReservationsInRange])
 
   // Org-wide fetch for "todas las sedes" - only runs when the toggle is on
   // and there's actually more than one sede. reservations/services/
@@ -359,6 +465,28 @@ export default function AnalyticsPage() {
     () => getSellerBreakdown(filteredReservations, sellerNameById, from, to),
     [filteredReservations, sellerNameById, from, to]
   )
+  const revenueOverTime = useMemo(
+    () => getRevenueOverTime(filteredReservations, from, to, timezone, locale),
+    [filteredReservations, from, to, timezone, locale]
+  )
+  const demandHeatmap = useMemo(
+    () => getDemandHeatmap(filteredReservations, from, to, timezone),
+    [filteredReservations, from, to, timezone]
+  )
+  const revenueBySegment = useMemo(
+    () => getRevenueBySegment(filteredReservations, clients, from, to),
+    [filteredReservations, clients, from, to]
+  )
+  const clientReliability = useMemo(
+    () => getClientReliability(filteredReservations, clients, from, to),
+    [filteredReservations, clients, from, to]
+  )
+  // Deliberately the raw, unfiltered `reservations` (not filteredReservations
+  // and not range-scoped) - see getAtRiskClients's own doc comment: "who am
+  // I about to lose" is a question about the whole client relationship,
+  // not one narrowed to whichever service/resource/date-range happens to be
+  // selected elsewhere on this page.
+  const atRiskClients = useMemo(() => getAtRiskClients(reservations, clients), [reservations, clients])
 
   // Previous-period equivalents, purely to compute the trend badges below -
   // none of these are rendered on their own.
@@ -445,6 +573,7 @@ export default function AnalyticsPage() {
   const hoursConfig = { count: { label: tr.kpiReservations, color: 'var(--chart-2)' } } satisfies ChartConfig
   const servicesConfig = { count: { label: tr.kpiReservations, color: 'var(--chart-3)' } } satisfies ChartConfig
   const revenueConfig = { revenue: { label: tr.kpiRevenue, color: 'var(--chart-4)' } } satisfies ChartConfig
+  const revenueOverTimeConfig = { revenue: { label: tr.kpiRevenue, color: 'var(--chart-4)' } } satisfies ChartConfig
 
   if (loading) {
     return (
@@ -562,10 +691,19 @@ export default function AnalyticsPage() {
       />
 
       <PremiumFeature featureName={tr.premiumTitle}>
-        <div className="space-y-8">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <SectionHeading>{tr.sectionOverview}</SectionHeading>
+        <Tabs defaultValue="overview" className="space-y-4">
+          <TabsList className="flex-wrap">
+            <TabsTrigger value="overview">{tr.tabOverview}</TabsTrigger>
+            <TabsTrigger value="demand">{tr.tabDemand}</TabsTrigger>
+            <TabsTrigger value="services">{tr.tabServices}</TabsTrigger>
+            <TabsTrigger value="clients">{tr.tabClients}</TabsTrigger>
+            {(filterableResources.length > 0 || filterableWorkers.length > 0 || sellerBreakdown.length > 0) && (
+              <TabsTrigger value="team">{tr.tabTeam}</TabsTrigger>
+            )}
+          </TabsList>
+
+          <TabsContent value="overview" className="space-y-4">
+            <div className="flex items-center justify-end">
               <Button variant="ghost" size="sm" className="-mr-2 gap-2 text-muted-foreground" onClick={handleExportReservations}>
                 <Download className="h-4 w-4" />
                 {tr.exportReservations}
@@ -626,10 +764,37 @@ export default function AnalyticsPage() {
                 <MiniStat label={tr.kpiVisits} value={visitsCount} trend={visitsTrend} />
               </CardContent>
             </Card>
-          </div>
 
-          <div className="space-y-4">
-            <SectionHeading>{tr.sectionDemand}</SectionHeading>
+            <Card>
+              <CardHeader>
+                <CardTitle>{tr.revenueOverTimeTitle}</CardTitle>
+                <CardDescription>{tr.revenueOverTimeDesc}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {totalRevenue === 0 ? (
+                  <p className="py-10 text-center text-sm text-muted-foreground">{tr.noData}</p>
+                ) : (
+                  <ChartContainer config={revenueOverTimeConfig} className="h-[250px] w-full">
+                    <AreaChart data={revenueOverTime}>
+                      <CartesianGrid vertical={false} />
+                      <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} minTickGap={24} />
+                      <YAxis tickLine={false} axisLine={false} width={40} />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Area
+                        dataKey="revenue"
+                        type="monotone"
+                        fill="var(--color-revenue)"
+                        fillOpacity={0.2}
+                        stroke="var(--color-revenue)"
+                      />
+                    </AreaChart>
+                  </ChartContainer>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="demand" className="space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle>{tr.demandTitle}</CardTitle>
@@ -679,10 +844,35 @@ export default function AnalyticsPage() {
                 )}
               </CardContent>
             </Card>
-          </div>
 
-          <div className="space-y-4">
-            <SectionHeading>{tr.sectionServices}</SectionHeading>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Flame className="h-4 w-4 text-muted-foreground" />
+                  {tr.heatmapTitle}
+                </CardTitle>
+                <CardDescription>{tr.heatmapDesc}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {totalReservations === 0 ? (
+                  <p className="py-10 text-center text-sm text-muted-foreground">{tr.noData}</p>
+                ) : (
+                  <>
+                    <DemandHeatmap cells={demandHeatmap} businessHours={businessHours} locale={locale} timezone={timezone} />
+                    <div className="mt-3 flex items-center justify-end gap-2 text-[11px] text-muted-foreground">
+                      <span>{tr.heatmapLegendLess}</span>
+                      <span className="h-2.5 w-2.5 rounded-sm bg-primary" style={{ opacity: 0.06 }} />
+                      <span className="h-2.5 w-2.5 rounded-sm bg-primary" style={{ opacity: 0.4 }} />
+                      <span className="h-2.5 w-2.5 rounded-sm bg-primary" style={{ opacity: 0.9 }} />
+                      <span>{tr.heatmapLegendMore}</span>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="services" className="space-y-4">
             <div className="grid gap-4 lg:grid-cols-2">
               <Card>
                 <CardHeader>
@@ -735,10 +925,9 @@ export default function AnalyticsPage() {
                 </CardContent>
               </Card>
             </div>
-          </div>
+          </TabsContent>
 
-          <div className="space-y-4">
-            <SectionHeading>{tr.sectionClients}</SectionHeading>
+          <TabsContent value="clients" className="space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle>{tr.topClientsTitle}</CardTitle>
@@ -769,120 +958,244 @@ export default function AnalyticsPage() {
                 )}
               </CardContent>
             </Card>
-          </div>
 
-          {filterableResources.length > 0 && (
-            <div className="space-y-4">
-              <SectionHeading>{tr.sectionResources}</SectionHeading>
-              <Card>
-                <CardHeader>
-                  <CardTitle>{tr.resourceBreakdownTitle}</CardTitle>
-                  <CardDescription>{tr.resourceBreakdownDesc}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {resourceBreakdown.length === 0 ? (
-                    <p className="py-10 text-center text-sm text-muted-foreground">{tr.noData}</p>
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>{tr.resourceBreakdownColResource}</TableHead>
-                          <TableHead className="text-right">{tr.resourceBreakdownColCount}</TableHead>
-                          <TableHead className="text-right">{tr.resourceBreakdownColHours}</TableHead>
-                          <TableHead className="text-right">{tr.resourceBreakdownColRevenue}</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {resourceBreakdown.map((r) => (
-                          <TableRow key={r.resourceId}>
-                            <TableCell className="font-medium">{r.name}</TableCell>
-                            <TableCell className="text-right">{r.count}</TableCell>
-                            <TableCell className="text-right">{r.bookedHours}</TableCell>
-                            <TableCell className="text-right">{currencySymbol} {r.revenue.toFixed(0)}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          )}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <PieChart className="h-4 w-4 text-muted-foreground" />
+                  {tr.revenueSegmentTitle}
+                </CardTitle>
+                <CardDescription>{tr.revenueSegmentDesc}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {totalRevenue === 0 ? (
+                  <p className="py-10 text-center text-sm text-muted-foreground">{tr.noData}</p>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex h-3 overflow-hidden rounded-full bg-muted">
+                      <div
+                        style={{ width: `${revenueBySegment.returningSharePct}%`, backgroundColor: 'var(--chart-4)' }}
+                      />
+                      <div style={{ width: `${revenueBySegment.newSharePct}%`, backgroundColor: 'var(--chart-2)' }} />
+                    </div>
+                    <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: 'var(--chart-4)' }} />
+                        <span className="text-muted-foreground">{tr.revenueSegmentReturning}</span>
+                        <span className="font-medium">
+                          {currencySymbol} {revenueBySegment.returningRevenue.toFixed(0)} ({revenueBySegment.returningSharePct}%)
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: 'var(--chart-2)' }} />
+                        <span className="text-muted-foreground">{tr.revenueSegmentNew}</span>
+                        <span className="font-medium">
+                          {currencySymbol} {revenueBySegment.newRevenue.toFixed(0)} ({revenueBySegment.newSharePct}%)
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
-          {filterableWorkers.length > 0 && (
-            <div className="space-y-4">
-              <SectionHeading>{workerLabel.plural}</SectionHeading>
-              <Card>
-                <CardHeader>
-                  <CardTitle>{tr.workerBreakdownTitlePrefix} {workerLabel.singular.toLowerCase()}</CardTitle>
-                  <CardDescription>{tr.workerBreakdownDesc}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {workerBreakdown.length === 0 ? (
-                    <p className="py-10 text-center text-sm text-muted-foreground">{tr.noData}</p>
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>{workerLabel.singular}</TableHead>
-                          <TableHead className="text-right">{tr.workerBreakdownColCount}</TableHead>
-                          <TableHead className="text-right">{tr.workerBreakdownColHours}</TableHead>
-                          <TableHead className="text-right">{tr.workerBreakdownColRevenue}</TableHead>
-                          <TableHead className="text-right">{tr.workerBreakdownColCompletionRate}</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {workerBreakdown.map((w) => (
-                          <TableRow key={w.workerId}>
-                            <TableCell className="font-medium">{w.name}</TableCell>
-                            <TableCell className="text-right">{w.count}</TableCell>
-                            <TableCell className="text-right">{w.bookedHours}</TableCell>
-                            <TableCell className="text-right">{currencySymbol} {w.revenue.toFixed(0)}</TableCell>
-                            <TableCell className="text-right">
-                              {w.completionRate === null ? '—' : `${w.completionRate}%`}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
-          {sellerBreakdown.length > 0 && (
-            <div className="space-y-4">
-              <SectionHeading>{tr.sectionSellers}</SectionHeading>
-              <Card>
-                <CardHeader>
-                  <CardTitle>{tr.sellerBreakdownTitle}</CardTitle>
-                  <CardDescription>{tr.sellerBreakdownDesc}</CardDescription>
-                </CardHeader>
-                <CardContent>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <UserX className="h-4 w-4 text-muted-foreground" />
+                  {tr.atRiskClientsTitle}
+                </CardTitle>
+                <CardDescription>{tr.atRiskClientsDesc}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {atRiskClients.length === 0 ? (
+                  <p className="py-10 text-center text-sm text-muted-foreground">{tr.atRiskNoData}</p>
+                ) : (
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>{tr.sellerBreakdownColSeller}</TableHead>
-                        <TableHead className="text-right">{tr.sellerBreakdownColCount}</TableHead>
-                        <TableHead className="text-right">{tr.sellerBreakdownColRevenue}</TableHead>
+                        <TableHead>{tr.atRiskColClient}</TableHead>
+                        <TableHead className="text-right">{tr.atRiskColLastVisit}</TableHead>
+                        <TableHead className="text-right">{tr.atRiskColDaysSince}</TableHead>
+                        <TableHead className="text-right">{tr.atRiskColLifetimeRevenue}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {sellerBreakdown.map((s) => (
-                        <TableRow key={s.sellerId}>
-                          <TableCell className="font-medium">{s.name}</TableCell>
-                          <TableCell className="text-right">{s.count}</TableCell>
-                          <TableCell className="text-right">{currencySymbol} {s.revenue.toFixed(0)}</TableCell>
+                      {atRiskClients.map((c) => (
+                        <TableRow key={c.clientId}>
+                          <TableCell className="font-medium">{c.name}</TableCell>
+                          <TableCell className="text-right">
+                            {new Date(c.lastVisit).toLocaleDateString(locale, {
+                              timeZone: timezone,
+                              day: 'numeric',
+                              month: 'short',
+                            })}
+                          </TableCell>
+                          <TableCell className="text-right">{c.daysSinceLastVisit}</TableCell>
+                          <TableCell className="text-right">{currencySymbol} {c.lifetimeRevenue.toFixed(0)}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
-                </CardContent>
-              </Card>
-            </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ShieldAlert className="h-4 w-4 text-muted-foreground" />
+                  {tr.reliabilityTitle}
+                </CardTitle>
+                <CardDescription>{tr.reliabilityDesc}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {clientReliability.length === 0 ? (
+                  <p className="py-10 text-center text-sm text-muted-foreground">{tr.reliabilityNoData}</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{tr.reliabilityColClient}</TableHead>
+                        <TableHead className="text-right">{tr.reliabilityColTotal}</TableHead>
+                        <TableHead className="text-right">{tr.reliabilityColNoShow}</TableHead>
+                        <TableHead className="text-right">{tr.reliabilityColCancelled}</TableHead>
+                        <TableHead className="text-right">{tr.reliabilityColRate}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {clientReliability.map((c) => (
+                        <TableRow key={c.clientId}>
+                          <TableCell className="font-medium">{c.name}</TableCell>
+                          <TableCell className="text-right">{c.totalCount}</TableCell>
+                          <TableCell className="text-right">{c.noShowCount}</TableCell>
+                          <TableCell className="text-right">{c.cancelledCount}</TableCell>
+                          <TableCell className="text-right">{c.issueRate}%</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {(filterableResources.length > 0 || filterableWorkers.length > 0 || sellerBreakdown.length > 0) && (
+            <TabsContent value="team" className="space-y-6">
+              {filterableResources.length > 0 && (
+                <div className="space-y-3">
+                  <SectionHeading>{tr.sectionResources}</SectionHeading>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>{tr.resourceBreakdownTitle}</CardTitle>
+                      <CardDescription>{tr.resourceBreakdownDesc}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {resourceBreakdown.length === 0 ? (
+                        <p className="py-10 text-center text-sm text-muted-foreground">{tr.noData}</p>
+                      ) : (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>{tr.resourceBreakdownColResource}</TableHead>
+                              <TableHead className="text-right">{tr.resourceBreakdownColCount}</TableHead>
+                              <TableHead className="text-right">{tr.resourceBreakdownColHours}</TableHead>
+                              <TableHead className="text-right">{tr.resourceBreakdownColRevenue}</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {resourceBreakdown.map((r) => (
+                              <TableRow key={r.resourceId}>
+                                <TableCell className="font-medium">{r.name}</TableCell>
+                                <TableCell className="text-right">{r.count}</TableCell>
+                                <TableCell className="text-right">{r.bookedHours}</TableCell>
+                                <TableCell className="text-right">{currencySymbol} {r.revenue.toFixed(0)}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {filterableWorkers.length > 0 && (
+                <div className="space-y-3">
+                  <SectionHeading>{workerLabel.plural}</SectionHeading>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>{tr.workerBreakdownTitlePrefix} {workerLabel.singular.toLowerCase()}</CardTitle>
+                      <CardDescription>{tr.workerBreakdownDesc}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {workerBreakdown.length === 0 ? (
+                        <p className="py-10 text-center text-sm text-muted-foreground">{tr.noData}</p>
+                      ) : (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>{workerLabel.singular}</TableHead>
+                              <TableHead className="text-right">{tr.workerBreakdownColCount}</TableHead>
+                              <TableHead className="text-right">{tr.workerBreakdownColHours}</TableHead>
+                              <TableHead className="text-right">{tr.workerBreakdownColRevenue}</TableHead>
+                              <TableHead className="text-right">{tr.workerBreakdownColCompletionRate}</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {workerBreakdown.map((w) => (
+                              <TableRow key={w.workerId}>
+                                <TableCell className="font-medium">{w.name}</TableCell>
+                                <TableCell className="text-right">{w.count}</TableCell>
+                                <TableCell className="text-right">{w.bookedHours}</TableCell>
+                                <TableCell className="text-right">{currencySymbol} {w.revenue.toFixed(0)}</TableCell>
+                                <TableCell className="text-right">
+                                  {w.completionRate === null ? '—' : `${w.completionRate}%`}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {sellerBreakdown.length > 0 && (
+                <div className="space-y-3">
+                  <SectionHeading>{tr.sectionSellers}</SectionHeading>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>{tr.sellerBreakdownTitle}</CardTitle>
+                      <CardDescription>{tr.sellerBreakdownDesc}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>{tr.sellerBreakdownColSeller}</TableHead>
+                            <TableHead className="text-right">{tr.sellerBreakdownColCount}</TableHead>
+                            <TableHead className="text-right">{tr.sellerBreakdownColRevenue}</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {sellerBreakdown.map((s) => (
+                            <TableRow key={s.sellerId}>
+                              <TableCell className="font-medium">{s.name}</TableCell>
+                              <TableCell className="text-right">{s.count}</TableCell>
+                              <TableCell className="text-right">{currencySymbol} {s.revenue.toFixed(0)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+            </TabsContent>
           )}
-        </div>
+        </Tabs>
       </PremiumFeature>
     </div>
   )

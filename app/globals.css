@@ -141,6 +141,28 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Native <button> gets `cursor: default` in every browser, not `pointer`
+     like <a href> does - a well-known platform quirk that meant every
+     shadcn Button and Radix-based control (Select, Switch, Tabs, Checkbox,
+     dropdown menu items, etc. all render as real <button>s or carry these
+     ARIA roles under the hood) showed the plain arrow instead of a hand,
+     giving no visual signal that they're clickable. One rule here fixes it
+     everywhere at once instead of adding a cursor-pointer class to every
+     interactive component individually. Disabled/aria-disabled elements are
+     deliberately excluded so they keep reading as non-interactive. */
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  [role='menuitem']:not([aria-disabled='true']),
+  [role='menuitemcheckbox']:not([aria-disabled='true']),
+  [role='menuitemradio']:not([aria-disabled='true']),
+  [role='tab']:not([aria-disabled='true']),
+  [role='option']:not([aria-disabled='true']),
+  [role='switch']:not([aria-disabled='true']),
+  [role='checkbox']:not([aria-disabled='true']),
+  [role='radio']:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
 }
 
 @keyframes confetti-fall {

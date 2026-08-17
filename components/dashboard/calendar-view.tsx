@@ -1110,7 +1110,7 @@ function WeekView({
                       key={r.id}
                       title={getStatusLabel(r.status, t.reservation)}
                       className={cn(
-                        'flex w-full items-center gap-1 truncate rounded px-1.5 py-0.5 text-[9px] font-medium text-white sm:text-[10px]',
+                        'flex w-full cursor-pointer items-center gap-1 truncate rounded px-1.5 py-0.5 text-[9px] font-medium text-white sm:text-[10px]',
                         statusBorderClass(r.status),
                         (r.status === 'cancelled' || r.status === 'no_show') && 'opacity-45 saturate-50'
                       )}
@@ -1238,7 +1238,7 @@ function MonthView({
                       key={r.id}
                       title={getStatusLabel(r.status, t.reservation)}
                       className={cn(
-                        'flex w-full items-center gap-0.5 truncate rounded px-1 py-0.5 text-[9px] sm:text-[10px] text-white',
+                        'flex w-full cursor-pointer items-center gap-0.5 truncate rounded px-1 py-0.5 text-[9px] sm:text-[10px] text-white',
                         statusBorderClass(r.status),
                         (r.status === 'cancelled' || r.status === 'no_show') && 'opacity-45 saturate-50'
                       )}
