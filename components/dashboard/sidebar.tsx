@@ -171,9 +171,12 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
                       type="button"
                       className="-m-1 flex w-[calc(100%+0.5rem)] items-center gap-3 rounded-lg p-1 text-left transition-colors hover:bg-sidebar-accent/50"
                     >
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sidebar-accent">
-                        <Building2 className="h-5 w-5 text-sidebar-accent-foreground" />
-                      </div>
+                      <Avatar className="h-10 w-10 shrink-0 rounded-lg">
+                        <AvatarImage src={currentBusiness.logo_url || undefined} alt={currentBusiness.name} className="object-cover" />
+                        <AvatarFallback className="rounded-lg bg-sidebar-accent">
+                          <Building2 className="h-5 w-5 text-sidebar-accent-foreground" />
+                        </AvatarFallback>
+                      </Avatar>
                       <div className="flex-1 overflow-hidden">
                         <p className="truncate text-sm font-medium text-sidebar-foreground">
                           {currentBusiness.name}
@@ -188,7 +191,12 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
                   <DropdownMenuContent align="start" className="w-60">
                     {businesses.map((b) => (
                       <DropdownMenuItem key={b.id} onClick={() => switchBusiness(b.id)} className="gap-2">
-                        <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <Avatar className="h-6 w-6 shrink-0 rounded-md">
+                          <AvatarImage src={b.logo_url || undefined} alt={b.name} className="object-cover" />
+                          <AvatarFallback className="rounded-md">
+                            <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                          </AvatarFallback>
+                        </Avatar>
                         <div className="flex-1 overflow-hidden">
                           <p className="truncate text-sm">{b.name}</p>
                           <p className="truncate text-xs text-muted-foreground">
@@ -204,9 +212,12 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
                 </DropdownMenu>
               ) : (
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sidebar-accent">
-                    <Building2 className="h-5 w-5 text-sidebar-accent-foreground" />
-                  </div>
+                  <Avatar className="h-10 w-10 shrink-0 rounded-lg">
+                    <AvatarImage src={currentBusiness.logo_url || undefined} alt={currentBusiness.name} className="object-cover" />
+                    <AvatarFallback className="rounded-lg bg-sidebar-accent">
+                      <Building2 className="h-5 w-5 text-sidebar-accent-foreground" />
+                    </AvatarFallback>
+                  </Avatar>
                   <div className="flex-1 overflow-hidden">
                     <p className="truncate text-sm font-medium text-sidebar-foreground">
                       {currentBusiness.name}

@@ -111,6 +111,50 @@ const DAY_KEY_TO_NUMBER: Record<DayOfWeek, number> = {
 const PRO_PRICE_USD = 25
 const PREMIUM_PRICE_USD = 40
 
+// Sticky so the save action stays reachable regardless of how long the
+// Profile/Business forms get, instead of only living at the bottom of a
+// long scroll. `sticky` (not `fixed`) so it stays within CardContent's
+// normal-flow horizontal bounds - it inherits the dashboard's lg:ml-64
+// sidebar offset for free, no manual positioning math needed. Negative
+// margin cancels CardContent's own `px-6` so the bar spans the full card
+// width instead of floating as an inset block. bottom-16 clears the fixed
+// mobile bottom-nav bar (h-16); lg:bottom-0 sits flush since that bar is
+// lg:hidden.
+function SaveBar({
+  isSaving,
+  saveStatus,
+  onSave,
+  label,
+  savedLabel,
+  errorLabel,
+}: {
+  isSaving: boolean
+  saveStatus: 'idle' | 'success' | 'error'
+  onSave: () => void
+  label: string
+  savedLabel: string
+  errorLabel: string
+}) {
+  return (
+    <div className="sticky bottom-16 lg:bottom-0 z-10 -mx-6 flex flex-wrap items-center gap-3 border-t bg-card/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-card/80">
+      <Button onClick={onSave} disabled={isSaving} className="gap-2">
+        {isSaving
+          ? <Loader2 className="h-4 w-4 animate-spin" />
+          : saveStatus === 'success'
+            ? <Check className="h-4 w-4" />
+            : <Save className="h-4 w-4" />}
+        {label}
+      </Button>
+      {saveStatus === 'success' && (
+        <p className="text-sm text-green-600">{savedLabel}</p>
+      )}
+      {saveStatus === 'error' && (
+        <p className="text-sm text-destructive">{errorLabel}</p>
+      )}
+    </div>
+  )
+}
+
 export default function SettingsPage() {
   const { user, profile: authProfile, loading: authLoading, refreshProfile } = useAuth()
   const { currentBusiness, businesses, loading: businessLoading, updateBusiness, fetchBusinesses, switchBusiness } = useBusinesses()
@@ -267,6 +311,12 @@ export default function SettingsPage() {
   const [isInviting, setIsInviting] = useState(false)
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null)
   const [updatingRoleId, setUpdatingRoleId] = useState<string | null>(null)
+  // Keyed "email:businessId" - lets an already-registered member get added to
+  // one more sede inline, from their own roster card, instead of having to
+  // reuse the invite form above (add_business_staff upserts on
+  // (business_id, user_id), so this is exactly what that form already does
+  // under the hood for a single sede).
+  const [addingSedeFor, setAddingSedeFor] = useState<string | null>(null)
   // Seat cap is per-business (Pro = 2 seats/sede) - only block the whole
   // form when every currently-targeted sede is already at cap.
   const seatCountByBusiness = teamMembers.reduce<Record<string, number>>((acc, m) => {
@@ -534,6 +584,27 @@ export default function SettingsPage() {
       console.error('[v0] Error updating team member role:', err)
     } finally {
       setUpdatingRoleId(null)
+    }
+  }
+
+  const handleAddMemberToSede = async (email: string, businessId: string, role: 'admin' | 'sales') => {
+    const key = `${email}:${businessId}`
+    setAddingSedeFor(key)
+    try {
+      const { data, error } = await supabase.rpc('add_business_staff', {
+        p_business_id: businessId,
+        p_email: email,
+        p_role: role,
+      })
+      if (error) throw error
+      const result = data as { success?: boolean; error?: string }
+      if (result.error) throw new Error(result.error)
+      await refetchTeam()
+    } catch (err) {
+      console.error('[v0] Error adding team member to sede:', err)
+      toast.error(t.saveError)
+    } finally {
+      setAddingSedeFor(null)
     }
   }
 
@@ -1127,22 +1198,14 @@ export default function SettingsPage() {
 
               <Separator />
 
-              <div className="flex items-center gap-3">
-                <Button onClick={handleSave} disabled={isSaving} className="gap-2">
-                  {isSaving
-                    ? <Loader2 className="h-4 w-4 animate-spin" />
-                    : saveStatus === 'success'
-                      ? <Check className="h-4 w-4" />
-                      : <Save className="h-4 w-4" />}
-                  {t.saveChanges}
-                </Button>
-                {saveStatus === 'success' && (
-                  <p className="text-sm text-green-600">{t.changesSaved}</p>
-                )}
-                {saveStatus === 'error' && (
-                  <p className="text-sm text-destructive">{t.saveError}</p>
-                )}
-              </div>
+              <SaveBar
+                isSaving={isSaving}
+                saveStatus={saveStatus}
+                onSave={handleSave}
+                label={t.saveChanges}
+                savedLabel={t.changesSaved}
+                errorLabel={t.saveError}
+              />
             </CardContent>
           </Card>
         </TabsContent>
@@ -1425,11 +1488,14 @@ export default function SettingsPage() {
 
                   <Separator />
 
-                  <Button onClick={handleSave} disabled={isSaving} className="gap-2">
-                    {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
-                    <Save className="h-4 w-4" />
-                    {t.saveChanges}
-                  </Button>
+                  <SaveBar
+                    isSaving={isSaving}
+                    saveStatus={saveStatus}
+                    onSave={handleSave}
+                    label={t.saveChanges}
+                    savedLabel={t.changesSaved}
+                    errorLabel={t.saveError}
+                  />
                 </CardContent>
               </Card>
 
@@ -2161,6 +2227,32 @@ export default function SettingsPage() {
                               </Button>
                             </div>
                           ))}
+                          {hasMultipleSedes && (() => {
+                            const missingSedes = sedes.filter((s) => !person.entries.some((e) => e.business_id === s.id))
+                            if (missingSedes.length === 0) return null
+                            const defaultRole = person.entries[0]?.role ?? 'admin'
+                            return (
+                              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                <span className="text-[10px] text-muted-foreground">{t.settings.team.addToSedeLabel}</span>
+                                {missingSedes.map((s) => {
+                                  const key = `${person.email}:${s.id}`
+                                  const isAdding = addingSedeFor === key
+                                  return (
+                                    <button
+                                      key={s.id}
+                                      type="button"
+                                      onClick={() => handleAddMemberToSede(person.email, s.id, defaultRole)}
+                                      disabled={isAdding}
+                                      className="flex items-center gap-1 rounded border border-dashed px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-50"
+                                    >
+                                      {isAdding ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Plus className="h-2.5 w-2.5" />}
+                                      {s.name}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            )
+                          })()}
                         </div>
                       </div>
                     ))}

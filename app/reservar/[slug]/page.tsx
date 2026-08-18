@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -370,9 +371,12 @@ export default function PublicBookingPage() {
       <LanguageToggle />
 
       <div className="mb-6 flex w-full max-w-lg flex-col items-center text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10">
-          <Building2 className="h-7 w-7 text-primary" />
-        </div>
+        <Avatar className="h-14 w-14 rounded-xl">
+          <AvatarImage src={business.logo_url || undefined} alt={business.name} className="object-cover" />
+          <AvatarFallback className="rounded-xl bg-primary/10">
+            <Building2 className="h-7 w-7 text-primary" />
+          </AvatarFallback>
+        </Avatar>
         <h1 className="mt-3 text-2xl font-bold text-foreground">{business.name}</h1>
         {business.description && (
           <p className="mt-1 text-sm text-muted-foreground">{business.description}</p>

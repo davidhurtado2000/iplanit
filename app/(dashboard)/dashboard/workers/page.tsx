@@ -2,7 +2,7 @@
 
 import React from "react"
 
-import { useState } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/dashboard/page-header'
@@ -35,6 +35,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useBusinesses } from '@/hooks/use-businesses'
@@ -44,6 +45,7 @@ import { useDashboardData } from '@/context/dashboard-data-context'
 import { TimeSelect } from '@/components/dashboard/time-select'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
+import { sedeAbbr, sedeTint, buildBusinessColorIndex } from '@/lib/sede-colors'
 import {
   Plus,
   MoreHorizontal,
@@ -85,10 +87,11 @@ interface Worker {
   name: string
   color: string
   is_active: boolean
+  worker_group_id: string
 }
 
 export default function WorkersPage() {
-  const { currentBusiness } = useBusinesses()
+  const { currentBusiness, businesses } = useBusinesses()
   const { t } = useLanguage()
   const workerLabel = getWorkerLabel(currentBusiness, t)
   const {
@@ -109,6 +112,63 @@ export default function WorkersPage() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [saveError, setSaveError] = useState('')
   const supabase = createClient()
+
+  // Sedes (scripts/053-organizations-and-sedes.sql) - same derivation as
+  // app/(dashboard)/dashboard/settings/page.tsx's Team roster.
+  const sedes = businesses.filter((b) => b.organization_id === currentBusiness?.organization_id)
+  const hasMultipleSedes = sedes.length > 1
+  const businessNameById = Object.fromEntries(sedes.map((s) => [s.id, s.name]))
+  const businessColorIndexById = buildBusinessColorIndex(sedes.map((s) => s.id))
+
+  // Lightweight org-wide worker roster (id/business_id/name/worker_group_id
+  // only) used purely to render "also at" badges and "add to sede" chips -
+  // kept local to this page rather than in DashboardDataProvider, since
+  // reservation-modal.tsx's worker picker and analytics/page.tsx's worker
+  // breakdown both depend on the context's `workers` staying scoped to just
+  // the current sede (scripts/062-worker-multi-sede.sql). Skipped entirely
+  // for single-sede businesses - the common case pays zero extra query.
+  const [orgWorkers, setOrgWorkers] = useState<
+    { id: string; business_id: string; name: string; worker_group_id: string }[]
+  >([])
+  const [addingSedeFor, setAddingSedeFor] = useState<string | null>(null)
+
+  const sedeIdsKey = sedes.map((s) => s.id).join(',')
+  const refetchOrgWorkers = useCallback(async () => {
+    if (!currentBusiness || sedes.length <= 1) {
+      setOrgWorkers([])
+      return
+    }
+    const { data } = await supabase
+      .from('workers')
+      .select('id, business_id, name, worker_group_id')
+      .in('business_id', sedes.map((s) => s.id))
+    setOrgWorkers(data || [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentBusiness?.organization_id, sedeIdsKey])
+
+  useEffect(() => {
+    refetchOrgWorkers()
+  }, [refetchOrgWorkers])
+
+  const handleAddWorkerToSede = async (worker: Worker, businessId: string) => {
+    const key = `${worker.id}:${businessId}`
+    setAddingSedeFor(key)
+    try {
+      const { error } = await supabase.from('workers').insert({
+        business_id: businessId,
+        name: worker.name,
+        color: worker.color,
+        worker_group_id: worker.worker_group_id,
+      })
+      if (error) throw error
+      await refetchOrgWorkers()
+    } catch (err) {
+      console.error('[iplanit] Error adding worker to sede:', err)
+      toast.error(t.saveError)
+    } finally {
+      setAddingSedeFor(null)
+    }
+  }
 
   const [workerForm, setWorkerForm] = useState({
     name: '',
@@ -244,6 +304,7 @@ export default function WorkersPage() {
       await refetchWorkerServices()
 
       await refetchWorkers()
+      await refetchOrgWorkers()
       setIsWorkerModalOpen(false)
       toast.success(editingWorker ? t.workers.updateSuccess : t.workers.createSuccess)
     } catch (err: any) {
@@ -264,6 +325,7 @@ export default function WorkersPage() {
       await refetchWorkers()
       await refetchWorkerHours()
       await refetchWorkerServices()
+      await refetchOrgWorkers()
     } catch (err) {
       console.error('[iplanit] Error deleting worker:', err)
       toast.error(t.saveError)
@@ -354,6 +416,12 @@ export default function WorkersPage() {
             const linkedCount = workerServices.filter((ws) => ws.worker_id === worker.id).length
             const hasCustomHours = workerHours.some((h) => h.worker_id === worker.id)
             const workerColor = worker.color || '#3B82F6'
+            const siblingSedes = hasMultipleSedes
+              ? orgWorkers.filter((w) => w.worker_group_id === worker.worker_group_id && w.business_id !== currentBusiness?.id)
+              : []
+            const missingSedes = hasMultipleSedes
+              ? sedes.filter((s) => s.id !== currentBusiness?.id && !siblingSedes.some((w) => w.business_id === s.id))
+              : []
             return (
               <Card
                 key={worker.id}
@@ -400,6 +468,30 @@ export default function WorkersPage() {
                             <Pencil className="mr-2 h-4 w-4" />
                             {t.services.edit}
                           </DropdownMenuItem>
+                          {missingSedes.length > 0 && (
+                            <>
+                              <DropdownMenuSeparator />
+                              {missingSedes.map((s) => {
+                                const key = `${worker.id}:${s.id}`
+                                const isAdding = addingSedeFor === key
+                                return (
+                                  <DropdownMenuItem
+                                    key={s.id}
+                                    onClick={() => handleAddWorkerToSede(worker, s.id)}
+                                    disabled={isAdding}
+                                  >
+                                    {isAdding ? (
+                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Plus className="mr-2 h-4 w-4" />
+                                    )}
+                                    {t.workers.addToSedeLabel} {s.name}
+                                  </DropdownMenuItem>
+                                )
+                              })}
+                            </>
+                          )}
+                          <DropdownMenuSeparator />
                           <DropdownMenuItem
                             onClick={() => setDeletingWorker(worker)}
                             className="text-destructive"
@@ -429,6 +521,25 @@ export default function WorkersPage() {
                       aria-label={worker.is_active ? t.services.active : t.services.inactive}
                     />
                   </div>
+
+                  {siblingSedes.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 border-t pt-3">
+                      <span className="text-[10px] text-muted-foreground">{t.workers.alsoAtLabel}</span>
+                      {siblingSedes.map((w) => (
+                        <span
+                          key={w.business_id}
+                          className={cn(
+                            'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold',
+                            sedeTint(businessColorIndexById[w.business_id])?.bg,
+                            sedeTint(businessColorIndexById[w.business_id])?.text
+                          )}
+                          title={businessNameById[w.business_id]}
+                        >
+                          {sedeAbbr(businessNameById[w.business_id] || '')}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )

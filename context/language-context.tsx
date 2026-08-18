@@ -252,6 +252,8 @@ const TRANSLATIONS = {
       scheduleTitle: 'Horario de trabajo',
       scheduleDesc: 'Si esta desactivado, sigue el horario general del negocio.',
       customScheduleBadge: 'Horario propio',
+      alsoAtLabel: 'Tambien en:',
+      addToSedeLabel: 'Agregar a:',
       linkedServiceSingular: 'servicio',
       linkedServicesPlural: 'servicios',
       editTitle: 'Editar trabajador',
@@ -744,6 +746,7 @@ const TRANSLATIONS = {
         allSedesLabel: 'Todas las sedes',
         allSedesHint: 'Agrega a la persona en cada sede seleccionada ahora mismo. Si creas una sede nueva mas adelante, tendras que agregarla ahi tambien por separado.',
         removeFromAllSedes: 'Quitar de todas',
+        addToSedeLabel: 'Agregar a:',
       },
       sedes: {
         featureName: 'Sedes',
@@ -1494,6 +1497,8 @@ const TRANSLATIONS = {
       scheduleTitle: 'Work schedule',
       scheduleDesc: "If off, follows the business's general hours.",
       customScheduleBadge: 'Own schedule',
+      alsoAtLabel: 'Also at:',
+      addToSedeLabel: 'Add to:',
       linkedServiceSingular: 'service',
       linkedServicesPlural: 'services',
       editTitle: 'Edit worker',
@@ -1986,6 +1991,7 @@ const TRANSLATIONS = {
         allSedesLabel: 'All locations',
         allSedesHint: "Adds the person to every selected location right now. If you create a new location later, you'll need to add them there separately.",
         removeFromAllSedes: 'Remove from all',
+        addToSedeLabel: 'Add to:',
       },
       sedes: {
         featureName: 'Locations',

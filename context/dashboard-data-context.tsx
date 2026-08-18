@@ -156,6 +156,7 @@ export interface Worker {
   name: string
   color: string
   is_active: boolean
+  worker_group_id: string
 }
 
 /** A worker's own work schedule - no rows means "follows business_hours",

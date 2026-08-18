@@ -145,9 +145,12 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
                   </div>
                 ) : currentBusiness ? (
                   <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-                      <Building2 className="h-5 w-5 text-muted-foreground" />
-                    </div>
+                    <Avatar className="h-10 w-10 shrink-0 rounded-lg">
+                      <AvatarImage src={currentBusiness.logo_url || undefined} alt={currentBusiness.name} className="object-cover" />
+                      <AvatarFallback className="rounded-lg bg-muted">
+                        <Building2 className="h-5 w-5 text-muted-foreground" />
+                      </AvatarFallback>
+                    </Avatar>
                     <div className="flex-1 overflow-hidden">
                       <p className="truncate text-sm font-medium">{currentBusiness.name}</p>
                       <p className="truncate text-xs text-muted-foreground">{currentBusiness.timezone}</p>

@@ -630,6 +630,7 @@ export interface Database {
           name: string
           color: string
           is_active: boolean
+          worker_group_id: string
           created_at: string
           updated_at: string
         }
@@ -639,6 +640,7 @@ export interface Database {
           name: string
           color?: string
           is_active?: boolean
+          worker_group_id?: string
           created_at?: string
           updated_at?: string
         }
@@ -648,6 +650,7 @@ export interface Database {
           name?: string
           color?: string
           is_active?: boolean
+          worker_group_id?: string
           created_at?: string
           updated_at?: string
         }
