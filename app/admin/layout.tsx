@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2 } from 'lucide-react'
+import Link from 'next/link'
+import { Loader2, ArrowLeft } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { createClient } from '@/lib/supabase/client'
 
@@ -62,5 +63,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // Forced dark via a plain `.dark` class, not next-themes' ThemeProvider -
   // see the comment in app/blog/layout.tsx for why nesting it doesn't work
   // in the installed version.
-  return <div className="dark min-h-screen bg-background text-foreground">{children}</div>
+  return (
+    <div className="dark min-h-screen bg-background text-foreground">
+      {/* The rest of /admin has no chrome of its own linking back to the
+          regular dashboard - without this, there was no way out once here. */}
+      <div className="border-b bg-background px-4 py-2 sm:px-6">
+        <Link
+          href="/dashboard"
+          className="flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Volver al dashboard
+        </Link>
+      </div>
+      {children}
+    </div>
+  )
 }

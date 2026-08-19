@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
 import { getWorkerLabel } from '@/lib/worker-label'
+import { createClient } from '@/lib/supabase/client'
 import {
   Calendar,
   LayoutDashboard,
@@ -16,7 +17,6 @@ import {
   Settings,
   LogOut,
   Menu,
-  X,
   Crown,
   Building2,
   Loader2,
@@ -25,6 +25,7 @@ import {
   Layers,
   History,
   UserCog,
+  Newspaper,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
@@ -67,6 +68,15 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
   const { currentBusiness, loading: businessLoading } = useBusinesses()
   const { t } = useLanguage()
   const workerLabel = getWorkerLabel(currentBusiness, t)
+
+  // Same platform-admin check as sidebar.tsx's desktop "Blog (admin)" link
+  // - mirrored here so it's reachable on mobile too, not just desktop.
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
+  useEffect(() => {
+    if (!user) return
+    const supabase = createClient()
+    supabase.rpc('is_platform_admin').then(({ data }) => setIsPlatformAdmin(!!data))
+  }, [user])
 
   const userPlan = profile?.plan || 'free'
   const userName = profile?.full_name || user?.email?.split('@')[0] || t.mobileNav.defaultUser
@@ -113,12 +123,12 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
           <SheetContent side="right" className="w-[280px] p-0">
             <SheetTitle className="sr-only">{t.mobileNav.menuTitle}</SheetTitle>
             <div className="flex h-full flex-col">
-              {/* Header */}
-              <div className="flex h-14 items-center justify-between border-b px-4">
+              {/* Header - SheetContent already renders its own close (X)
+                  button in the top-right corner, so this only needs the
+                  title. A second manual close button here used to render
+                  right on top of it, showing as two overlapping X's. */}
+              <div className="flex h-14 items-center border-b px-4">
                 <span className="text-lg font-bold">{t.mobileNav.menu}</span>
-                <Button variant="ghost" size="icon" onClick={onToggle}>
-                  <X className="h-5 w-5" />
-                </Button>
               </div>
 
               {/* User info */}
@@ -174,7 +184,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
               </div>
 
               {/* Navigation */}
-              <nav className="flex-1 space-y-1 p-2">
+              <nav className="flex-1 space-y-1 overflow-y-auto p-2">
                 {visibleNavItems.map((item) => {
                   const isActive = pathname === item.href
                   return (
@@ -219,6 +229,19 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
                   </Button>
                 )}
               </div>
+
+              {isPlatformAdmin && (
+                <div className="border-t p-2">
+                  <Link
+                    href="/admin/blog"
+                    onClick={onToggle}
+                    className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <Newspaper className="h-5 w-5" />
+                    <span>Blog (admin)</span>
+                  </Link>
+                </div>
+              )}
 
               {/* Logout */}
               <div className="border-t p-2">
