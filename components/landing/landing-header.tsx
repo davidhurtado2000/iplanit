@@ -13,6 +13,7 @@ const NAV_LINKS = [
   { href: '#funciones', key: 'navFeatures' as const },
   { href: '#para-tu-negocio', key: 'navIndustries' as const },
   { href: '#planes', key: 'navPricing' as const },
+  { href: '#faq', key: 'navFaq' as const },
 ]
 
 export function LandingHeader() {

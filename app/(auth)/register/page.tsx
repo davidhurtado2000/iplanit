@@ -20,6 +20,7 @@ import { supabase } from '@/lib/supabase/client'
 import { Confetti } from '@/components/confetti'
 import { LanguageToggle } from '@/components/language-toggle'
 import { PasswordStrength } from '@/components/password-strength'
+import { TurnstileWidget } from '@/components/turnstile-widget'
 import { useLanguage } from '@/context/language-context'
 import { translateAuthError, isDuplicateSignupUser, withAuthLockRetry } from '@/lib/supabase/auth-errors'
 import { getPasswordChecks, isPasswordStrongEnough } from '@/lib/password'
@@ -67,6 +68,7 @@ export default function RegisterPage() {
   })
   const [error, setError] = useState('')
   const [acceptedTerms, setAcceptedTerms] = useState(false)
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
 
   const passwordChecks = getPasswordChecks(formData.password)
 
@@ -98,6 +100,7 @@ export default function RegisterPage() {
           email: formData.email,
           password: formData.password,
           options: {
+            captchaToken: turnstileToken || undefined,
             data: withBusiness
               ? {
                   full_name: formData.name,
@@ -393,6 +396,8 @@ export default function RegisterPage() {
                     </Link>
                   </span>
                 </label>
+
+                <TurnstileWidget onVerify={setTurnstileToken} onExpire={() => setTurnstileToken(null)} />
 
                 <div className="flex gap-2">
                   <Button

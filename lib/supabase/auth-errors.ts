@@ -11,6 +11,7 @@ const MESSAGES = {
     userNotFound: 'No encontramos una cuenta con ese correo',
     invalidOrExpiredToken: 'El enlace expiró o no es válido. Solicita uno nuevo.',
     samePassword: 'La nueva contraseña debe ser diferente a la anterior',
+    captchaFailed: 'No se pudo verificar que eres una persona. Vuelve a intentarlo.',
     generic: 'Ocurrió un error. Intenta de nuevo.',
   },
   en: {
@@ -23,6 +24,7 @@ const MESSAGES = {
     userNotFound: "We couldn't find an account with that email",
     invalidOrExpiredToken: 'This link has expired or is invalid. Please request a new one.',
     samePassword: 'The new password must be different from the previous one',
+    captchaFailed: "We couldn't verify you're human. Please try again.",
     generic: 'Something went wrong. Please try again.',
   },
 } as const satisfies Record<Language, Record<string, string>>
@@ -54,6 +56,7 @@ export function translateAuthError(rawMessage: string | undefined | null, langua
   if (raw.includes('token has expired') || raw.includes('invalid token') || raw.includes('otp expired'))
     return m.invalidOrExpiredToken
   if (raw.includes('different from the old password') || raw.includes('should be different')) return m.samePassword
+  if (raw.includes('captcha')) return m.captchaFailed
 
   return m.generic
 }

@@ -7,6 +7,17 @@
 // bracketed placeholders (legal entity name, state of incorporation,
 // contact email) and the data-privacy section given clients across two
 // different privacy-law jurisdictions (US state laws, Peru's Ley N° 29733).
+//
+// Flagged for the lawyer review David is getting (Aug 2026 pass): the
+// arbitration/class-action-waiver paragraph in TERMS_*'s section 13 is the
+// single highest-risk clause in this whole file - unlike liability caps/
+// indemnification/venue (near-universal, low-variance contract mechanics),
+// arbitration clause enforceability varies significantly by jurisdiction
+// and has a real track record of being struck down when drafted generically
+// for a cross-border audience. It already carries a "unless prohibited by
+// applicable law" savings clause and carve-outs for small claims/injunctive
+// relief to self-limit the risk, but this is exactly the paragraph most
+// likely to need the lawyer's specific adjustment or removal.
 
 export interface LegalSection {
   heading: string
@@ -21,7 +32,7 @@ export interface LegalDocument {
 
 export const TERMS_ES: LegalDocument = {
   title: 'Términos y Condiciones',
-  lastUpdated: 'Última actualización: julio de 2026',
+  lastUpdated: 'Última actualización: agosto de 2026',
   sections: [
     {
       heading: '1. Aceptación de los Términos',
@@ -85,23 +96,32 @@ export const TERMS_ES: LegalDocument = {
     {
       heading: '10. Limitación de Responsabilidad',
       body: [
-        'iPlanit se ofrece "tal cual", sin garantías de ningún tipo. En la máxima medida permitida por la ley, no seremos responsables por daños indirectos, pérdida de ingresos o de datos derivados del uso o la imposibilidad de uso del servicio.',
+        'iPlanit se ofrece "tal cual" y "según disponibilidad", sin garantías de ningún tipo, expresas o implícitas, incluyendo garantías de comerciabilidad o idoneidad para un propósito particular. En la máxima medida permitida por la ley, no seremos responsables por daños indirectos, incidentales, especiales o consecuentes, incluyendo pérdida de ingresos, de clientes o de datos, derivados del uso o la imposibilidad de uso del servicio.',
+        'Nuestra responsabilidad total frente a ti por cualquier reclamo relacionado con estos Términos no excederá el monto que hayas pagado a iPlanit en los 12 meses anteriores al reclamo, o USD 100 si no has realizado ningún pago.',
       ],
     },
     {
-      heading: '11. Modificaciones a estos Términos',
+      heading: '11. Indemnización',
+      body: [
+        'Aceptas defender e indemnizar a iPlanit y a David Software Services LLC frente a cualquier reclamo, daño o gasto (incluyendo honorarios legales razonables) que surja de: (a) tu uso del servicio en violación de estos Términos, (b) el contenido o los datos que ingreses en la plataforma, incluyendo información de tus propios clientes, o (c) tu incumplimiento de cualquier ley aplicable a la operación de tu negocio.',
+      ],
+    },
+    {
+      heading: '12. Modificaciones a estos Términos',
       body: [
         'Podemos actualizar estos Términos ocasionalmente. Si el cambio es significativo, te avisaremos por correo o dentro de la plataforma antes de que entre en vigor.',
       ],
     },
     {
-      heading: '12. Ley Aplicable',
+      heading: '13. Ley Aplicable y Resolución de Disputas',
       body: [
         'Estos Términos se rigen por las leyes del estado de Colorado, Estados Unidos, sin perjuicio de las disposiciones de protección al consumidor que puedan aplicar en tu país de residencia.',
+        'Salvo que la ley aplicable en tu país de residencia lo prohíba, cualquier disputa que no podamos resolver directamente se someterá a arbitraje vinculante y confidencial ante un árbitro único, conforme a las reglas de arbitraje comercial de la American Arbitration Association (AAA), en lugar de a un tribunal. En la medida permitida por la ley aplicable, tú y iPlanit renuncian a su derecho a participar en una demanda colectiva o a que la disputa se resuelva mediante un proceso colectivo o representativo.',
+        'Cualquiera de las partes puede acudir a un tribunal de reclamos menores, o solicitar medidas cautelares urgentes ante un tribunal competente, sin que esto se considere una renuncia al arbitraje para el resto de la disputa.',
       ],
     },
     {
-      heading: '13. Contacto',
+      heading: '14. Contacto',
       body: [
         'Si tienes preguntas sobre estos Términos, escríbenos a davidsoftwareservicesllc@gmail.com.',
       ],
@@ -111,7 +131,7 @@ export const TERMS_ES: LegalDocument = {
 
 export const TERMS_EN: LegalDocument = {
   title: 'Terms and Conditions',
-  lastUpdated: 'Last updated: July 2026',
+  lastUpdated: 'Last updated: August 2026',
   sections: [
     {
       heading: '1. Acceptance of Terms',
@@ -175,23 +195,32 @@ export const TERMS_EN: LegalDocument = {
     {
       heading: '10. Limitation of Liability',
       body: [
-        'iPlanit is provided "as is," without warranties of any kind. To the maximum extent permitted by law, we are not liable for indirect damages, lost revenue, or lost data arising from use or inability to use the service.',
+        'iPlanit is provided "as is" and "as available," without warranties of any kind, express or implied, including warranties of merchantability or fitness for a particular purpose. To the maximum extent permitted by law, we are not liable for indirect, incidental, special, or consequential damages, including lost revenue, lost customers, or lost data, arising from use or inability to use the service.',
+        'Our total liability to you for any claim related to these Terms will not exceed the amount you paid iPlanit in the 12 months preceding the claim, or USD 100 if you have not made any payment.',
       ],
     },
     {
-      heading: '11. Changes to These Terms',
+      heading: '11. Indemnification',
+      body: [
+        "You agree to defend and indemnify iPlanit and David Software Services LLC against any claim, damages, or expense (including reasonable legal fees) arising from: (a) your use of the service in violation of these Terms, (b) the content or data you enter into the platform, including your own clients' information, or (c) your failure to comply with any law applicable to operating your business.",
+      ],
+    },
+    {
+      heading: '12. Changes to These Terms',
       body: [
         'We may update these Terms from time to time. If a change is significant, we will notify you by email or within the platform before it takes effect.',
       ],
     },
     {
-      heading: '12. Governing Law',
+      heading: '13. Governing Law and Dispute Resolution',
       body: [
         'These Terms are governed by the laws of the state of Colorado, United States, without prejudice to any consumer-protection provisions that may apply in your country of residence.',
+        "Unless prohibited by applicable law in your country of residence, any dispute we cannot resolve directly will be submitted to binding, confidential arbitration before a single arbitrator, under the American Arbitration Association's (AAA) commercial arbitration rules, instead of a court. To the extent permitted by applicable law, you and iPlanit waive any right to participate in a class action or to have the dispute resolved through a class or representative proceeding.",
+        'Either party may bring a claim in small claims court, or seek urgent injunctive relief from a court of competent jurisdiction, without this being considered a waiver of arbitration for the rest of the dispute.',
       ],
     },
     {
-      heading: '13. Contact',
+      heading: '14. Contact',
       body: [
         'If you have questions about these Terms, write to us at davidsoftwareservicesllc@gmail.com.',
       ],
@@ -201,7 +230,7 @@ export const TERMS_EN: LegalDocument = {
 
 export const PRIVACY_ES: LegalDocument = {
   title: 'Política de Privacidad',
-  lastUpdated: 'Última actualización: julio de 2026',
+  lastUpdated: 'Última actualización: agosto de 2026',
   sections: [
     {
       heading: '1. Qué Datos Recopilamos',
@@ -222,6 +251,7 @@ export const PRIVACY_ES: LegalDocument = {
       heading: '3. Con Quién Compartimos Datos',
       body: [
         'Usamos Supabase como proveedor de base de datos e infraestructura; tus datos se almacenan en su infraestructura bajo las mismas protecciones de seguridad (control de acceso por fila, encriptación en tránsito). No compartimos tus datos con terceros para fines de marketing.',
+        'Esto puede implicar que tus datos se almacenen y procesen en servidores ubicados en Estados Unidos, independientemente del país donde tú o tus clientes se encuentren.',
       ],
     },
     {
@@ -246,17 +276,24 @@ export const PRIVACY_ES: LegalDocument = {
     {
       heading: '7. Cookies y Almacenamiento Local',
       body: [
-        'Usamos almacenamiento local del navegador para mantener tu sesión iniciada y recordar preferencias como el idioma y el negocio activo. No usamos cookies de rastreo publicitario.',
+        'Usamos almacenamiento local del navegador para mantener tu sesión iniciada y recordar preferencias como el idioma y el negocio activo.',
+        'En las páginas públicas del sitio (la página principal, inicio de sesión, registro y estas páginas legales — no tu panel de negocio ni las páginas de reserva de tus clientes) usamos Google Analytics para entender cómo la gente encuentra y usa iPlanit. Esto implica cookies de analítica que Google gestiona bajo su propia política de privacidad. No usamos estas cookies con fines de publicidad ni las compartimos con terceros más allá de Google.',
       ],
     },
     {
-      heading: '8. Cambios a esta Política',
+      heading: '8. Menores de Edad',
+      body: [
+        'iPlanit no está dirigido a menores de 16 años y no recopilamos intencionalmente datos personales de menores de esa edad. Si tienes motivos para creer que un menor nos proporcionó datos personales, escríbenos a davidsoftwareservicesllc@gmail.com para eliminarlos.',
+      ],
+    },
+    {
+      heading: '9. Cambios a esta Política',
       body: [
         'Si hacemos cambios significativos a esta política, te avisaremos por correo o dentro de la plataforma antes de que entren en vigor.',
       ],
     },
     {
-      heading: '9. Contacto',
+      heading: '10. Contacto',
       body: [
         'Para cualquier consulta sobre privacidad, escríbenos a davidsoftwareservicesllc@gmail.com.',
       ],
@@ -266,7 +303,7 @@ export const PRIVACY_ES: LegalDocument = {
 
 export const PRIVACY_EN: LegalDocument = {
   title: 'Privacy Policy',
-  lastUpdated: 'Last updated: July 2026',
+  lastUpdated: 'Last updated: August 2026',
   sections: [
     {
       heading: '1. What Data We Collect',
@@ -287,6 +324,7 @@ export const PRIVACY_EN: LegalDocument = {
       heading: '3. Who We Share Data With',
       body: [
         'We use Supabase as our database and infrastructure provider; your data is stored on their infrastructure under the same security protections (row-level access control, encryption in transit). We do not share your data with third parties for marketing purposes.',
+        'This may mean your data is stored and processed on servers located in the United States, regardless of the country where you or your clients are located.',
       ],
     },
     {
@@ -311,17 +349,24 @@ export const PRIVACY_EN: LegalDocument = {
     {
       heading: '7. Cookies and Local Storage',
       body: [
-        'We use browser local storage to keep you signed in and remember preferences like language and your active business. We do not use advertising tracking cookies.',
+        'We use browser local storage to keep you signed in and remember preferences like language and your active business.',
+        "On the site's public pages (the homepage, login, registration, and these legal pages - not your business dashboard or your clients' booking pages) we use Google Analytics to understand how people find and use iPlanit. This involves analytics cookies that Google manages under its own privacy policy. We do not use these cookies for advertising purposes or share them with third parties beyond Google.",
       ],
     },
     {
-      heading: '8. Changes to This Policy',
+      heading: '8. Children\'s Privacy',
+      body: [
+        "iPlanit is not directed at children under 16, and we do not knowingly collect personal data from children under that age. If you believe a child provided us with personal data, write to us at davidsoftwareservicesllc@gmail.com so we can remove it.",
+      ],
+    },
+    {
+      heading: '9. Changes to This Policy',
       body: [
         'If we make significant changes to this policy, we will notify you by email or within the platform before they take effect.',
       ],
     },
     {
-      heading: '9. Contact',
+      heading: '10. Contact',
       body: [
         'For any privacy questions, write to us at davidsoftwareservicesllc@gmail.com.',
       ],

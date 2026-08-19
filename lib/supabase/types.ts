@@ -623,6 +623,48 @@ export interface Database {
         }
         Relationships: []
       }
+      public_booking_attempts: {
+        Row: {
+          id: string
+          slug: string
+          ip: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          slug: string
+          ip: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          slug?: string
+          ip?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      notification_send_log: {
+        Row: {
+          id: string
+          reservation_id: string
+          type: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          reservation_id: string
+          type: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          reservation_id?: string
+          type?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       workers: {
         Row: {
           id: string

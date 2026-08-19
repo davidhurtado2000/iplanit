@@ -32,6 +32,7 @@ import { capitalizeFirst, cn } from '@/lib/utils'
 import { parseInTimezone } from '@/lib/timezone'
 import { generateAvailableSlots, isDayClosed } from '@/lib/availability'
 import { sendReservationNotification } from '@/lib/email/notify'
+import { TurnstileWidget } from '@/components/turnstile-widget'
 
 interface PublicBusiness {
   id: string
@@ -133,6 +134,7 @@ export default function PublicBookingPage() {
   const [parkingAvailability, setParkingAvailability] = useState<'checking' | 'available' | 'unavailable' | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
   const [manageReservationId, setManageReservationId] = useState<string | null>(null)
   const [linkCopied, setLinkCopied] = useState(false)
 
@@ -284,23 +286,27 @@ export default function PublicBookingPage() {
     setSubmitting(true)
     setSubmitError('')
     try {
-      const { data, error } = await supabase.rpc('create_public_reservation', {
-        p_slug: slug,
-        p_service_id: selectedService.id,
-        p_resource_id: selectedResourceId,
-        p_start_time: selectedSlot.toISOString(),
-        p_client_name: contactForm.name,
-        p_client_email: contactForm.email || null,
-        p_client_phone: contactForm.phone || null,
-        p_notes: contactForm.notes || null,
-        p_duration_option_id: selectedDurationOptionId,
-        p_needs_parking: needsParking,
-        p_hours: selectedHours || null,
-        p_document_number: contactForm.documentNumber || null,
+      const response = await fetch('/api/public/reservations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          p_slug: slug,
+          p_service_id: selectedService.id,
+          p_resource_id: selectedResourceId,
+          p_start_time: selectedSlot.toISOString(),
+          p_client_name: contactForm.name,
+          p_client_email: contactForm.email || null,
+          p_client_phone: contactForm.phone || null,
+          p_notes: contactForm.notes || null,
+          p_duration_option_id: selectedDurationOptionId,
+          p_needs_parking: needsParking,
+          p_hours: selectedHours || null,
+          p_document_number: contactForm.documentNumber || null,
+          turnstileToken,
+        }),
       })
-      if (error) throw error
-      const result = data as { success?: boolean; error?: string; reservation_id?: string }
-      if (result.error) {
+      const result = (await response.json()) as { success?: boolean; error?: string; reservation_id?: string }
+      if (!response.ok || result.error) {
         const messages: Record<string, string> = {
           time_conflict: tr.errorTimeConflict,
           time_in_past: tr.errorTimeConflict,
@@ -310,8 +316,15 @@ export default function PublicBookingPage() {
           parking_unavailable: tr.errorParkingUnavailable,
           invalid_hours: tr.errorGeneric,
           business_reservation_limit_reached: tr.errorBusinessAtCapacity,
+          rate_limited: tr.errorRateLimited,
+          name_too_long: tr.errorNameTooLong,
+          invalid_email: tr.errorInvalidEmail,
+          phone_too_long: tr.errorPhoneTooLong,
+          notes_too_long: tr.errorNotesTooLong,
+          document_number_too_long: tr.errorDocumentNumberTooLong,
+          bot_verification_failed: tr.errorBotVerification,
         }
-        setSubmitError(messages[result.error] || tr.errorGeneric)
+        setSubmitError(messages[result.error || ''] || tr.errorGeneric)
         return
       }
       setManageReservationId(result.reservation_id || null)
@@ -753,6 +766,7 @@ export default function PublicBookingPage() {
                       value={contactForm.name}
                       onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })}
                       required
+                      maxLength={200}
                       disabled={submitting}
                     />
                   </div>
@@ -764,6 +778,7 @@ export default function PublicBookingPage() {
                         type="email"
                         value={contactForm.email}
                         onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
+                        maxLength={320}
                         disabled={submitting}
                       />
                     </div>
@@ -774,6 +789,7 @@ export default function PublicBookingPage() {
                         type="tel"
                         value={contactForm.phone}
                         onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })}
+                        maxLength={30}
                         disabled={submitting}
                       />
                     </div>
@@ -785,6 +801,7 @@ export default function PublicBookingPage() {
                       id="pb-document"
                       value={contactForm.documentNumber}
                       onChange={(e) => setContactForm({ ...contactForm, documentNumber: e.target.value })}
+                      maxLength={50}
                       disabled={submitting}
                     />
                     <p className="text-xs text-muted-foreground">{tr.documentHint}</p>
@@ -796,6 +813,7 @@ export default function PublicBookingPage() {
                       rows={2}
                       value={contactForm.notes}
                       onChange={(e) => setContactForm({ ...contactForm, notes: e.target.value })}
+                      maxLength={2000}
                       disabled={submitting}
                     />
                   </div>
@@ -832,6 +850,8 @@ export default function PublicBookingPage() {
                       )}
                     </div>
                   )}
+
+                  <TurnstileWidget onVerify={setTurnstileToken} onExpire={() => setTurnstileToken(null)} />
 
                   <Button type="submit" className="w-full gap-2" disabled={submitting || !contactForm.name}>
                     {submitting && <Loader2 className="h-4 w-4 animate-spin" />}

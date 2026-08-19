@@ -5,6 +5,7 @@ import { Features } from '@/components/landing/features'
 import { Showcase } from '@/components/landing/showcase'
 import { Industries } from '@/components/landing/industries'
 import { Pricing } from '@/components/landing/pricing'
+import { Faq } from '@/components/landing/faq'
 import { FinalCta } from '@/components/landing/final-cta'
 import { LandingFooter } from '@/components/landing/footer'
 
@@ -37,6 +38,75 @@ const JSON_LD = {
         { '@type': 'Offer', name: 'Premium', price: '40', priceCurrency: 'USD' },
       ],
     },
+    {
+      '@type': 'FAQPage',
+      mainEntity: [
+        {
+          '@type': 'Question',
+          name: 'What is iPlanit?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'iPlanit is a booking and scheduling platform for service businesses. Organize your calendar, clients, and team, and let clients book themselves through a public link, any time.',
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'How much does iPlanit cost?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: "There's a free plan, plus Pro ($25/month) and Premium ($40/month) plans with more features. No credit card required to start.",
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'Do I need a credit card to try it?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'No. You can start on the Free plan without entering any payment details.',
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'Can my clients book without calling me?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'Yes. Share your booking link and clients pick a service and time themselves, with real-time availability.',
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'Does it work for my type of business?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'iPlanit works for coworking spaces, medical and dental clinics, veterinary practices, spas, salons, gyms, restaurants, tutoring academies, photo studios, event venues, consultants, and other service businesses.',
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'Can I cancel anytime?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: "Yes, there's no long-term contract. You can cancel your paid plan whenever you want.",
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'Can I manage more than one location?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'Yes, the Premium plan supports multiple locations under one account, with shared client history across all of them.',
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'How is my data protected?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: "Each business's data is isolated at the database level, accessible only to that account, and every connection is encrypted (HTTPS).",
+          },
+        },
+      ],
+    },
   ],
 }
 
@@ -55,6 +125,7 @@ export default function HomePage() {
         <Showcase />
         <Industries />
         <Pricing />
+        <Faq />
         <FinalCta />
       </main>
       <LandingFooter />

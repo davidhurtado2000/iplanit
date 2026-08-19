@@ -5,6 +5,7 @@ import { Analytics } from '@vercel/analytics/next'
 import { AuthProvider } from '@/context/auth-context'
 import { LanguageProvider } from '@/context/language-context'
 import { ThemeProvider } from '@/components/theme-provider'
+import { GoogleAnalytics } from '@/components/google-analytics'
 import './globals.css'
 
 const geistSans = Geist({ 
@@ -56,7 +57,12 @@ export default function RootLayout({
       <body className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <AuthProvider>
-            <LanguageProvider>{children}</LanguageProvider>
+            <LanguageProvider>
+              {children}
+              {process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID && (
+                <GoogleAnalytics measurementId={process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID} />
+              )}
+            </LanguageProvider>
           </AuthProvider>
         </ThemeProvider>
         <Analytics />
