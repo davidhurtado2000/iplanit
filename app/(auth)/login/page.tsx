@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2 } from 'lucide-react'
 import { LanguageToggle } from '@/components/language-toggle'
+import { TurnstileWidget } from '@/components/turnstile-widget'
 import { supabase } from '@/lib/supabase/client'
 import { useLanguage } from '@/context/language-context'
 import { translateAuthError, withAuthLockRetry } from '@/lib/supabase/auth-errors'
@@ -26,6 +27,7 @@ function LoginForm() {
   const [usePassword, setUsePassword] = useState(true)
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
 
   useEffect(() => {
     if (searchParams.get('registered') === 'true') {
@@ -46,7 +48,7 @@ function LoginForm() {
 
     try {
       const { data, error: signInError } = await withAuthLockRetry(() =>
-        supabase.auth.signInWithPassword({ email, password })
+        supabase.auth.signInWithPassword({ email, password, options: { captchaToken: turnstileToken || undefined } })
       )
 
       if (signInError) {
@@ -80,6 +82,7 @@ function LoginForm() {
           email,
           options: {
             emailRedirectTo: `${window.location.origin}/auth/callback`,
+            captchaToken: turnstileToken || undefined,
           },
         })
       )
@@ -171,6 +174,8 @@ function LoginForm() {
                 </div>
               </div>
             )}
+
+            <TurnstileWidget onVerify={setTurnstileToken} onExpire={() => setTurnstileToken(null)} />
 
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? (
