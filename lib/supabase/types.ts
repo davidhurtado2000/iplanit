@@ -12,6 +12,128 @@ export interface Database {
   }
   public: {
     Tables: {
+      platform_admins: {
+        Row: {
+          user_id: string
+          created_at: string
+        }
+        Insert: {
+          user_id: string
+          created_at?: string
+        }
+        Update: {
+          user_id?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      blog_categories: {
+        Row: {
+          id: string
+          name: string
+          slug: string
+          short_description: string | null
+          sort_order: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          slug: string
+          short_description?: string | null
+          sort_order?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          slug?: string
+          short_description?: string | null
+          sort_order?: number
+          created_at?: string
+        }
+        Relationships: []
+      }
+      blog_articles: {
+        Row: {
+          id: string
+          title: string
+          slug: string
+          category_id: string
+          meta_title: string
+          meta_description: string
+          keyword_principal: string | null
+          keywords_secundarias: string[]
+          content: string
+          faq: Json
+          featured_image_url: string | null
+          featured_image_alt: string | null
+          og_image_url: string | null
+          author: string
+          published_at: string | null
+          updated_at: string
+          reading_time_minutes: number | null
+          related_articles_override: string[]
+          functional_tags: string[]
+          status: 'draft' | 'published'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          title: string
+          slug: string
+          category_id: string
+          meta_title: string
+          meta_description: string
+          keyword_principal?: string | null
+          keywords_secundarias?: string[]
+          content?: string
+          faq?: Json
+          featured_image_url?: string | null
+          featured_image_alt?: string | null
+          og_image_url?: string | null
+          author?: string
+          published_at?: string | null
+          updated_at?: string
+          reading_time_minutes?: number | null
+          related_articles_override?: string[]
+          functional_tags?: string[]
+          status?: 'draft' | 'published'
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          title?: string
+          slug?: string
+          category_id?: string
+          meta_title?: string
+          meta_description?: string
+          keyword_principal?: string | null
+          keywords_secundarias?: string[]
+          content?: string
+          faq?: Json
+          featured_image_url?: string | null
+          featured_image_alt?: string | null
+          og_image_url?: string | null
+          author?: string
+          published_at?: string | null
+          updated_at?: string
+          reading_time_minutes?: number | null
+          related_articles_override?: string[]
+          functional_tags?: string[]
+          status?: 'draft' | 'published'
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'blog_articles_category_id_fkey'
+            columns: ['category_id']
+            isOneToOne: false
+            referencedRelation: 'blog_categories'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       feedback: {
         Row: {
           id: string
@@ -798,6 +920,10 @@ export interface Database {
       }
     }
     Functions: {
+      is_platform_admin: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
       add_business_staff: {
         Args: { p_business_id: string; p_email: string; p_role?: 'admin' | 'sales' }
         Returns: Json

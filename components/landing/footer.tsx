@@ -35,9 +35,10 @@ export function LandingFooter() {
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{l.footerProduct}</p>
               <ul className="mt-3 space-y-2 text-sm">
-                <li><a href="#funciones" className="text-muted-foreground hover:text-foreground">{l.navFeatures}</a></li>
-                <li><a href="#para-tu-negocio" className="text-muted-foreground hover:text-foreground">{l.navIndustries}</a></li>
-                <li><a href="#planes" className="text-muted-foreground hover:text-foreground">{l.navPricing}</a></li>
+                <li><Link href="/#funciones" className="text-muted-foreground hover:text-foreground">{l.navFeatures}</Link></li>
+                <li><Link href="/#para-tu-negocio" className="text-muted-foreground hover:text-foreground">{l.navIndustries}</Link></li>
+                <li><Link href="/#planes" className="text-muted-foreground hover:text-foreground">{l.navPricing}</Link></li>
+                <li><Link href="/blog" className="text-muted-foreground hover:text-foreground">{l.navBlog}</Link></li>
               </ul>
             </div>
             <div>

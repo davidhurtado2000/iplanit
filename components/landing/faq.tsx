@@ -28,10 +28,10 @@ export function Faq() {
             {FAQ_KEYS.map((n) => (
               <AccordionItem key={n} value={`faq-${n}`}>
                 <AccordionTrigger className="text-base font-semibold">
-                  {l[`faqQ${n}` as keyof typeof l]}
+                  {l[`faqQ${n}` as keyof typeof l] as string}
                 </AccordionTrigger>
                 <AccordionContent className="text-muted-foreground">
-                  {l[`faqA${n}` as keyof typeof l]}
+                  {l[`faqA${n}` as keyof typeof l] as string}
                 </AccordionContent>
               </AccordionItem>
             ))}

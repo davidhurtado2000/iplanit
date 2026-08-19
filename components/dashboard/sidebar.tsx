@@ -26,8 +26,10 @@ import {
   Layers,
   History,
   UserCog,
+  Newspaper,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { createClient } from '@/lib/supabase/client'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import {
   Tooltip,
@@ -73,6 +75,17 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
   const { businesses, currentBusiness, switchBusiness, loading: businessLoading } = useBusinesses()
   const { t, locale } = useLanguage()
   const workerLabel = getWorkerLabel(currentBusiness, t)
+
+  // Only ever true for the platform's own admin account (scripts/065-blog.sql)
+  // - shows a quick link to the blog CMS so it doesn't have to be typed in by
+  // hand. Negligible cost for every other (non-admin) account: one RPC call
+  // that resolves false.
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
+  useEffect(() => {
+    if (!user) return
+    const supabase = createClient()
+    supabase.rpc('is_platform_admin').then(({ data }) => setIsPlatformAdmin(!!data))
+  }, [user])
 
   useEffect(() => {
     setNow(new Date())
@@ -325,6 +338,21 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
               <Crown className="h-4 w-4" />
               {t.settings.premiumPlanName}
             </Button>
+          </div>
+        )}
+
+        {isPlatformAdmin && (
+          <div className="mx-2 mb-2">
+            <Link
+              href="/admin/blog"
+              className={cn(
+                'flex items-center gap-2 rounded-lg px-2 py-2 text-xs font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground',
+                isCollapsed && 'justify-center'
+              )}
+            >
+              <Newspaper className="h-4 w-4 shrink-0" />
+              {!isCollapsed && 'Blog (admin)'}
+            </Link>
           </div>
         )}
 

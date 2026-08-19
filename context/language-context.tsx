@@ -31,6 +31,7 @@ const TRANSLATIONS = {
       navIndustries: 'Para tu negocio',
       navPricing: 'Planes',
       navFaq: 'Preguntas',
+      navBlog: 'Blog',
       loginCta: 'Iniciar sesion',
       signupCta: 'Empieza gratis',
       goToDashboard: 'Ir al Dashboard',
@@ -71,6 +72,72 @@ const TRANSLATIONS = {
 
       industriesTitle: 'Para negocios de todo tipo',
       industriesSubtitle: 'iPlanit se adapta a tu rubro, no al reves.',
+
+      // /negocios/[vertical] - una por cada categoria del blog salvo
+      // "general" (mismo slug, ver lib/verticals.ts). Contenido real y
+      // especifico por rubro, no generico copiado de la home.
+      verticals: {
+        'peluquerias-barberias': {
+          navLabel: 'Peluquerias y barberias',
+          h1: 'Software de citas para peluquerias y barberias',
+          subtitle: 'Organiza tu agenda, tu equipo de estilistas y barberos, y deja que tus clientes reserven solos.',
+          paragraphs: [
+            'Cada estilista o barbero tiene su propio horario y sus propios servicios asignados en iPlanit - asi sabes quien esta libre y cuando, sin cruzar citas ni depender de una libreta. Hasta puedes cambiar el nombre "Trabajador" por "Barbero" o "Estilista" para que la plataforma hable como tu negocio.',
+            'Tus clientes reservan su corte o su color directo desde tu link publico, viendo la disponibilidad real de cada persona del equipo - sin llamarte ni escribirte para cuadrar un horario. Los recordatorios automaticos por correo antes de la cita ayudan a que menos gente falte sin avisar.',
+            'Si manejas mas de un local, el plan Premium te deja verlos todos desde una sola cuenta, con el historial de tus clientes compartido entre sedes.',
+          ],
+        },
+        'spas-centros-de-belleza': {
+          navLabel: 'Spas y centros de belleza',
+          h1: 'Software de reservas para spas y centros de belleza',
+          subtitle: 'Organiza salas de tratamiento, servicios y equipo, y ofrece reservas 24/7 a tus clientes.',
+          paragraphs: [
+            'Asigna cada tratamiento a una sala, un recurso o una persona especifica del equipo - iPlanit se encarga de que no se crucen dos reservas al mismo tiempo en el mismo espacio.',
+            'Tus clientes reservan su masaje, facial o tratamiento eligiendo el servicio y el horario disponible desde su celular, sin necesidad de llamar. Recordatorios automaticos antes de la cita reducen las ausencias.',
+            'El historial de cada cliente - que tratamientos se hizo, cuando, y sus datos de contacto - queda guardado en un solo lugar, listo para cuando vuelva.',
+          ],
+        },
+        'clinicas-salud': {
+          navLabel: 'Clinicas y salud',
+          h1: 'Software de citas para clinicas y consultorios de salud',
+          subtitle: 'Organiza la agenda de tus profesionales y reduce las inasistencias con recordatorios automaticos.',
+          paragraphs: [
+            'Cada profesional de tu clinica tiene su propia agenda dentro de iPlanit, con sus propios horarios de atencion - facil de ver quien tiene espacio disponible sin tener que preguntar.',
+            'Tus pacientes reservan su cita desde tu link publico, y puedes pedirles su documento de identidad al momento de reservar para llevar un registro claro. Los recordatorios automaticos antes de la cita ayudan a reducir las inasistencias, algo especialmente costoso en salud.',
+            'El historial de cada paciente - citas pasadas, cancelaciones y datos de contacto - queda accesible en un solo lugar para todo tu equipo.',
+          ],
+        },
+        'academias-educacion': {
+          navLabel: 'Academias y educacion',
+          h1: 'Software de reservas para academias y clases particulares',
+          subtitle: 'Organiza tus clases, tus profesores y las reservas recurrentes de tus alumnos.',
+          paragraphs: [
+            'Asigna cada clase a un profesor y a un horario fijo - y si tus alumnos vienen todas las semanas al mismo horario, iPlanit soporta reservas recurrentes, sin tener que agendar clase por clase.',
+            'Tus alumnos reservan su clase directo desde tu link, viendo que horarios y profesores estan disponibles. Recordatorios automaticos antes de cada sesion ayudan a que asistan.',
+            'Puedes renombrar "Trabajador" a "Profesor" para que la plataforma hable el lenguaje de tu academia, y ver de un vistazo que clases son las mas solicitadas.',
+          ],
+        },
+        'gimnasios-fitness': {
+          navLabel: 'Gimnasios y fitness',
+          h1: 'Software de reservas para gimnasios y estudios de fitness',
+          subtitle: 'Organiza tus clases, entrenadores y equipos, con reservas 24/7 para tus miembros.',
+          paragraphs: [
+            'Asigna cada clase a un entrenador y, si hace falta, a un equipo o sala especifica - iPlanit evita que dos clases se crucen en el mismo espacio.',
+            'Tus miembros reservan su clase o sesion desde su celular, viendo cupos y horarios disponibles en tiempo real, sin escribirte para separar un lugar.',
+            'Los recordatorios automaticos antes de cada clase ayudan a que la gente no falte sin avisar, y los reportes te muestran que horarios y clases tienen mas demanda.',
+          ],
+        },
+        'otros-negocios-de-servicios': {
+          navLabel: 'Otros negocios',
+          h1: 'Software de reservas para negocios de servicios',
+          subtitle: 'Coworkings, restaurantes, fotografos, salones de eventos, consultores y profesionales independientes.',
+          paragraphs: [
+            'Si tu negocio funciona con citas o reservas - un espacio de coworking, mesas en tu restaurante, sesiones de fotos, un salon de eventos, o tu propia consultoria - iPlanit se adapta a tu forma de trabajar, no al reves.',
+            'Organiza tu calendario, tus servicios y tu equipo (si lo tienes), y comparte un link para que tus clientes reserven solos, a cualquier hora, sin depender de que contestes el telefono.',
+            'Empieza gratis y prueba como se acomoda a tu negocio especifico - sin necesidad de tarjeta de credito.',
+          ],
+        },
+      },
 
       pricingTitle: 'Planes simples, sin sorpresas',
       pricingSubtitle: 'Empieza gratis. Crece cuando lo necesites.',
@@ -1310,6 +1377,7 @@ const TRANSLATIONS = {
       navIndustries: 'For your business',
       navPricing: 'Pricing',
       navFaq: 'FAQ',
+      navBlog: 'Blog',
       loginCta: 'Log in',
       signupCta: 'Start for free',
       goToDashboard: 'Go to Dashboard',
@@ -1350,6 +1418,72 @@ const TRANSLATIONS = {
 
       industriesTitle: 'For businesses of every kind',
       industriesSubtitle: 'iPlanit adapts to your business, not the other way around.',
+
+      // /negocios/[vertical] - one per blog category except "general" (same
+      // slug, see lib/verticals.ts). Real, vertical-specific content, not
+      // generic copy from the home page.
+      verticals: {
+        'peluquerias-barberias': {
+          navLabel: 'Hair salons & barbershops',
+          h1: 'Booking software for hair salons and barbershops',
+          subtitle: 'Organize your calendar, your stylists and barbers, and let clients book themselves.',
+          paragraphs: [
+            'Every stylist or barber has their own schedule and their own assigned services in iPlanit - so you always know who\'s free and when, without double-booking or relying on a notebook. You can even rename "Worker" to "Barber" or "Stylist" so the platform speaks your business\'s language.',
+            "Clients book their haircut or color directly from your public link, seeing each team member's real availability - no calls, no back-and-forth messages to find a time. Automatic email reminders before the appointment help cut down on no-shows.",
+            'Running more than one location? The Premium plan lets you manage all of them from one account, with client history shared across every location.',
+          ],
+        },
+        'spas-centros-de-belleza': {
+          navLabel: 'Spas & beauty centers',
+          h1: 'Booking software for spas and beauty centers',
+          subtitle: 'Organize treatment rooms, services, and staff, and offer 24/7 booking to your clients.',
+          paragraphs: [
+            "Assign each treatment to a room, a resource, or a specific team member - iPlanit makes sure two bookings never overlap in the same space at the same time.",
+            'Clients book their massage, facial, or treatment by picking the service and an available time from their phone, no calls needed. Automatic reminders before the appointment help reduce no-shows.',
+            "Every client's history - what treatments they've had, when, and their contact info - stays in one place, ready for their next visit.",
+          ],
+        },
+        'clinicas-salud': {
+          navLabel: 'Clinics & healthcare',
+          h1: 'Scheduling software for clinics and medical offices',
+          subtitle: "Organize your providers' schedules and cut no-shows with automatic reminders.",
+          paragraphs: [
+            "Every provider at your practice gets their own schedule inside iPlanit, with their own hours - easy to see who has an opening without having to ask around.",
+            'Patients book their appointment through your public link, and you can request an ID number at booking time to keep a clear record. Automatic reminders before the appointment help reduce no-shows, which are especially costly in healthcare.',
+            "Every patient's history - past appointments, cancellations, and contact info - stays accessible in one place for your whole team.",
+          ],
+        },
+        'academias-educacion': {
+          navLabel: 'Academies & education',
+          h1: 'Booking software for academies and private lessons',
+          subtitle: "Organize your classes, your teachers, and your students' recurring bookings.",
+          paragraphs: [
+            "Assign each class to a teacher and a fixed time - and if your students come back every week at the same time, iPlanit supports recurring bookings, so you don't have to schedule class by class.",
+            'Students book their class directly from your link, seeing which times and teachers are available. Automatic reminders before each session help keep attendance up.',
+            'You can rename "Worker" to "Teacher" so the platform speaks your academy\'s language, and see at a glance which classes are the most requested.',
+          ],
+        },
+        'gimnasios-fitness': {
+          navLabel: 'Gyms & fitness',
+          h1: 'Booking software for gyms and fitness studios',
+          subtitle: 'Organize your classes, trainers, and equipment, with 24/7 booking for your members.',
+          paragraphs: [
+            'Assign each class to a trainer and, if needed, to a specific room or piece of equipment - iPlanit keeps two classes from ever overlapping in the same space.',
+            'Members book their class or session from their phone, seeing real-time availability and open spots, without messaging you to hold a spot.',
+            'Automatic reminders before each class help cut down on no-shows, and reports show you which times and classes are in the highest demand.',
+          ],
+        },
+        'otros-negocios-de-servicios': {
+          navLabel: 'Other businesses',
+          h1: 'Booking software for service businesses',
+          subtitle: 'Coworking spaces, restaurants, photographers, event venues, consultants, and independent professionals.',
+          paragraphs: [
+            "If your business runs on appointments or reservations - a coworking space, restaurant tables, photo sessions, an event venue, or your own consulting practice - iPlanit adapts to how you work, not the other way around.",
+            'Organize your calendar, your services, and your team (if you have one), and share a link so clients can book themselves, any time, without you having to answer the phone.',
+            'Start for free and see how it fits your specific business - no credit card required.',
+          ],
+        },
+      },
 
       pricingTitle: 'Simple plans, no surprises',
       pricingSubtitle: 'Start free. Grow when you need to.',

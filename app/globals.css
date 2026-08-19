@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@plugin '@tailwindcss/typography';
 
 /* Without this, Tailwind v4's `dark:` variant defaults to the OS-level
    `prefers-color-scheme: dark` media query instead of following the app's
