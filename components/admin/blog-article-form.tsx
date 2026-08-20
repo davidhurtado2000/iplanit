@@ -4,7 +4,7 @@ import { useRef, useState, type ChangeEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Plus, Trash2, Loader2, Upload } from 'lucide-react'
+import { Plus, Trash2, Loader2, Upload, Check, X as XIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -25,6 +25,20 @@ const FUNCTIONAL_TAGS = [
   'Historial de clientes',
   'Reportes y analítica',
 ] as const
+
+// Small red asterisk next to a Label, for every field that actually blocks
+// saving or publishing - the co-founder's own feedback after using the CMS
+// was that nothing marked which fields were mandatory, so she had no way
+// to know what was blocking "Publicar" short of filling in everything and
+// hoping.
+function RequiredMark() {
+  return (
+    <span className="text-destructive" aria-hidden="true">
+      {' '}
+      *
+    </span>
+  )
+}
 
 function slugify(value: string): string {
   return value
@@ -75,6 +89,9 @@ export function BlogArticleForm({ articleId, existingArticle, categories, otherA
   const [uploadingOg, setUploadingOg] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  // True after a blocked Publish attempt - only then do individual empty
+  // fields turn red, so the form doesn't look "broken" on first open.
+  const [attemptedPublish, setAttemptedPublish] = useState(false)
   const featuredInputRef = useRef<HTMLInputElement>(null)
   const ogInputRef = useRef<HTMLInputElement>(null)
 
@@ -141,16 +158,32 @@ export function BlogArticleForm({ articleId, existingArticle, categories, otherA
   const addFaqEntry = () => setFaq((prev) => [...prev, { question: '', answer: '' }])
   const removeFaqEntry = (index: number) => setFaq((prev) => prev.filter((_, i) => i !== index))
 
-  const canPublish = !!featuredImageUrl && !!featuredImageAlt
+  // Single source of truth for what's required - drives the always-visible
+  // checklist below AND the per-field red borders, so both can never say
+  // different things about what's actually missing.
+  const requiredFields = [
+    { key: 'title', label: 'Título', done: !!title.trim() },
+    { key: 'slug', label: 'Slug', done: !!slug.trim() },
+    { key: 'category', label: 'Categoría', done: !!categoryId },
+    { key: 'metaTitle', label: 'Meta title', done: !!metaTitle.trim() },
+    { key: 'metaDescription', label: 'Meta description', done: !!metaDescription.trim() },
+    { key: 'featuredImage', label: 'Imagen destacada', done: !!featuredImageUrl },
+    { key: 'featuredAlt', label: 'Texto alternativo de la imagen', done: !!featuredImageAlt.trim() },
+  ]
+  const missingFields = requiredFields.filter((f) => !f.done)
+  const canPublish = missingFields.length === 0
+  const fieldMissing = (key: string) => attemptedPublish && missingFields.some((f) => f.key === key)
 
   const handleSave = async (status: 'draft' | 'published') => {
     setError('')
     if (!title.trim() || !slug.trim() || !categoryId || !metaTitle.trim() || !metaDescription.trim()) {
-      setError('Completa título, slug, categoría, meta título y meta descripción antes de guardar.')
+      setAttemptedPublish(true)
+      setError('Completa los campos marcados con * antes de guardar.')
       return
     }
     if (status === 'published' && !canPublish) {
-      setError('Falta la imagen destacada (y su texto alternativo) para poder publicar.')
+      setAttemptedPublish(true)
+      setError(`Para publicar todavía falta: ${missingFields.map((f) => f.label).join(', ')}.`)
       return
     }
 
@@ -206,12 +239,24 @@ export function BlogArticleForm({ articleId, existingArticle, categories, otherA
         <CardContent className="space-y-4 p-5">
           <FormSection title="Datos básicos">
             <div className="space-y-2">
-              <Label htmlFor="title">Título (H1)</Label>
-              <Input id="title" value={title} onChange={(e) => handleTitleChange(e.target.value)} />
+              <Label htmlFor="title">
+                Título (H1)
+                <RequiredMark />
+              </Label>
+              <Input
+                id="title"
+                value={title}
+                onChange={(e) => handleTitleChange(e.target.value)}
+                className={cn(fieldMissing('title') && 'border-destructive')}
+              />
+              {fieldMissing('title') && <p className="text-xs text-destructive">Falta el título.</p>}
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="slug">Slug</Label>
+                <Label htmlFor="slug">
+                  Slug
+                  <RequiredMark />
+                </Label>
                 <Input
                   id="slug"
                   value={slug}
@@ -219,10 +264,15 @@ export function BlogArticleForm({ articleId, existingArticle, categories, otherA
                     setSlugTouched(true)
                     setSlug(slugify(e.target.value))
                   }}
+                  className={cn(fieldMissing('slug') && 'border-destructive')}
                 />
+                {fieldMissing('slug') && <p className="text-xs text-destructive">Falta el slug.</p>}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="category">Categoría</Label>
+                <Label htmlFor="category">
+                  Categoría
+                  <RequiredMark />
+                </Label>
                 <Select value={categoryId} onValueChange={setCategoryId}>
                   <SelectTrigger id="category">
                     <SelectValue />
@@ -245,18 +295,33 @@ export function BlogArticleForm({ articleId, existingArticle, categories, otherA
 
           <FormSection title="SEO" bordered>
             <div className="space-y-2">
-              <Label htmlFor="meta-title">Meta title ({metaTitle.length}/60)</Label>
-              <Input id="meta-title" value={metaTitle} onChange={(e) => setMetaTitle(e.target.value)} maxLength={60} />
+              <Label htmlFor="meta-title">
+                Meta title ({metaTitle.length}/60)
+                <RequiredMark />
+              </Label>
+              <Input
+                id="meta-title"
+                value={metaTitle}
+                onChange={(e) => setMetaTitle(e.target.value)}
+                maxLength={60}
+                className={cn(fieldMissing('metaTitle') && 'border-destructive')}
+              />
+              {fieldMissing('metaTitle') && <p className="text-xs text-destructive">Falta el meta title.</p>}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="meta-description">Meta description ({metaDescription.length}/155)</Label>
+              <Label htmlFor="meta-description">
+                Meta description ({metaDescription.length}/155)
+                <RequiredMark />
+              </Label>
               <Textarea
                 id="meta-description"
                 rows={2}
                 value={metaDescription}
                 onChange={(e) => setMetaDescription(e.target.value)}
                 maxLength={155}
+                className={cn(fieldMissing('metaDescription') && 'border-destructive')}
               />
+              {fieldMissing('metaDescription') && <p className="text-xs text-destructive">Falta la meta description.</p>}
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
@@ -270,10 +335,13 @@ export function BlogArticleForm({ articleId, existingArticle, categories, otherA
             </div>
           </FormSection>
 
-          <FormSection title="Imagen destacada (bloqueante para publicar)" bordered>
+          <FormSection title="Imagen destacada (obligatoria para publicar)" bordered>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
               <div className="flex-1 space-y-2">
-                <Label>Imagen (máx. 2MB, ideal 1200x630px)</Label>
+                <Label>
+                  Imagen (máx. 2MB, ideal 1200x630px)
+                  <RequiredMark />
+                </Label>
                 <div className="flex items-center gap-3">
                   <input
                     ref={featuredInputRef}
@@ -286,7 +354,7 @@ export function BlogArticleForm({ articleId, existingArticle, categories, otherA
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="gap-2"
+                    className={cn('gap-2', fieldMissing('featuredImage') && 'border-destructive text-destructive')}
                     disabled={uploadingFeatured}
                     onClick={() => featuredInputRef.current?.click()}
                   >
@@ -295,6 +363,7 @@ export function BlogArticleForm({ articleId, existingArticle, categories, otherA
                   </Button>
                   {featuredImageUrl && <span className="text-xs text-muted-foreground">Imagen cargada</span>}
                 </div>
+                {fieldMissing('featuredImage') && <p className="text-xs text-destructive">Falta subir la imagen destacada.</p>}
               </div>
               {featuredImageUrl && (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -302,8 +371,17 @@ export function BlogArticleForm({ articleId, existingArticle, categories, otherA
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="featured-alt">Texto alternativo (alt)</Label>
-              <Input id="featured-alt" value={featuredImageAlt} onChange={(e) => setFeaturedImageAlt(e.target.value)} />
+              <Label htmlFor="featured-alt">
+                Texto alternativo (alt)
+                <RequiredMark />
+              </Label>
+              <Input
+                id="featured-alt"
+                value={featuredImageAlt}
+                onChange={(e) => setFeaturedImageAlt(e.target.value)}
+                className={cn(fieldMissing('featuredAlt') && 'border-destructive')}
+              />
+              {fieldMissing('featuredAlt') && <p className="text-xs text-destructive">Falta el texto alternativo.</p>}
             </div>
             <div className="space-y-2">
               <Label>Imagen para redes (og:image, opcional - hereda de la destacada si no se define)</Label>
@@ -407,6 +485,26 @@ export function BlogArticleForm({ articleId, existingArticle, categories, otherA
         </CardContent>
       </Card>
 
+      {/* Always visible, not just after a failed attempt - the whole point
+          is that you shouldn't have to click Publish and guess to find out
+          what's missing (real feedback from David's co-founder testing the
+          CMS: she had no way to tell which fields were mandatory). */}
+      <Card className={cn(!canPublish && 'border-amber-500/40')}>
+        <CardContent className="space-y-2 p-4">
+          <p className="text-sm font-medium text-foreground">
+            {canPublish ? 'Listo para publicar' : 'Requisitos para publicar'}
+          </p>
+          <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+            {requiredFields.map((f) => (
+              <li key={f.key} className={cn('flex items-center gap-2 text-sm', f.done ? 'text-muted-foreground' : 'text-amber-600 dark:text-amber-400')}>
+                {f.done ? <Check className="h-4 w-4 shrink-0 text-green-600 dark:text-green-500" /> : <XIcon className="h-4 w-4 shrink-0" />}
+                {f.label}
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
+
       <div
         className={cn(
           'sticky bottom-0 z-10 -mx-4 flex flex-wrap items-center justify-between gap-3 border-t bg-card/95 px-4 py-4 backdrop-blur supports-[backdrop-filter]:bg-card/80 sm:-mx-6 sm:px-6'
@@ -414,7 +512,6 @@ export function BlogArticleForm({ articleId, existingArticle, categories, otherA
       >
         <p className="text-xs text-muted-foreground">
           {existingArticle?.status === 'published' ? 'Publicado' : 'Borrador'}
-          {!canPublish && ' — falta la imagen destacada para poder publicar'}
         </p>
         <div className="flex gap-2">
           <Button type="button" variant="outline" onClick={() => handleSave('draft')} disabled={saving}>
