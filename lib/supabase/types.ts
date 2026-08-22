@@ -203,6 +203,33 @@ export interface Database {
         }
         Relationships: []
       }
+      trial_redemptions: {
+        Row: {
+          id: string
+          email: string
+          card_fingerprint: string | null
+          stripe_customer_id: string
+          stripe_subscription_id: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          email: string
+          card_fingerprint?: string | null
+          stripe_customer_id: string
+          stripe_subscription_id: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          email?: string
+          card_fingerprint?: string | null
+          stripe_customer_id?: string
+          stripe_subscription_id?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       organizations: {
         Row: {
           id: string
@@ -922,6 +949,10 @@ export interface Database {
     Functions: {
       is_platform_admin: {
         Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
+      has_used_trial: {
+        Args: { p_email: string }
         Returns: boolean
       }
       add_business_staff: {

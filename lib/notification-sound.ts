@@ -25,3 +25,33 @@ export function playNotificationChime() {
     // Ignored - see comment above.
   }
 }
+
+/**
+ * A brighter, three-note ascending chime (C5-E5-G5, a major triad) for the
+ * "welcome to Pro/Premium" moment after a successful subscription - reuses
+ * the same no-asset Web Audio approach as playNotificationChime, but longer
+ * and more festive since this is a one-off celebration, not a routine
+ * booking alert.
+ */
+export function playSuccessChime() {
+  try {
+    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+    const ctx = new AudioContextClass()
+    const notes = [523.25, 659.25, 783.99]
+    notes.forEach((freq, i) => {
+      const oscillator = ctx.createOscillator()
+      const gain = ctx.createGain()
+      const startTime = ctx.currentTime + i * 0.1
+      oscillator.type = 'sine'
+      oscillator.frequency.setValueAtTime(freq, startTime)
+      gain.gain.setValueAtTime(0.15, startTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.4)
+      oscillator.connect(gain)
+      gain.connect(ctx.destination)
+      oscillator.start(startTime)
+      oscillator.stop(startTime + 0.4)
+    })
+  } catch {
+    // Ignored - see comment above.
+  }
+}

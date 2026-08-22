@@ -56,6 +56,7 @@ import {
   Globe,
   Save,
   Crown,
+  Sparkles,
   Check,
   Loader2,
   Plus,
@@ -195,6 +196,12 @@ export default function SettingsPage() {
   const [logoError, setLogoError] = useState('')
   const logoInputRef = useRef<HTMLInputElement>(null)
   const [planUsage, setPlanUsage] = useState<PlanUsage | null>(null)
+  const [subscriptionStatus, setSubscriptionStatus] = useState<{
+    status: string
+    trialEnd: number | null
+    currency: string
+    priceAmount: number | null
+  } | null>(null)
   const supabase = createClient()
 
   // Usage vs. the caps enforced in scripts/048-free-plan-limits.sql. Fetched
@@ -217,10 +224,32 @@ export default function SettingsPage() {
     }
   }, [currentBusiness?.id, authProfile?.plan, supabase])
 
-  // Picks up the redirect back from Stripe Checkout (success_url/cancel_url
-  // in app/api/stripe/checkout) - the webhook usually updates profiles.plan
-  // before this even runs, but refreshProfile() here means the UI reflects
-  // Premium immediately instead of waiting for the next natural refetch.
+  // Trial end date / next-charge visibility (see app/api/stripe/subscription-status)
+  // - David specifically asked for this after testing the embedded checkout:
+  // relying only on the trial_will_end reminder email 3 days out isn't
+  // enough, someone should be able to just look in Settings and see when
+  // they'll actually be charged.
+  useEffect(() => {
+    if (authProfile?.plan === 'free') {
+      setSubscriptionStatus(null)
+      return
+    }
+    let cancelled = false
+    fetch('/api/stripe/subscription-status')
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled && data.subscription) setSubscriptionStatus(data.subscription)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [authProfile?.plan])
+
+  // The embedded checkout flow (UpgradeModal + app/api/stripe/subscribe)
+  // grants access and closes its own modal without ever navigating here -
+  // this ?checkout= param no longer gets set by that flow. Kept only in
+  // case anything else still links here with it (e.g. an old bookmark).
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const checkout = params.get('checkout')
@@ -1776,7 +1805,16 @@ export default function SettingsPage() {
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between rounded-lg border p-4">
                 <div className="flex items-center gap-3">
-                  <Crown className="h-8 w-8 text-amber-500" />
+                  {/* Crown is reserved for Premium specifically everywhere
+                      else in the app (PremiumBadge/PremiumFeature, the
+                      sidebar's Premium badge) - showing it here for Pro too
+                      read as "you're on Premium" even though the label text
+                      below correctly said "Plan Pro". */}
+                  {plan === 'premium' ? (
+                    <Crown className="h-8 w-8 text-amber-500" />
+                  ) : (
+                    <Sparkles className="h-8 w-8 text-muted-foreground" />
+                  )}
                   <div>
                     <p className="font-semibold">
                       {plan === 'premium'
@@ -1796,10 +1834,16 @@ export default function SettingsPage() {
                 </div>
                 {plan !== 'free' ? (
                   <div className="flex flex-col items-end gap-2">
-                    <Badge>
-                      <Check className="mr-1 h-3 w-3" />
-                      {t.settings.activeStatus}
-                    </Badge>
+                    {subscriptionStatus?.status === 'trialing' ? (
+                      <Badge variant="outline" className="border-primary/40 text-primary">
+                        {t.settings.trialStatus}
+                      </Badge>
+                    ) : (
+                      <Badge>
+                        <Check className="mr-1 h-3 w-3" />
+                        {t.settings.activeStatus}
+                      </Badge>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
@@ -1832,6 +1876,25 @@ export default function SettingsPage() {
                   </Button>
                 )}
               </div>
+
+              {subscriptionStatus?.status === 'trialing' && subscriptionStatus.trialEnd && subscriptionStatus.priceAmount && (
+                <p className="rounded-lg bg-primary/5 p-3 text-sm text-muted-foreground">
+                  {t.settings.trialEndsNote
+                    .replace(
+                      '{date}',
+                      new Intl.DateTimeFormat(language === 'es' ? 'es-PE' : 'en-US', {
+                        dateStyle: 'long',
+                      }).format(new Date(subscriptionStatus.trialEnd * 1000))
+                    )
+                    .replace(
+                      '{price}',
+                      new Intl.NumberFormat(language === 'es' ? 'es-PE' : 'en-US', {
+                        style: 'currency',
+                        currency: subscriptionStatus.currency.toUpperCase(),
+                      }).format(subscriptionStatus.priceAmount / 100)
+                    )}
+                </p>
+              )}
 
               {plan === 'free' && planUsage && (
                 <>

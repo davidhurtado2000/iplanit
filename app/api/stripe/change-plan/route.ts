@@ -4,10 +4,10 @@ import { getStripeClient, getPriceIdForTier } from '@/lib/stripe'
 
 // Switches an EXISTING subscriber (already has an active subscription)
 // between Pro and Premium by updating the price on their current
-// subscription, instead of creating a second one via Checkout - Checkout
+// subscription, instead of creating a second one - app/api/stripe/subscribe
 // always creates a brand-new subscription and would leave the customer
-// paying for two plans at once (see app/api/stripe/checkout's
-// already_subscribed guard). Stripe prorates the difference automatically.
+// paying for two plans at once (see its already_subscribed guard). Stripe
+// prorates the difference automatically.
 //
 // This never writes profiles.plan itself - the customer.subscription.updated
 // webhook (app/api/webhooks/stripe/route.ts) picks up the price change and

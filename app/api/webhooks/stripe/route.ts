@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import type Stripe from 'stripe'
 import { getStripeClient } from '@/lib/stripe'
+import { getResendClient, NOTIFICATIONS_FROM_EMAIL } from '@/lib/email/resend'
+import { buildTrialEndingEmail } from '@/lib/email/templates'
 import type { Database } from '@/lib/supabase/types'
 
 // Called directly by Stripe, not a logged-in user - the raw body + signature
@@ -60,6 +62,15 @@ export async function POST(request: Request) {
   }
 
   switch (event.type) {
+    // New subscriptions are created directly via stripe.subscriptions.create
+    // in app/api/stripe/subscribe/route.ts now (the embedded Stripe Elements
+    // flow), which grants plan access synchronously in that same request -
+    // trial-abuse detection (card fingerprint / email reuse) also lives
+    // there now, since it has to run BEFORE the subscription is created to
+    // let the user confirm the charge, which a webhook firing afterward
+    // can't do. This case is kept only as a defensive fallback in case a
+    // Checkout Session is ever created some other way (e.g. manually from
+    // the Stripe Dashboard) - it is not the primary path anymore.
     case 'checkout.session.completed': {
       const session = event.data.object as Stripe.Checkout.Session
       const userId = session.client_reference_id || session.metadata?.supabase_user_id
@@ -122,6 +133,41 @@ export async function POST(request: Request) {
       }
 
       await setPlanByCustomerId(customerId, tier, { stripe_subscription_id: subscription.id })
+      break
+    }
+
+    // Stripe fires this automatically ~3 days before a trial ends (fixed
+    // schedule, not configurable via the API) - the mandatory heads-up
+    // before the first real charge, so cancelling still feels like a real
+    // choice rather than a surprise charge (see the FTC auto-renewal
+    // discussion this feature was built around).
+    case 'customer.subscription.trial_will_end': {
+      const subscription = event.data.object as Stripe.Subscription
+      const customerId = typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id
+
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('email, language')
+          .eq('stripe_customer_id', customerId)
+          .single()
+        if (!profile) break
+
+        const tier = tierFromPriceId(subscription.items.data[0]?.price.id)
+        const priceUsd = tier === 'premium' ? 40 : 25
+        const trialEndDate = new Date((subscription.trial_end ?? 0) * 1000)
+        const language = profile.language === 'en' ? 'en' : 'es'
+
+        const { subject, html } = buildTrialEndingEmail({ language, priceUsd, trialEndDate })
+        await getResendClient().emails.send({
+          from: NOTIFICATIONS_FROM_EMAIL,
+          to: profile.email,
+          subject,
+          html,
+        })
+      } catch (err) {
+        console.error('[iplanit] Error sending trial-ending email:', err)
+      }
       break
     }
 

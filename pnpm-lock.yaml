@@ -92,6 +92,12 @@ importers:
       '@radix-ui/react-tooltip':
         specifier: 1.1.6
         version: 1.1.6(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
+      '@stripe/react-stripe-js':
+        specifier: ^6.8.2
+        version: 6.8.2(@stripe/stripe-js@9.14.0)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
+      '@stripe/stripe-js':
+        specifier: ^9.14.0
+        version: 9.14.0
       '@supabase/ssr':
         specifier: ^0.12.3
         version: 0.12.3(@supabase/supabase-js@2.110.7)
@@ -1126,6 +1132,17 @@ packages:
 
   '@stablelib/base64@1.0.1':
     resolution: {integrity: sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==}
+
+  '@stripe/react-stripe-js@6.8.2':
+    resolution: {integrity: sha512-6qxosv6c+LqtdML2R7nCDpFNowuh4ohIM894V9eRkbFJANUKbMKoXBd8AKOQAn1wjEfuYVI2NYtFnqFLOKbPjw==}
+    peerDependencies:
+      '@stripe/stripe-js': '>=9.5.0 <10.0.0'
+      react: '>=16.8.0 <20.0.0'
+      react-dom: '>=16.8.0 <20.0.0'
+
+  '@stripe/stripe-js@9.14.0':
+    resolution: {integrity: sha512-eCeVT2ee5YWyzz+m/cGwuatcPobe0MxzUGJtat8vUuZo4vNg1bzhoImKaTG2uB1ytIO03MrYAP4d6PTiGl+IZQ==}
+    engines: {node: '>=12.16'}
 
   '@supabase/auth-js@2.110.7':
     resolution: {integrity: sha512-M5Bpl4hCv6kHcOO/xM06Dyfg1mYLHljMkp1plhzG9IRZPc3czvyMsSN1XpL5+GKisOKM3lSN59zhpcm6sMVXfA==}
@@ -3043,6 +3060,15 @@ snapshots:
   '@radix-ui/rect@1.1.0': {}
 
   '@stablelib/base64@1.0.1': {}
+
+  '@stripe/react-stripe-js@6.8.2(@stripe/stripe-js@9.14.0)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)':
+    dependencies:
+      '@stripe/stripe-js': 9.14.0
+      prop-types: 15.8.1
+      react: 19.2.0
+      react-dom: 19.2.0(react@19.2.0)
+
+  '@stripe/stripe-js@9.14.0': {}
 
   '@supabase/auth-js@2.110.7':
     dependencies:

@@ -4,6 +4,7 @@ import React, { useState } from 'react'
 import { Sidebar } from '@/components/dashboard/sidebar'
 import { MobileNav } from '@/components/dashboard/mobile-nav'
 import { FeedbackWidget } from '@/components/dashboard/feedback-widget'
+import { PlanUsageBanner } from '@/components/dashboard/plan-usage-banner'
 import { Toaster } from '@/components/ui/sonner'
 import { BusinessProvider } from '@/context/business-context'
 import { DashboardDataProvider } from '@/context/dashboard-data-context'
@@ -38,7 +39,10 @@ export default function DashboardLayout({
           isCollapsed ? 'lg:ml-16' : 'lg:ml-64'
         )}
       >
-        <div className="mx-auto max-w-[1600px] p-4 sm:p-6">{children}</div>
+        <div className="mx-auto max-w-[1600px] p-4 sm:p-6">
+          <PlanUsageBanner />
+          {children}
+        </div>
       </main>
 
       <FeedbackWidget />

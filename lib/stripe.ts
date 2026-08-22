@@ -14,7 +14,7 @@ export function getStripeClient(): Stripe {
   return _client
 }
 
-// Shared between app/api/stripe/checkout (new subscriptions) and
+// Shared between app/api/stripe/subscribe (new subscriptions) and
 // app/api/stripe/change-plan (existing subscribers switching tiers) - one
 // place for the tier -> Price ID lookup so both stay in sync.
 export function getPriceIdForTier(tier: 'pro' | 'premium'): string | undefined {

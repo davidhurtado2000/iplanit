@@ -284,6 +284,47 @@ export function buildReminderEmail(data: ReservationEmailData): { subject: strin
   }
 }
 
+export interface TrialEndingEmailData {
+  language: EmailLanguage
+  priceUsd: number
+  trialEndDate: Date
+}
+
+// Fires from the customer.subscription.trial_will_end webhook event,
+// ~3 days before the first real charge - the mandatory heads-up so
+// cancelling still feels like a real choice, not a surprise charge.
+export function buildTrialEndingEmail(data: TrialEndingEmailData): { subject: string; html: string } {
+  const { language, priceUsd, trialEndDate } = data
+  const locale = language === 'es' ? 'es-PE' : 'en-US'
+  const when = new Intl.DateTimeFormat(locale, { dateStyle: 'long' }).format(trialEndDate)
+  const manageUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://iplanit.io'}/dashboard/settings`
+
+  if (language === 'es') {
+    return {
+      subject: 'Tu mes gratis de iPlanit termina pronto',
+      html: emailLayout(
+        'es',
+        'Tu mes gratis termina pronto',
+        `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hola,</p>
+         <p style="font-size: 14px; color: #374151; margin: 0;">Tu mes de prueba gratis termina el <strong>${when}</strong>. A partir de esa fecha se cobrara automaticamente <strong>$${priceUsd}/mes</strong> a la tarjeta registrada, a menos que canceles antes.</p>
+         <p style="font-size: 14px; color: #374151; margin: 16px 0 0 0;">Puedes cancelar en cualquier momento desde tu cuenta, sin costo.</p>
+         <a href="${manageUrl}" style="display: inline-block; margin-top: 16px; padding: 10px 18px; background-color: #2563eb; color: #ffffff; font-size: 14px; font-weight: 500; text-decoration: none; border-radius: 6px;">Administrar mi suscripcion</a>`
+      ),
+    }
+  }
+  return {
+    subject: 'Your free month of iPlanit is ending soon',
+    html: emailLayout(
+      'en',
+      'Your free month is ending soon',
+      `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hi there,</p>
+       <p style="font-size: 14px; color: #374151; margin: 0;">Your free trial month ends on <strong>${when}</strong>. Starting then, <strong>$${priceUsd}/month</strong> will be charged automatically to your card on file, unless you cancel before that date.</p>
+       <p style="font-size: 14px; color: #374151; margin: 16px 0 0 0;">You can cancel anytime from your account at no cost.</p>
+       <a href="${manageUrl}" style="display: inline-block; margin-top: 16px; padding: 10px 18px; background-color: #2563eb; color: #ffffff; font-size: 14px; font-weight: 500; text-decoration: none; border-radius: 6px;">Manage my subscription</a>`
+    ),
+  }
+}
+
 export interface FeedbackEmailData {
   message: string
   userEmail: string
