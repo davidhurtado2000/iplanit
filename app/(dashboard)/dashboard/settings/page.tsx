@@ -1854,15 +1854,19 @@ export default function SettingsPage() {
                       {t.settings.manageSubscription}
                     </Button>
                     {plan === 'pro' && (
-                      <button
-                        type="button"
-                        className="flex items-center gap-1 text-xs text-primary underline hover:text-primary/80 disabled:opacity-50"
+                      <Button
+                        size="sm"
+                        className="gap-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600"
                         disabled={isChangingPlan}
                         onClick={() => setPendingPlanChange('premium')}
                       >
-                        {isChangingPlan && <Loader2 className="h-3 w-3 animate-spin" />}
+                        {isChangingPlan ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Crown className="h-3.5 w-3.5" />
+                        )}
                         {t.settings.upgradeToPremiumBtn}
-                      </button>
+                      </Button>
                     )}
                   </div>
                 ) : (
@@ -2415,7 +2419,10 @@ export default function SettingsPage() {
             <DialogTitle>{t.settings.changePlanConfirmTitle}</DialogTitle>
             <DialogDescription>
               {pendingPlanChange &&
-                t.settings.changePlanConfirmDesc
+                (subscriptionStatus?.status === 'trialing'
+                  ? t.settings.changePlanConfirmDescTrial
+                  : t.settings.changePlanConfirmDesc
+                )
                   .replace(
                     '{plan}',
                     pendingPlanChange === 'premium' ? t.settings.premiumPlanName : t.settings.proPlanName
