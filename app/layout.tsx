@@ -26,6 +26,7 @@ export const metadata: Metadata = {
   generator: 'v0.app',
   openGraph: {
     type: 'website',
+    siteName: 'iPlanit',
     title: 'iPlanit - Booking and Scheduling Management',
     description:
       'SaaS platform for managing bookings, appointments, and schedules for service businesses',

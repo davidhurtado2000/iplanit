@@ -40,6 +40,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     title: article.meta_title,
     description: article.meta_description,
     openGraph: {
+      siteName: 'iPlanit',
       title: article.meta_title,
       description: article.meta_description,
       type: 'article',
