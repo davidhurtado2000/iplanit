@@ -7,7 +7,7 @@ import { getRelatedArticles, ogImageFor, parseFaq, type BlogArticleRow } from '@
 import { BlogHeader } from '@/components/blog/blog-header'
 import { Breadcrumbs } from '@/components/blog/breadcrumbs'
 import { RelatedArticles } from '@/components/blog/related-articles'
-import { blogT, resolveBlogLanguage, type BlogLanguage } from '@/lib/blog-i18n'
+import { blogT, type BlogLanguage } from '@/lib/blog-i18n'
 
 interface PageProps {
   params: Promise<{ categoria: string; slug: string }>

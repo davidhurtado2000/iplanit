@@ -1,5 +1,3 @@
-import { cookies } from 'next/headers'
-
 export type BlogLanguage = 'es' | 'en'
 
 // Separate from the app-wide `app-language` cookie/localStorage
@@ -7,14 +5,10 @@ export type BlogLanguage = 'es' | 'en'
 // assumes both languages are already loaded in the page's JS bundle, which
 // doesn't hold for blog articles (each is one real row of DB content, not a
 // static translated string tree). The blog resolves its language
-// server-side, per request, from its own cookie.
+// server-side, per request, from its own cookie (see lib/blog-language-server.ts
+// for the actual read - kept out of this file, which the client-side
+// language switcher also imports, because it needs next/headers).
 export const BLOG_LANGUAGE_COOKIE = 'blog-language'
-
-export async function resolveBlogLanguage(): Promise<BlogLanguage> {
-  const cookieStore = await cookies()
-  const saved = cookieStore.get(BLOG_LANGUAGE_COOKIE)?.value
-  return saved === 'en' ? 'en' : 'es'
-}
 
 const dict = {
   es: {

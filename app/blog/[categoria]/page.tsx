@@ -4,7 +4,8 @@ import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { BlogHeader } from '@/components/blog/blog-header'
 import { Breadcrumbs } from '@/components/blog/breadcrumbs'
 import { ArticleCard } from '@/components/blog/article-card'
-import { blogT, categoryDescription, categoryName, resolveBlogLanguage } from '@/lib/blog-i18n'
+import { blogT, categoryDescription, categoryName } from '@/lib/blog-i18n'
+import { resolveBlogLanguage } from '@/lib/blog-language-server'
 
 interface PageProps {
   params: Promise<{ categoria: string }>

@@ -5,7 +5,8 @@ import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { BlogHeader } from '@/components/blog/blog-header'
 import { ArticleCard } from '@/components/blog/article-card'
 import { VerticalShowcase } from '@/components/blog/vertical-showcase'
-import { blogT, categoryName, resolveBlogLanguage } from '@/lib/blog-i18n'
+import { blogT, categoryName } from '@/lib/blog-i18n'
+import { resolveBlogLanguage } from '@/lib/blog-language-server'
 
 export async function generateMetadata(): Promise<Metadata> {
   const language = await resolveBlogLanguage()
