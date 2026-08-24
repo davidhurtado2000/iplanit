@@ -2,9 +2,10 @@
 
 import { useRef, useState, type ChangeEvent } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Plus, Trash2, Loader2, Upload, Check, X as XIcon } from 'lucide-react'
+import { Plus, Trash2, Loader2, Upload, Check, X as XIcon, Languages, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -57,9 +58,16 @@ interface BlogArticleFormProps {
   existingArticle: BlogArticleRow | null
   categories: BlogCategoryRow[]
   otherArticles: { id: string; title: string }[]
+  sibling?: { id: string; language: 'es' | 'en'; title: string } | null
 }
 
-export function BlogArticleForm({ articleId, existingArticle, categories, otherArticles }: BlogArticleFormProps) {
+export function BlogArticleForm({
+  articleId,
+  existingArticle,
+  categories,
+  otherArticles,
+  sibling = null,
+}: BlogArticleFormProps) {
   const router = useRouter()
   const supabase = createClient()
   const isEditing = !!existingArticle
@@ -68,6 +76,8 @@ export function BlogArticleForm({ articleId, existingArticle, categories, otherA
   const [slug, setSlug] = useState(existingArticle?.slug ?? '')
   const [slugTouched, setSlugTouched] = useState(isEditing)
   const [categoryId, setCategoryId] = useState(existingArticle?.category_id ?? categories[0]?.id ?? '')
+  const [language, setLanguage] = useState<'es' | 'en'>(existingArticle?.language ?? 'es')
+  const [creatingTranslation, setCreatingTranslation] = useState(false)
   const [metaTitle, setMetaTitle] = useState(existingArticle?.meta_title ?? '')
   const [metaDescription, setMetaDescription] = useState(existingArticle?.meta_description ?? '')
   const [keywordPrincipal, setKeywordPrincipal] = useState(existingArticle?.keyword_principal ?? '')
@@ -218,7 +228,10 @@ export function BlogArticleForm({ articleId, existingArticle, categories, otherA
         const { error: updateError } = await supabase.from('blog_articles').update(payload).eq('id', articleId)
         if (updateError) throw updateError
       } else {
-        const { error: insertError } = await supabase.from('blog_articles').insert({ id: articleId, ...payload })
+        // language is only settable at creation - locked afterwards (shown
+        // read-only below) since changing it later would silently move the
+        // article to a different slot in its translation_group_id pairing.
+        const { error: insertError } = await supabase.from('blog_articles').insert({ id: articleId, language, ...payload })
         if (insertError) throw insertError
       }
 
@@ -231,9 +244,80 @@ export function BlogArticleForm({ articleId, existingArticle, categories, otherA
     }
   }
 
+  // Seeds a new row in the other language with this article's current text
+  // as a starting point (satisfies the same-language required-fields check
+  // on save immediately) rather than an empty draft, then hands off to its
+  // own edit page for the actual translation work.
+  const handleCreateTranslation = async () => {
+    if (!existingArticle) return
+    setCreatingTranslation(true)
+    setError('')
+    try {
+      const targetLanguage: 'es' | 'en' = existingArticle.language === 'en' ? 'es' : 'en'
+      const newId = crypto.randomUUID()
+      const { error: insertError } = await supabase.from('blog_articles').insert({
+        id: newId,
+        language: targetLanguage,
+        translation_group_id: existingArticle.translation_group_id,
+        title: existingArticle.title,
+        slug: `${existingArticle.slug}-${targetLanguage}`,
+        category_id: existingArticle.category_id,
+        meta_title: existingArticle.meta_title,
+        meta_description: existingArticle.meta_description,
+        content: existingArticle.content,
+        featured_image_url: existingArticle.featured_image_url,
+        featured_image_alt: existingArticle.featured_image_alt,
+        author: existingArticle.author,
+        functional_tags: existingArticle.functional_tags,
+        status: 'draft',
+      })
+      if (insertError) throw insertError
+      router.push(`/admin/blog/${newId}`)
+    } catch (err) {
+      console.error('[iplanit] Error creating translation:', err)
+      setError('No se pudo crear la traducción. Intenta de nuevo.')
+      setCreatingTranslation(false)
+    }
+  }
+
   return (
     <div className="space-y-6 pb-24">
       {error && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
+
+      {isEditing && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border-2 border-primary/30 bg-primary/5 p-4">
+          <div>
+            <p className="text-sm font-semibold text-foreground">
+              Estás editando la versión en {language === 'en' ? 'inglés' : 'español'}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {sibling
+                ? `También existe una versión en ${sibling.language === 'en' ? 'inglés' : 'español'}.`
+                : 'Este artículo todavía no tiene traducción.'}
+            </p>
+          </div>
+          {sibling ? (
+            <Button asChild variant="default" size="sm" className="gap-2">
+              <Link href={`/admin/blog/${sibling.id}`}>
+                Ir a la versión en {sibling.language === 'en' ? 'inglés' : 'español'}
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              className="gap-2"
+              disabled={creatingTranslation}
+              onClick={handleCreateTranslation}
+            >
+              {creatingTranslation ? <Loader2 className="h-4 w-4 animate-spin" /> : <Languages className="h-4 w-4" />}
+              Crear traducción en {language === 'en' ? 'español' : 'inglés'}
+            </Button>
+          )}
+        </div>
+      )}
 
       <Card>
         <CardContent className="space-y-4 p-5">
@@ -251,7 +335,7 @@ export function BlogArticleForm({ articleId, existingArticle, categories, otherA
               />
               {fieldMissing('title') && <p className="text-xs text-destructive">Falta el título.</p>}
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-2">
                 <Label htmlFor="slug">
                   Slug
@@ -285,6 +369,23 @@ export function BlogArticleForm({ articleId, existingArticle, categories, otherA
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="language">Idioma</Label>
+                {isEditing ? (
+                  <Input id="language" value={language === 'en' ? 'Inglés' : 'Español'} disabled />
+                ) : (
+                  <Select value={language} onValueChange={(v) => setLanguage(v as 'es' | 'en')}>
+                    <SelectTrigger id="language">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="es">Español</SelectItem>
+                      <SelectItem value="en">Inglés</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+                {isEditing && <p className="text-xs text-muted-foreground">No se puede cambiar después de crear el artículo.</p>}
               </div>
             </div>
             <div className="space-y-2">

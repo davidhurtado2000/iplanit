@@ -5,14 +5,18 @@ import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { BlogHeader } from '@/components/blog/blog-header'
 import { ArticleCard } from '@/components/blog/article-card'
 import { VerticalShowcase } from '@/components/blog/vertical-showcase'
+import { blogT, categoryName, resolveBlogLanguage } from '@/lib/blog-i18n'
 
-export const metadata: Metadata = {
-  title: 'Blog - iPlanit',
-  description: 'Guías y consejos para negocios de servicios sobre reservas, agenda y gestión de clientes.',
+export async function generateMetadata(): Promise<Metadata> {
+  const language = await resolveBlogLanguage()
+  const t = blogT(language)
+  return { title: t.metaTitle, description: t.metaDescription }
 }
 
 export default async function BlogIndexPage() {
   const supabase = await createServerSupabaseClient()
+  const language = await resolveBlogLanguage()
+  const t = blogT(language)
 
   // No .eq('status', 'published') - RLS returns published-only rows to
   // regular visitors and everything to platform admins (see the same note
@@ -20,7 +24,11 @@ export default async function BlogIndexPage() {
   // draft (no published_at yet) from jumping to the top of a DESC sort,
   // which is Postgres's default null placement for descending order.
   const [{ data: articles }, { data: categories }] = await Promise.all([
-    supabase.from('blog_articles').select('*').order('published_at', { ascending: false, nullsFirst: false }),
+    supabase
+      .from('blog_articles')
+      .select('*')
+      .eq('language', language)
+      .order('published_at', { ascending: false, nullsFirst: false }),
     supabase.from('blog_categories').select('*').order('sort_order'),
   ])
 
@@ -33,10 +41,10 @@ export default async function BlogIndexPage() {
 
   return (
     <>
-      <BlogHeader categories={allCategories} />
+      <BlogHeader categories={allCategories} language={language} translationLinks={{ es: '/blog', en: '/blog' }} />
       <main className="mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6">
         {allArticles.length === 0 ? (
-          <p className="py-16 text-center text-muted-foreground">Todavía no hay artículos publicados.</p>
+          <p className="py-16 text-center text-muted-foreground">{t.noArticlesPublished}</p>
         ) : (
           <>
             {featured && (
@@ -47,11 +55,14 @@ export default async function BlogIndexPage() {
                 <div className="flex flex-col justify-center gap-2.5 p-6">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium text-primary">
-                      {allCategories.find((c) => c.id === featured.category_id)?.name}
+                      {(() => {
+                        const cat = allCategories.find((c) => c.id === featured.category_id)
+                        return cat ? categoryName(cat, language) : null
+                      })()}
                     </span>
                     {featured.status === 'draft' && (
                       <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">
-                        Borrador
+                        {t.draftBadge}
                       </span>
                     )}
                   </div>
@@ -59,7 +70,7 @@ export default async function BlogIndexPage() {
                     {featured.title}
                   </h1>
                   <p className="text-sm text-muted-foreground">{featured.meta_description}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{featured.reading_time_minutes ?? 5} min de lectura</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{t.minRead(featured.reading_time_minutes ?? 5)}</p>
                 </div>
                 <div className="flex min-h-[180px] items-center justify-center border-t border-white/10 bg-white/5 md:border-l md:border-t-0">
                   {featured.featured_image_url ? (
@@ -78,14 +89,15 @@ export default async function BlogIndexPage() {
 
             {rest.length > 0 && (
               <section>
-                <p className="text-xs tracking-wide text-muted-foreground">últimos artículos</p>
-                <h2 className="mb-4 mt-1 text-lg font-medium text-foreground">Todos los artículos</h2>
+                <p className="text-xs tracking-wide text-muted-foreground">{t.latestKicker}</p>
+                <h2 className="mb-4 mt-1 text-lg font-medium text-foreground">{t.allArticlesTitle}</h2>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                   {rest.map((article) => (
                     <ArticleCard
                       key={article.id}
                       article={article}
                       category={allCategories.find((c) => c.id === article.category_id)}
+                      language={language}
                     />
                   ))}
                 </div>
@@ -97,6 +109,7 @@ export default async function BlogIndexPage() {
                 key={category.id}
                 category={category}
                 articles={allArticles.filter((a) => a.category_id === category.id)}
+                language={language}
               />
             ))}
           </>

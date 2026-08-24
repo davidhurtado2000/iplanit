@@ -2,7 +2,7 @@
 
 import React from 'react'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2 } from 'lucide-react'
 import { LanguageToggle } from '@/components/language-toggle'
-import { TurnstileWidget } from '@/components/turnstile-widget'
+import { TurnstileWidget, type TurnstileWidgetHandle } from '@/components/turnstile-widget'
 import { supabase } from '@/lib/supabase/client'
 import { useLanguage } from '@/context/language-context'
 import { translateAuthError, withAuthLockRetry } from '@/lib/supabase/auth-errors'
@@ -28,6 +28,18 @@ function LoginForm() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  const turnstileRef = useRef<TurnstileWidgetHandle>(null)
+
+  // Turnstile tokens are single-use - a failed login attempt (wrong
+  // password, etc.) still spends the token that was already sent, even
+  // though the widget keeps showing its checkmark from the first verify.
+  // Without this, a corrected retry silently resends the stale token and
+  // fails with a confusing "couldn't verify you're human" error instead of
+  // the real one.
+  const resetTurnstile = () => {
+    turnstileRef.current?.reset()
+    setTurnstileToken(null)
+  }
 
   useEffect(() => {
     if (searchParams.get('registered') === 'true') {
@@ -54,6 +66,7 @@ function LoginForm() {
       if (signInError) {
         console.error('[iplanit] auth error:', signInError.message)
         setError(translateAuthError(signInError.message, language))
+        resetTurnstile()
         return
       }
 
@@ -65,6 +78,7 @@ function LoginForm() {
     } catch (err) {
       console.error('[iplanit] unexpected auth error:', err)
       setError(translateAuthError(null, language))
+      resetTurnstile()
     } finally {
       setIsLoading(false)
     }
@@ -90,6 +104,7 @@ function LoginForm() {
       if (signInError) {
         console.error('[iplanit] auth error:', signInError.message)
         setError(translateAuthError(signInError.message, language))
+        resetTurnstile()
         return
       }
 
@@ -98,6 +113,7 @@ function LoginForm() {
     } catch (err) {
       console.error('[iplanit] unexpected auth error:', err)
       setError(translateAuthError(null, language))
+      resetTurnstile()
     } finally {
       setIsLoading(false)
     }
@@ -175,7 +191,7 @@ function LoginForm() {
               </div>
             )}
 
-            <TurnstileWidget onVerify={setTurnstileToken} onExpire={() => setTurnstileToken(null)} />
+            <TurnstileWidget ref={turnstileRef} onVerify={setTurnstileToken} onExpire={() => setTurnstileToken(null)} />
 
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? (

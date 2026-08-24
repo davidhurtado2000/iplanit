@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { Skeleton } from '@/components/ui/skeleton'
+import { LogoLoader } from '@/components/logo-loader'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Calendar,
@@ -230,9 +230,8 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-64 w-full" />
+      <div className="flex items-center justify-center py-24">
+        <LogoLoader />
       </div>
     )
   }

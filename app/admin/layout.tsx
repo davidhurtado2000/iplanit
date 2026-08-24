@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Loader2, ArrowLeft } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { createClient } from '@/lib/supabase/client'
+import { LogoLoader } from '@/components/logo-loader'
 
 /**
  * Blog CMS admin - separate from /dashboard on purpose (this is iPlanit's
@@ -55,7 +56,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   if (authLoading || checking || !isAdmin) {
     return (
       <div className="dark flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <LogoLoader />
       </div>
     )
   }

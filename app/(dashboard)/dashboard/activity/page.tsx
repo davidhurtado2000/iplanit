@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Briefcase, Users, Layers, Building2, Clock, UserPlus, UserCog, History, Loader2 } from 'lucide-react'
-import { Skeleton } from '@/components/ui/skeleton'
+import { LogoLoader } from '@/components/logo-loader'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { Label } from '@/components/ui/label'
 import {
@@ -166,10 +166,8 @@ export default function ActivityPage() {
         </div>
 
         {loading ? (
-          <div className="space-y-2">
-            <Skeleton className="h-16 w-full" />
-            <Skeleton className="h-16 w-full" />
-            <Skeleton className="h-16 w-full" />
+          <div className="flex items-center justify-center py-16">
+            <LogoLoader />
           </div>
         ) : loadError ? (
           <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-destructive/40 py-16 text-center">

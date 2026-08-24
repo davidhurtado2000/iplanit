@@ -12,7 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
-import { Skeleton } from '@/components/ui/skeleton'
+import { LogoLoader } from '@/components/logo-loader'
 import {
   Select,
   SelectContent,
@@ -1048,9 +1048,8 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       {authLoading || businessLoading ? (
-        <div className="space-y-6">
-          <Skeleton className="h-12 w-48" />
-          <Skeleton className="h-64" />
+        <div className="flex items-center justify-center py-24">
+          <LogoLoader />
         </div>
       ) : (
         <>

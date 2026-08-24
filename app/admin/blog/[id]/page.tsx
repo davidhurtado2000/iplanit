@@ -15,25 +15,53 @@ export default function EditBlogArticlePage() {
   const [article, setArticle] = useState<BlogArticleRow | null>(null)
   const [categories, setCategories] = useState<BlogCategoryRow[]>([])
   const [otherArticles, setOtherArticles] = useState<{ id: string; title: string }[]>([])
+  const [sibling, setSibling] = useState<{ id: string; language: 'es' | 'en'; title: string } | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
 
   useEffect(() => {
-    Promise.all([
-      supabase.from('blog_articles').select('*').eq('id', id).maybeSingle(),
-      supabase.from('blog_categories').select('*').order('sort_order'),
-      supabase.from('blog_articles').select('id, title').neq('id', id),
-    ]).then(([articleRes, categoriesRes, articlesRes]) => {
-      if (!articleRes.data) {
-        setNotFound(true)
+    let cancelled = false
+    // Reset to the loading state on every id change, not just on first
+    // mount - navigating from one article straight to another (e.g. the
+    // "Ver versión en..." link) keeps this same page component mounted, so
+    // without this the old article's form stayed on screen, fully
+    // interactive, while the new one loaded silently underneath it.
+    setLoading(true)
+    supabase
+      .from('blog_articles')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle()
+      .then(async (articleRes) => {
+        if (cancelled) return
+        if (!articleRes.data) {
+          setNotFound(true)
+          setLoading(false)
+          return
+        }
+        const loadedArticle = articleRes.data
+        const [categoriesRes, articlesRes, siblingRes] = await Promise.all([
+          supabase.from('blog_categories').select('*').order('sort_order'),
+          supabase.from('blog_articles').select('id, title').neq('id', id),
+          // Any status, not just published - the CMS jump-to-translation
+          // link should work even while the sibling is still a draft.
+          supabase
+            .from('blog_articles')
+            .select('id, language, title')
+            .eq('translation_group_id', loadedArticle.translation_group_id)
+            .neq('id', id)
+            .maybeSingle(),
+        ])
+        if (cancelled) return
+        setArticle(loadedArticle)
+        setCategories(categoriesRes.data || [])
+        setOtherArticles(articlesRes.data || [])
+        setSibling(siblingRes.data)
         setLoading(false)
-        return
-      }
-      setArticle(articleRes.data)
-      setCategories(categoriesRes.data || [])
-      setOtherArticles(articlesRes.data || [])
-      setLoading(false)
-    })
+      })
+    return () => {
+      cancelled = true
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
@@ -53,7 +81,14 @@ export default function EditBlogArticlePage() {
         ) : notFound || !article ? (
           <p className="text-sm text-muted-foreground">No se encontró este artículo.</p>
         ) : (
-          <BlogArticleForm articleId={id} existingArticle={article} categories={categories} otherArticles={otherArticles} />
+          <BlogArticleForm
+            key={id}
+            articleId={id}
+            existingArticle={article}
+            categories={categories}
+            otherArticles={otherArticles}
+            sibling={sibling}
+          />
         )}
       </div>
     </div>

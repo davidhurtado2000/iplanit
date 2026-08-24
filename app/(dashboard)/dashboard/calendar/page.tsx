@@ -8,6 +8,7 @@ import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { LogoLoader } from '@/components/logo-loader'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -373,9 +374,8 @@ function CalendarPageInner() {
   // context hooks that resolve once the fetch completes, same as before.
   if (loading && !isModalOpen) {
     return (
-      <div className="space-y-6">
-        <Skeleton className="h-12 w-64" />
-        <Skeleton className="h-96 w-full" />
+      <div className="flex items-center justify-center py-24">
+        <LogoLoader />
       </div>
     )
   }

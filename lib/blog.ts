@@ -43,7 +43,9 @@ export function getRelatedArticles(
   categories: BlogCategoryRow[],
   limit = 4
 ): BlogArticleRow[] {
-  const others = allPublished.filter((a) => a.id !== article.id)
+  // Same-language only - a Spanish article should never suggest an English
+  // one (or vice versa), including through a manual related_articles_override.
+  const others = allPublished.filter((a) => a.id !== article.id && a.language === article.language)
 
   if (article.related_articles_override.length > 0) {
     const byId = new Map(others.map((a) => [a.id, a]))

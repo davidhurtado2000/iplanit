@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useId, useRef } from 'react'
+import { forwardRef, useEffect, useId, useImperativeHandle, useRef } from 'react'
 
 declare global {
   interface Window {
     turnstile?: {
       render: (container: string | HTMLElement, options: Record<string, unknown>) => string
       remove: (widgetId: string) => void
+      reset: (widgetId: string) => void
     }
   }
 }
@@ -32,6 +33,16 @@ function loadTurnstileScript(): Promise<void> {
   return scriptPromise
 }
 
+export interface TurnstileWidgetHandle {
+  /** Turnstile tokens are single-use - after ANY failed submission (wrong
+   * password, not just a captcha failure), the token already sent is spent
+   * even though the widget still visually shows its checkmark from the
+   * first verify. Callers must call this after a failed submit so the next
+   * attempt gets a fresh token instead of silently resending the stale one
+   * and failing with a confusing "couldn't verify you're human" error. */
+  reset: () => void
+}
+
 /**
  * Renders nothing (and blocks nothing) if NEXT_PUBLIC_TURNSTILE_SITE_KEY
  * isn't set - the corresponding server-side check (lib/turnstile.ts) fails
@@ -39,17 +50,25 @@ function loadTurnstileScript(): Promise<void> {
  * still can't complete the protected action, rather than silently
  * pretending to be protected.
  */
-export function TurnstileWidget({
-  onVerify,
-  onExpire,
-}: {
-  onVerify: (token: string) => void
-  onExpire?: () => void
-}) {
+export const TurnstileWidget = forwardRef<
+  TurnstileWidgetHandle,
+  {
+    onVerify: (token: string) => void
+    onExpire?: () => void
+  }
+>(function TurnstileWidget({ onVerify, onExpire }, ref) {
   const rawId = useId()
   const containerId = `turnstile-${rawId.replace(/[^a-zA-Z0-9]/g, '')}`
   const widgetIdRef = useRef<string | null>(null)
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY
+
+  useImperativeHandle(ref, () => ({
+    reset: () => {
+      if (widgetIdRef.current && window.turnstile) {
+        window.turnstile.reset(widgetIdRef.current)
+      }
+    },
+  }))
 
   useEffect(() => {
     if (!siteKey) return
@@ -80,4 +99,4 @@ export function TurnstileWidget({
   if (!siteKey) return null
 
   return <div id={containerId} />
-}
+})

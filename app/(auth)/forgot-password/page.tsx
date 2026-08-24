@@ -2,7 +2,7 @@
 
 import React from 'react'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2, Mail } from 'lucide-react'
 import { LanguageToggle } from '@/components/language-toggle'
-import { TurnstileWidget } from '@/components/turnstile-widget'
+import { TurnstileWidget, type TurnstileWidgetHandle } from '@/components/turnstile-widget'
 import { supabase } from '@/lib/supabase/client'
 import { useLanguage } from '@/context/language-context'
 import { translateAuthError, withAuthLockRetry } from '@/lib/supabase/auth-errors'
@@ -23,6 +23,17 @@ export default function ForgotPasswordPage() {
   const [error, setError] = useState('')
   const [sent, setSent] = useState(false)
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  const turnstileRef = useRef<TurnstileWidgetHandle>(null)
+
+  // Turnstile tokens are single-use - a failed attempt still spends the
+  // token already sent, even though the widget keeps showing its checkmark
+  // from the first verify. Without this, a retry silently resends the
+  // stale token and fails with a confusing captcha error instead of the
+  // real one.
+  const resetTurnstile = () => {
+    turnstileRef.current?.reset()
+    setTurnstileToken(null)
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -44,6 +55,7 @@ export default function ForgotPasswordPage() {
         console.error('[iplanit] resetPasswordForEmail error:', resetError.message)
         if (/rate limit|security purposes/i.test(resetError.message)) {
           setError(translateAuthError(resetError.message, language))
+          resetTurnstile()
           return
         }
       }
@@ -52,6 +64,7 @@ export default function ForgotPasswordPage() {
     } catch (err) {
       console.error('[iplanit] unexpected auth error:', err)
       setError(translateAuthError(null, language))
+      resetTurnstile()
     } finally {
       setIsLoading(false)
     }
@@ -108,7 +121,7 @@ export default function ForgotPasswordPage() {
                   />
                 </div>
 
-                <TurnstileWidget onVerify={setTurnstileToken} onExpire={() => setTurnstileToken(null)} />
+                <TurnstileWidget ref={turnstileRef} onVerify={setTurnstileToken} onExpire={() => setTurnstileToken(null)} />
 
                 <Button type="submit" className="w-full" disabled={isLoading}>
                   {isLoading ? (

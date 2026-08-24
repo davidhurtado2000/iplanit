@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Skeleton } from '@/components/ui/skeleton'
+import { LogoLoader } from '@/components/logo-loader'
 import {
   Dialog,
   DialogContent,
@@ -337,13 +337,8 @@ export default function WorkersPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <Skeleton className="h-12 w-64" />
-        <div className="flex gap-2">
-          <Skeleton className="h-10 w-32" />
-          <Skeleton className="h-10 w-32" />
-        </div>
-        <Skeleton className="h-64 w-full" />
+      <div className="flex items-center justify-center py-24">
+        <LogoLoader />
       </div>
     )
   }

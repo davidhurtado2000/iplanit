@@ -31,24 +31,30 @@ export interface Database {
         Row: {
           id: string
           name: string
+          name_en: string | null
           slug: string
           short_description: string | null
+          short_description_en: string | null
           sort_order: number
           created_at: string
         }
         Insert: {
           id?: string
           name: string
+          name_en?: string | null
           slug: string
           short_description?: string | null
+          short_description_en?: string | null
           sort_order?: number
           created_at?: string
         }
         Update: {
           id?: string
           name?: string
+          name_en?: string | null
           slug?: string
           short_description?: string | null
+          short_description_en?: string | null
           sort_order?: number
           created_at?: string
         }
@@ -60,6 +66,8 @@ export interface Database {
           title: string
           slug: string
           category_id: string
+          language: 'es' | 'en'
+          translation_group_id: string
           meta_title: string
           meta_description: string
           keyword_principal: string | null
@@ -83,6 +91,8 @@ export interface Database {
           title: string
           slug: string
           category_id: string
+          language?: 'es' | 'en'
+          translation_group_id?: string
           meta_title: string
           meta_description: string
           keyword_principal?: string | null
@@ -106,6 +116,8 @@ export interface Database {
           title?: string
           slug?: string
           category_id?: string
+          language?: 'es' | 'en'
+          translation_group_id?: string
           meta_title?: string
           meta_description?: string
           keyword_principal?: string | null

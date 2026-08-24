@@ -176,3 +176,37 @@
     opacity: 0.9;
   }
 }
+
+@keyframes skeleton-shimmer-sweep {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* A light band sweeping across the skeleton's own bg-muted fill, instead of
+   plain opacity pulsing (components/ui/skeleton.tsx) - the ::after here is
+   what needs a real CSS rule rather than an inline utility. */
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.skeleton-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, oklch(1 0 0 / 22%), transparent);
+  animation: skeleton-shimmer-sweep 1.6s ease-in-out infinite;
+}
+
+@keyframes logo-bob {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+.animate-logo-bob {
+  animation: logo-bob 1.4s ease-in-out infinite;
+}

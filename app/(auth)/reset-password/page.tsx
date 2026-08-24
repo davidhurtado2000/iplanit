@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Eye, EyeOff, Loader2, CheckCircle2, AlertTriangle, Clock } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import { PasswordStrength } from '@/components/password-strength'
+import { LogoLoader } from '@/components/logo-loader'
 import { useAuth } from '@/hooks/use-auth'
 import { useLanguage } from '@/context/language-context'
 import { translateAuthError, withAuthLockRetry, withTimeout, AuthTimeoutError } from '@/lib/supabase/auth-errors'
@@ -101,7 +102,7 @@ export default function ResetPasswordPage() {
     return (
       <Shell>
         <CardContent className="flex items-center justify-center py-16">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <LogoLoader />
         </CardContent>
       </Shell>
     )

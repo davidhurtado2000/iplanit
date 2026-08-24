@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { ImageOff } from 'lucide-react'
 import type { BlogArticleRow, BlogCategoryRow } from '@/lib/blog'
+import { blogT, categoryName, type BlogLanguage } from '@/lib/blog-i18n'
 
 /**
  * Compact card matching wireframe_blog_iplanit.html: short fixed-height
@@ -8,7 +9,16 @@ import type { BlogArticleRow, BlogCategoryRow } from '@/lib/blog'
  * dense grid, not a magazine-style card. Glass surface (translucent white +
  * blur) is the visual treatment layered on top of that structure.
  */
-export function ArticleCard({ article, category }: { article: BlogArticleRow; category: BlogCategoryRow | undefined }) {
+export function ArticleCard({
+  article,
+  category,
+  language,
+}: {
+  article: BlogArticleRow
+  category: BlogCategoryRow | undefined
+  language: BlogLanguage
+}) {
+  const t = blogT(language)
   return (
     <Link
       href={`/blog/${category?.slug ?? 'general'}/${article.slug}`}
@@ -28,17 +38,17 @@ export function ArticleCard({ article, category }: { article: BlogArticleRow; ca
       </div>
       <div className="space-y-1.5 p-3">
         <div className="flex items-center gap-2">
-          {category && <span className="text-[11px] font-medium text-primary">{category.name}</span>}
+          {category && <span className="text-[11px] font-medium text-primary">{categoryName(category, language)}</span>}
           {article.status === 'draft' && (
             <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">
-              Borrador
+              {t.draftBadge}
             </span>
           )}
         </div>
         <h3 className="text-sm font-medium leading-snug text-foreground transition-colors group-hover:text-primary">
           {article.title}
         </h3>
-        <p className="text-xs text-muted-foreground">{article.reading_time_minutes ?? 5} min de lectura</p>
+        <p className="text-xs text-muted-foreground">{t.minRead(article.reading_time_minutes ?? 5)}</p>
       </div>
     </Link>
   )

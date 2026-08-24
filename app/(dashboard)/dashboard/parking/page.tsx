@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
-import { Skeleton } from '@/components/ui/skeleton'
+import { LogoLoader } from '@/components/logo-loader'
 import { HeroKpiCard } from '@/components/dashboard/hero-kpi-card'
 import { cn } from '@/lib/utils'
 import {
@@ -142,10 +142,8 @@ export default function ParkingPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <Skeleton className="h-12 w-64" />
-        <Skeleton className="h-32 w-full" />
-        <Skeleton className="h-64 w-full" />
+      <div className="flex items-center justify-center py-24">
+        <LogoLoader />
       </div>
     )
   }

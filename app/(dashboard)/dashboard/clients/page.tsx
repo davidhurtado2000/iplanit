@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Skeleton } from '@/components/ui/skeleton'
+import { LogoLoader } from '@/components/logo-loader'
 import {
   Dialog,
   DialogContent,
@@ -615,14 +615,8 @@ export default function ClientsPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <Skeleton className="h-12 w-48" />
-        <div className="grid gap-4 md:grid-cols-3">
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-        </div>
-        <Skeleton className="h-64 w-full" />
+      <div className="flex items-center justify-center py-24">
+        <LogoLoader />
       </div>
     )
   }

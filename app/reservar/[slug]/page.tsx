@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -32,7 +32,8 @@ import { capitalizeFirst, cn } from '@/lib/utils'
 import { parseInTimezone } from '@/lib/timezone'
 import { generateAvailableSlots, isDayClosed } from '@/lib/availability'
 import { sendReservationNotification } from '@/lib/email/notify'
-import { TurnstileWidget } from '@/components/turnstile-widget'
+import { TurnstileWidget, type TurnstileWidgetHandle } from '@/components/turnstile-widget'
+import { LogoLoader } from '@/components/logo-loader'
 
 interface PublicBusiness {
   id: string
@@ -135,6 +136,18 @@ export default function PublicBookingPage() {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  const turnstileRef = useRef<TurnstileWidgetHandle>(null)
+
+  // Turnstile tokens are single-use - a failed submit (any error, not just
+  // a bot-verification one) still spends the token already sent, even
+  // though the widget keeps showing its checkmark from the first verify.
+  // Without this, a corrected retry silently resends the stale token and
+  // the server rejects it as bot_verification_failed - showing "couldn't
+  // verify you're human" for what was really e.g. a missing name field.
+  const resetTurnstile = () => {
+    turnstileRef.current?.reset()
+    setTurnstileToken(null)
+  }
   const [manageReservationId, setManageReservationId] = useState<string | null>(null)
   const [linkCopied, setLinkCopied] = useState(false)
 
@@ -325,6 +338,7 @@ export default function PublicBookingPage() {
           bot_verification_failed: tr.errorBotVerification,
         }
         setSubmitError(messages[result.error || ''] || tr.errorGeneric)
+        resetTurnstile()
         return
       }
       setManageReservationId(result.reservation_id || null)
@@ -335,6 +349,7 @@ export default function PublicBookingPage() {
     } catch (err) {
       console.error('[v0] Error creating public reservation:', err)
       setSubmitError(tr.errorGeneric)
+      resetTurnstile()
     } finally {
       setSubmitting(false)
     }
@@ -364,7 +379,7 @@ export default function PublicBookingPage() {
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-muted/30">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <LogoLoader />
       </div>
     )
   }
@@ -851,7 +866,7 @@ export default function PublicBookingPage() {
                     </div>
                   )}
 
-                  <TurnstileWidget onVerify={setTurnstileToken} onExpire={() => setTurnstileToken(null)} />
+                  <TurnstileWidget ref={turnstileRef} onVerify={setTurnstileToken} onExpire={() => setTurnstileToken(null)} />
 
                   <Button type="submit" className="w-full gap-2" disabled={submitting || !contactForm.name}>
                     {submitting && <Loader2 className="h-4 w-4 animate-spin" />}

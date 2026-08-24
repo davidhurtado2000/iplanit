@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
 import type { DateRange } from 'react-day-picker'
-import { Skeleton } from '@/components/ui/skeleton'
+import { LogoLoader } from '@/components/logo-loader'
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
@@ -577,10 +577,8 @@ export default function AnalyticsPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <Skeleton className="h-10 w-64" />
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-80 w-full" />
+      <div className="flex items-center justify-center py-24">
+        <LogoLoader />
       </div>
     )
   }

@@ -2,7 +2,7 @@
 
 import React from 'react'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,7 +20,7 @@ import { supabase } from '@/lib/supabase/client'
 import { Confetti } from '@/components/confetti'
 import { LanguageToggle } from '@/components/language-toggle'
 import { PasswordStrength } from '@/components/password-strength'
-import { TurnstileWidget } from '@/components/turnstile-widget'
+import { TurnstileWidget, type TurnstileWidgetHandle } from '@/components/turnstile-widget'
 import { useLanguage } from '@/context/language-context'
 import { translateAuthError, isDuplicateSignupUser, withAuthLockRetry } from '@/lib/supabase/auth-errors'
 import { getPasswordChecks, isPasswordStrongEnough } from '@/lib/password'
@@ -69,6 +69,17 @@ export default function RegisterPage() {
   const [error, setError] = useState('')
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  const turnstileRef = useRef<TurnstileWidgetHandle>(null)
+
+  // Turnstile tokens are single-use - a failed signup attempt still spends
+  // the token already sent, even though the widget keeps showing its
+  // checkmark from the first verify. Without this, a retry silently
+  // resends the stale token and fails with a confusing captcha error
+  // instead of the real one.
+  const resetTurnstile = () => {
+    turnstileRef.current?.reset()
+    setTurnstileToken(null)
+  }
 
   const passwordChecks = getPasswordChecks(formData.password)
 
@@ -121,11 +132,13 @@ export default function RegisterPage() {
       if (signUpError) {
         console.error('[iplanit] signUp error:', signUpError.message)
         setError(translateAuthError(signUpError.message, language))
+        resetTurnstile()
         return
       }
 
       if (isDuplicateSignupUser(authData.user)) {
         setError(translateAuthError('User already registered', language))
+        resetTurnstile()
         return
       }
 
@@ -146,6 +159,7 @@ export default function RegisterPage() {
     } catch (err) {
       setError(translateAuthError(null, language))
       console.error('Registration error:', err)
+      resetTurnstile()
     } finally {
       setIsLoading(false)
     }
@@ -397,7 +411,7 @@ export default function RegisterPage() {
                   </span>
                 </label>
 
-                <TurnstileWidget onVerify={setTurnstileToken} onExpire={() => setTurnstileToken(null)} />
+                <TurnstileWidget ref={turnstileRef} onVerify={setTurnstileToken} onExpire={() => setTurnstileToken(null)} />
 
                 <div className="flex gap-2">
                   <Button

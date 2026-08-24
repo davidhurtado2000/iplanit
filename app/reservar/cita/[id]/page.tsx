@@ -20,6 +20,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/context/language-context'
 import { capitalizeFirst } from '@/lib/utils'
 import { StatusBadge } from '@/components/dashboard/status-badge'
+import { LogoLoader } from '@/components/logo-loader'
 import { sendReservationNotification } from '@/lib/email/notify'
 import { LanguageToggle } from '@/components/language-toggle'
 
@@ -103,7 +104,7 @@ export default function ManageReservationPage() {
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-muted/30">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <LogoLoader />
       </div>
     )
   }
