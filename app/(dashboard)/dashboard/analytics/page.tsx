@@ -688,7 +688,7 @@ export default function AnalyticsPage() {
         }
       />
 
-      <PremiumFeature featureName={tr.premiumTitle}>
+      <PremiumFeature featureName={tr.premiumTitle} requiredPlan="pro">
         <Tabs defaultValue="overview" className="space-y-4">
           <TabsList className="flex-wrap">
             <TabsTrigger value="overview">{tr.tabOverview}</TabsTrigger>

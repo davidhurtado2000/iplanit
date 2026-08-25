@@ -10,10 +10,9 @@ export const FREE_LIMITS = {
   resources: 2,
 }
 
-// Pro has no cap on reservations/clients (see limitFor below) - only
-// services, resources and team seats stay capped, higher than Free.
+// Pro has no cap on reservations/clients/services (see limitFor below) -
+// only resources and team seats stay capped, higher than Free.
 export const PRO_LIMITS = {
-  services: 5,
   resources: 5,
   teamSeats: 2,
 }
@@ -43,6 +42,7 @@ export function meetsPlan(plan: string | null | undefined, required: 'pro' | 'pr
 function limitFor(plan: PlanTier, kind: PlanUsageKind): number | null {
   if (kind === 'reservations_this_month') return plan === 'free' ? FREE_LIMITS.reservationsPerMonth : null
   if (kind === 'clients') return plan === 'free' ? FREE_LIMITS.clients : null
+  if (kind === 'services') return plan === 'free' ? FREE_LIMITS.services : null
   if (plan === 'premium') return null
   return plan === 'pro' ? PRO_LIMITS[kind] : FREE_LIMITS[kind]
 }

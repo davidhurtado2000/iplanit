@@ -106,9 +106,6 @@ export function PlanUsageBanner() {
       items.push({ label: labels.resources, used: usage.resources, limit: FREE_LIMITS.resources })
     }
   } else if (usage.plan === 'pro') {
-    if (usage.services > PRO_LIMITS.services) {
-      items.push({ label: labels.services, used: usage.services, limit: PRO_LIMITS.services })
-    }
     if (usage.resources > PRO_LIMITS.resources) {
       items.push({ label: labels.resources, used: usage.resources, limit: PRO_LIMITS.resources })
     }

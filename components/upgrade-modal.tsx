@@ -122,13 +122,13 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan }: Upgrade
 
   const PRO_FEATURES = [
     { icon: Clock, title: m.featureUnlimitedTitle, description: m.featureUnlimitedDesc },
+    { icon: BarChart3, title: m.featureAnalyticsTitle, description: m.featureAnalyticsDesc },
     { icon: Layers, title: m.featureProCapTitle, description: m.featureProCapDesc },
     { icon: UserPlus, title: m.featureProSeatsTitle, description: m.featureProSeatsDesc },
     { icon: Repeat, title: m.featureProRecurringTitle, description: m.featureProRecurringDesc },
   ]
 
   const PREMIUM_FEATURES = [
-    { icon: BarChart3, title: m.featureAnalyticsTitle, description: m.featureAnalyticsDesc },
     { icon: Users, title: m.featureClientHistoryTitle, description: m.featureClientHistoryDesc },
     { icon: Layers, title: m.featureUnlimitedRecordsTitle, description: m.featureUnlimitedRecordsDesc },
     { icon: FileSpreadsheet, title: m.featureCsvTitle, description: m.featureCsvDesc },

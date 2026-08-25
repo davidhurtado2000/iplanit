@@ -49,6 +49,7 @@ export function Pricing() {
       // the in-app modal can skip since its audience already knows iPlanit.
       features: [
         { title: u.featureUnlimitedTitle, desc: u.featureUnlimitedDesc },
+        { title: u.featureAnalyticsTitle, desc: u.featureAnalyticsDesc },
         { title: u.featureProCapTitle, desc: u.featureProCapDesc },
         { title: u.featureProSeatsTitle, desc: u.featureProSeatsDesc },
         { title: u.featureProRecurringTitle, desc: u.featureProRecurringDesc },
@@ -63,7 +64,6 @@ export function Pricing() {
       highlight: true,
       includesLabel: l.planPremiumIncludesPro,
       features: [
-        { title: u.featureAnalyticsTitle, desc: u.featureAnalyticsDesc },
         { title: u.featureClientHistoryTitle, desc: u.featureClientHistoryDesc },
         { title: u.featureUnlimitedRecordsTitle, desc: u.featureUnlimitedRecordsDesc },
         { title: u.featureCsvTitle, desc: u.featureCsvDesc },

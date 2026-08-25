@@ -2081,6 +2081,7 @@ export default function SettingsPage() {
                       [
                         ['reservations_this_month', t.upgradeModal.reservationsPerMonthLabel],
                         ['clients', t.upgradeModal.clientsLabel],
+                        ['services', t.upgradeModal.servicesLabel],
                       ] as const
                     ).map(([key, label]) => (
                       <div key={key} className="flex items-center justify-between text-sm">
@@ -2095,7 +2096,6 @@ export default function SettingsPage() {
                     ))}
                     {(
                       [
-                        ['services', t.upgradeModal.servicesLabel, PRO_LIMITS.services],
                         ['resources', t.upgradeModal.resourcesLabel, PRO_LIMITS.resources],
                       ] as const
                     ).map(([key, label, limit]) => {
