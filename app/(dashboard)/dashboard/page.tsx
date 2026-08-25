@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -196,11 +196,23 @@ export default function DashboardPage() {
       ? `${window.location.origin}/reservar/${currentBusiness.slug}`
       : ''
   const [linkCopied, setLinkCopied] = useState(false)
+  const bookingLinkInputRef = useRef<HTMLInputElement>(null)
   const handleCopyLink = async () => {
     if (!bookingLink) return
-    await navigator.clipboard.writeText(bookingLink)
-    setLinkCopied(true)
-    setTimeout(() => setLinkCopied(false), 2000)
+    try {
+      // navigator.clipboard can be missing or throw (NotAllowedError) in
+      // several mobile in-app browsers - this crashed the whole dashboard
+      // with an unhandled exception when tried from one. Fall back to
+      // selecting the (already visible, read-only) input's text instead.
+      if (!navigator.clipboard) throw new Error('Clipboard API unavailable')
+      await navigator.clipboard.writeText(bookingLink)
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 2000)
+    } catch (err) {
+      console.error('[iplanit] Clipboard write failed, falling back to text selection:', err)
+      bookingLinkInputRef.current?.select()
+      bookingLinkInputRef.current?.setSelectionRange(0, bookingLink.length)
+    }
   }
 
   const [followUpPrefill, setFollowUpPrefill] = useState<{
@@ -546,7 +558,7 @@ export default function DashboardPage() {
           <CardContent>
             {bookingLink ? (
               <div className="space-y-2">
-                <Input value={bookingLink} readOnly className="font-mono text-xs" />
+                <Input ref={bookingLinkInputRef} value={bookingLink} readOnly className="font-mono text-xs" />
                 <div className="flex gap-2">
                   <Button type="button" variant="outline" size="sm" onClick={handleCopyLink} className="flex-1 gap-2">
                     {linkCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}

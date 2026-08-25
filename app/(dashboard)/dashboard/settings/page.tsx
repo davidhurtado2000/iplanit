@@ -68,6 +68,7 @@ import {
   Copy,
   ExternalLink,
   Link2,
+  Gift,
 } from 'lucide-react'
 
 type DayOfWeek = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday'
@@ -421,6 +422,19 @@ export default function SettingsPage() {
   const [isSavingNotifications, setIsSavingNotifications] = useState(false)
   const [notifSaveStatus, setNotifSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
 
+  // Birthday Emails State - see scripts/071-client-birthdays.sql. Separate
+  // save action/status from the notifications above (own card, own fields),
+  // even though it's the same kind of automated email under the hood.
+  // discountPercent is kept as a string so the input can be empty (no
+  // discount mentioned) instead of forcing 0.
+  const [birthday, setBirthday] = useState({
+    enabled: false,
+    discountPercent: '',
+    window: 'day' as 'day' | 'week' | 'month',
+  })
+  const [isSavingBirthday, setIsSavingBirthday] = useState(false)
+  const [birthdaySaveStatus, setBirthdaySaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
+
   // next-themes reads the resolved theme from localStorage/system on the
   // client only - rendering the Select before that resolves would show the
   // wrong value for a flash and risk a hydration mismatch.
@@ -463,6 +477,12 @@ export default function SettingsPage() {
         emailReminders: currentBusiness.notify_reminders ?? true,
         emailCancellations: currentBusiness.notify_cancellations ?? true,
         reminderHours: currentBusiness.reminder_hours ?? 24,
+      })
+      setBirthday({
+        enabled: currentBusiness.birthday_emails_enabled ?? false,
+        discountPercent:
+          currentBusiness.birthday_discount_percent != null ? String(currentBusiness.birthday_discount_percent) : '',
+        window: currentBusiness.birthday_window ?? 'day',
       })
     }
   }, [authProfile, user, currentBusiness])
@@ -747,11 +767,23 @@ export default function SettingsPage() {
       ? `${window.location.origin}/reservar/${currentBusiness.slug}`
       : ''
 
+  const bookingLinkInputRef = useRef<HTMLInputElement>(null)
   const handleCopyLink = async () => {
     if (!bookingLink) return
-    await navigator.clipboard.writeText(bookingLink)
-    setLinkCopied(true)
-    setTimeout(() => setLinkCopied(false), 2000)
+    try {
+      // navigator.clipboard can be missing or throw (NotAllowedError) in
+      // several mobile in-app browsers - this crashed the whole dashboard
+      // with an unhandled exception when tried from one. Fall back to
+      // selecting the (already visible, read-only) input's text instead.
+      if (!navigator.clipboard) throw new Error('Clipboard API unavailable')
+      await navigator.clipboard.writeText(bookingLink)
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 2000)
+    } catch (err) {
+      console.error('[iplanit] Clipboard write failed, falling back to text selection:', err)
+      bookingLinkInputRef.current?.select()
+      bookingLinkInputRef.current?.setSelectionRange(0, bookingLink.length)
+    }
   }
 
   const handleSave = async () => {
@@ -847,6 +879,29 @@ export default function SettingsPage() {
       setTimeout(() => setNotifSaveStatus('idle'), 4000)
     } finally {
       setIsSavingNotifications(false)
+    }
+  }
+
+  const handleSaveBirthday = async () => {
+    if (!currentBusiness) return
+    setIsSavingBirthday(true)
+    setBirthdaySaveStatus('idle')
+    try {
+      const trimmedPercent = birthday.discountPercent.trim()
+      await updateBusiness(currentBusiness.id, {
+        birthday_emails_enabled: birthday.enabled,
+        birthday_discount_percent: trimmedPercent ? Number(trimmedPercent) : null,
+        birthday_window: birthday.window,
+      })
+      setBirthdaySaveStatus('success')
+      setTimeout(() => setBirthdaySaveStatus('idle'), 3000)
+    } catch (err) {
+      console.error('[iplanit] Error saving birthday email preferences:', err)
+      setBirthdaySaveStatus('error')
+      toast.error(t.saveError)
+      setTimeout(() => setBirthdaySaveStatus('idle'), 4000)
+    } finally {
+      setIsSavingBirthday(false)
     }
   }
 
@@ -1538,7 +1593,7 @@ export default function SettingsPage() {
                 <CardContent>
                   {bookingLink ? (
                     <div className="flex flex-col gap-2 sm:flex-row">
-                      <Input value={bookingLink} readOnly className="font-mono text-xs sm:text-sm" />
+                      <Input ref={bookingLinkInputRef} value={bookingLink} readOnly className="font-mono text-xs sm:text-sm" />
                       <div className="flex gap-2">
                         <Button type="button" variant="outline" onClick={handleCopyLink} className="gap-2">
                           {linkCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
@@ -1781,6 +1836,88 @@ export default function SettingsPage() {
                   <span className="text-sm text-green-600">{t.changesSaved}</span>
                 )}
                 {notifSaveStatus === 'error' && (
+                  <span className="text-sm text-destructive">{t.saveError}</span>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Birthday emails - see scripts/071-client-birthdays.sql. Separate
+              card from the notifications above: different fields (discount,
+              window) and no relation to a specific reservation. */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Gift className="h-5 w-5 text-primary" />
+                {t.settings.birthdayTitle}
+              </CardTitle>
+              <CardDescription>{t.settings.birthdayDesc}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>{t.settings.birthdayEnable}</Label>
+                  <p className="text-sm text-muted-foreground">{t.settings.birthdayEnableDesc}</p>
+                </div>
+                <Switch
+                  checked={birthday.enabled}
+                  onCheckedChange={(checked) => setBirthday({ ...birthday, enabled: checked })}
+                />
+              </div>
+
+              {birthday.enabled && (
+                <div className="ml-4 space-y-4 border-l-2 pl-4">
+                  <div className="space-y-2">
+                    <Label>{t.settings.birthdayDiscount}</Label>
+                    <p className="text-xs text-muted-foreground">{t.settings.birthdayDiscountDesc}</p>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        placeholder="0"
+                        className="w-24"
+                        value={birthday.discountPercent}
+                        onChange={(e) => setBirthday({ ...birthday, discountPercent: e.target.value })}
+                      />
+                      <span className="text-sm text-muted-foreground">%</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>{t.settings.birthdayWindow}</Label>
+                    <Select
+                      value={birthday.window}
+                      onValueChange={(value) => setBirthday({ ...birthday, window: value as 'day' | 'week' | 'month' })}
+                    >
+                      <SelectTrigger className="w-full sm:w-[220px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="day">{t.settings.birthdayWindowDay}</SelectItem>
+                        <SelectItem value="week">{t.settings.birthdayWindowWeek}</SelectItem>
+                        <SelectItem value="month">{t.settings.birthdayWindowMonth}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+
+              <Separator />
+
+              <div className="flex items-center gap-3">
+                <Button onClick={handleSaveBirthday} disabled={isSavingBirthday || !currentBusiness} className="gap-2">
+                  {isSavingBirthday
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : birthdaySaveStatus === 'success'
+                      ? <Check className="h-4 w-4" />
+                      : <Save className="h-4 w-4" />}
+                  {t.saveChanges}
+                </Button>
+                {birthdaySaveStatus === 'success' && (
+                  <span className="text-sm text-green-600">{t.changesSaved}</span>
+                )}
+                {birthdaySaveStatus === 'error' && (
                   <span className="text-sm text-destructive">{t.saveError}</span>
                 )}
               </div>

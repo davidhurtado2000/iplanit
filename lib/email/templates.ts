@@ -359,3 +359,53 @@ export function buildFeedbackNotificationEmail(data: FeedbackEmailData): { subje
     ),
   }
 }
+
+export interface BirthdayEmailData {
+  clientName: string
+  businessName: string
+  language: EmailLanguage
+  /** Purely informational (see plan discussion) - the business honors this
+   * manually, nothing here adjusts a price or generates a redeemable code. */
+  discountPercent: number | null
+}
+
+// Fires from app/api/cron/send-birthday-emails - businessName/clientName
+// both end up interpolated into the HTML body, same escaping reasoning as
+// ReservationEmailData above (clientName is free text from the dashboard's
+// client form or CSV import).
+export function buildBirthdayEmail(data: BirthdayEmailData): { subject: string; html: string } {
+  const { clientName, businessName, language, discountPercent } = data
+  const name = escapeHtml(clientName)
+  const business = escapeHtml(businessName)
+
+  if (language === 'es') {
+    return {
+      subject: `${businessName} te desea un feliz cumpleanos`,
+      html: emailLayout(
+        'es',
+        'Feliz cumpleanos',
+        `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hola ${name},</p>
+         <p style="font-size: 14px; color: #374151; margin: 0;">Todo el equipo de <strong>${business}</strong> te desea un muy feliz cumpleanos.</p>
+         ${
+           discountPercent
+             ? `<p style="font-size: 14px; color: #374151; margin: 16px 0 0 0;">Como regalo, tienes <strong>${discountPercent}% de descuento</strong> - mencionalo al reservar o al momento de tu cita.</p>`
+             : ''
+         }`
+      ),
+    }
+  }
+  return {
+    subject: `${businessName} wishes you a happy birthday`,
+    html: emailLayout(
+      'en',
+      'Happy birthday',
+      `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hi ${name},</p>
+       <p style="font-size: 14px; color: #374151; margin: 0;">The whole team at <strong>${business}</strong> wishes you a very happy birthday.</p>
+       ${
+         discountPercent
+           ? `<p style="font-size: 14px; color: #374151; margin: 16px 0 0 0;">As a gift, you have <strong>${discountPercent}% off</strong> - just mention it when booking or at your appointment.</p>`
+           : ''
+       }`
+    ),
+  }
+}

@@ -47,7 +47,7 @@ import { useLanguage } from '@/context/language-context'
 import { useDashboardData, type Reservation } from '@/context/dashboard-data-context'
 import { createClient } from '@/lib/supabase/client'
 import { StatusBadge } from '@/components/dashboard/status-badge'
-import { cn } from '@/lib/utils'
+import { capitalizeFirst, cn } from '@/lib/utils'
 import { sedeAbbr, sedeTint, buildBusinessColorIndex } from '@/lib/sede-colors'
 import { countryDateLocale } from '@/lib/date-format'
 import {
@@ -127,6 +127,8 @@ interface Client {
   created_at: string
   document_type: ClientDocumentType | null
   document_number: string | null
+  birthday_month: number | null
+  birthday_day: number | null
 }
 
 const DOCUMENT_TYPES: ClientDocumentType[] = ['dni', 'ruc', 'ein', 'passport', 'other']
@@ -138,9 +140,11 @@ interface ImportedClientRow {
   notes: string | null
   document_type: ClientDocumentType | null
   document_number: string | null
+  birthday_month: number | null
+  birthday_day: number | null
 }
 
-type ImportField = 'name' | 'email' | 'phone' | 'documentType' | 'documentNumber' | 'notes'
+type ImportField = 'name' | 'email' | 'phone' | 'documentType' | 'documentNumber' | 'notes' | 'birthday'
 
 // Lowercased, accent-stripped header names a client is likely to use when
 // exporting their existing list from Excel/Sheets/another CRM - matched
@@ -152,6 +156,40 @@ const IMPORT_HEADER_ALIASES: Record<ImportField, string[]> = {
   documentType: ['tipo de documento', 'tipo documento', 'document type'],
   documentNumber: ['documento', 'numero de documento', 'nro documento', 'document number', 'dni', 'ruc'],
   notes: ['notas', 'notes', 'observaciones', 'comentarios'],
+  birthday: ['cumpleanos', 'fecha de nacimiento', 'nacimiento', 'birthday', 'date of birth', 'dob'],
+}
+
+const DAYS_IN_MONTH = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+// Only accepts unambiguous or country-conventional formats - a silently
+// misparsed day/month (07/03 read as March 7 for a business that meant July
+// 3) would be worse than just skipping the field, since it would send the
+// birthday email on the wrong date every year until someone notices.
+function parseBirthdayFromCsv(raw: string, isUS: boolean): { month: number; day: number } | null {
+  const value = raw.trim()
+  if (!value) return null
+
+  const iso = value.match(/^\d{4}-(\d{1,2})-(\d{1,2})$/)
+  if (iso) return normalizeMonthDay(Number(iso[1]), Number(iso[2]))
+
+  const slashOrDash = value.match(/^(\d{1,2})[/-](\d{1,2})(?:[/-]\d{2,4})?$/)
+  if (slashOrDash) {
+    const a = Number(slashOrDash[1])
+    const b = Number(slashOrDash[2])
+    // Unambiguous cases first (only one of the two orderings is a valid
+    // month), then fall back to the business's own country convention.
+    if (a > 12 && b <= 12) return normalizeMonthDay(b, a)
+    if (b > 12 && a <= 12) return normalizeMonthDay(a, b)
+    return isUS ? normalizeMonthDay(a, b) : normalizeMonthDay(b, a)
+  }
+
+  return null
+}
+
+function normalizeMonthDay(month: number, day: number): { month: number; day: number } | null {
+  if (month < 1 || month > 12) return null
+  if (day < 1 || day > DAYS_IN_MONTH[month - 1]) return null
+  return { month, day }
 }
 
 function normalizeHeader(h: string): string {
@@ -179,7 +217,7 @@ export default function ClientsPage() {
   const { currentBusiness, businesses } = useBusinesses()
   const { profile } = useAuth()
   const { t, locale } = useLanguage()
-  const { clients, services, loading, refetchClients } = useDashboardData()
+  const { clients, services, workers, loading, refetchClients } = useDashboardData()
   const [saving, setSaving] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
@@ -216,6 +254,12 @@ export default function ClientsPage() {
   // Peru business can have a foreign client with a passport, and vice versa).
   const defaultDocumentType: ClientDocumentType = currentBusiness?.country === 'US' ? 'ein' : 'dni'
 
+  // Localized month names for the birthday selects below - no year involved
+  // (any leap year works fine as the throwaway date, Feb just needs to exist).
+  const monthLabels = Array.from({ length: 12 }, (_, i) =>
+    capitalizeFirst(new Intl.DateTimeFormat(locale, { month: 'long' }).format(new Date(2000, i, 1)))
+  )
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -223,6 +267,8 @@ export default function ClientsPage() {
     notes: '',
     documentType: defaultDocumentType as ClientDocumentType,
     documentNumber: '',
+    birthdayMonth: '' as number | '',
+    birthdayDay: '' as number | '',
   })
 
   // Clients are now shared org-wide (organization_id, scripts/053) - when
@@ -442,6 +488,7 @@ export default function ClientsPage() {
         const documentNumber = get('documentNumber') || null
         const rawType = normalizeHeader(get('documentType')) as ClientDocumentType
         const documentType = DOCUMENT_TYPES.includes(rawType) ? rawType : defaultDocumentType
+        const birthday = parseBirthdayFromCsv(get('birthday'), currentBusiness?.country === 'US')
 
         rows.push({
           name,
@@ -450,6 +497,8 @@ export default function ClientsPage() {
           notes: get('notes') || null,
           document_type: documentNumber ? documentType : null,
           document_number: documentNumber,
+          birthday_month: birthday?.month ?? null,
+          birthday_day: birthday?.day ?? null,
         })
       }
 
@@ -515,6 +564,8 @@ export default function ClientsPage() {
         notes: client.notes || '',
         documentType: client.document_type || defaultDocumentType,
         documentNumber: client.document_number || '',
+        birthdayMonth: client.birthday_month ?? '',
+        birthdayDay: client.birthday_day ?? '',
       })
     } else {
       setEditingClient(null)
@@ -525,6 +576,8 @@ export default function ClientsPage() {
         notes: '',
         documentType: defaultDocumentType,
         documentNumber: '',
+        birthdayMonth: '',
+        birthdayDay: '',
       })
     }
     setSaveError('')
@@ -545,6 +598,8 @@ export default function ClientsPage() {
         notes: formData.notes || null,
         document_type: formData.documentNumber ? formData.documentType : null,
         document_number: formData.documentNumber || null,
+        birthday_month: formData.birthdayMonth || null,
+        birthday_day: formData.birthdayDay || null,
       }
 
       if (editingClient) {
@@ -1172,6 +1227,58 @@ export default function ClientsPage() {
             </div>
 
             <div className="space-y-2">
+              <Label>{t.clients.birthdayLabel}</Label>
+              <p className="text-xs text-muted-foreground">{t.clients.birthdayHint}</p>
+              <div className="grid grid-cols-2 gap-3">
+                <Select
+                  value={formData.birthdayMonth ? String(formData.birthdayMonth) : ''}
+                  onValueChange={(value) =>
+                    setFormData({
+                      ...formData,
+                      birthdayMonth: Number(value),
+                      // Clamp the day if it's no longer valid for the newly
+                      // picked month (e.g. had 31 selected, switched to Feb).
+                      birthdayDay:
+                        formData.birthdayDay && Number(formData.birthdayDay) > DAYS_IN_MONTH[Number(value) - 1]
+                          ? DAYS_IN_MONTH[Number(value) - 1]
+                          : formData.birthdayDay,
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={t.clients.birthdayMonthPlaceholder} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {monthLabels.map((label, i) => (
+                      <SelectItem key={i} value={String(i + 1)}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={formData.birthdayDay ? String(formData.birthdayDay) : ''}
+                  onValueChange={(value) => setFormData({ ...formData, birthdayDay: Number(value) })}
+                  disabled={!formData.birthdayMonth}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={t.clients.birthdayDayPlaceholder} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from(
+                      { length: formData.birthdayMonth ? DAYS_IN_MONTH[Number(formData.birthdayMonth) - 1] : 31 },
+                      (_, i) => i + 1
+                    ).map((day) => (
+                      <SelectItem key={day} value={String(day)}>
+                        {day}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="notes">{t.clients.notesLabel}</Label>
               <Textarea
                 id="notes"
@@ -1379,16 +1486,17 @@ export default function ClientsPage() {
                       <>
                         {clientHistory.map((reservation) => {
                           const service = services.find((s) => s.id === reservation.service_id)
+                          const worker = workers.find((w) => w.id === reservation.worker_id)
                           return (
                             <div
                               key={reservation.id}
-                              className="flex items-center gap-3 rounded-lg border p-3"
+                              className="flex items-start gap-3 rounded-lg border p-3"
                             >
                               <div
-                                className="h-8 w-1 rounded-full"
+                                className="mt-0.5 h-8 w-1 shrink-0 rounded-full"
                                 style={{ backgroundColor: service?.color || '#3B82F6' }}
                               />
-                              <div className="flex-1">
+                              <div className="min-w-0 flex-1">
                                 <p className="text-sm font-medium">{service?.name ?? t.calendar.unknownService}</p>
                                 <p className="text-xs text-muted-foreground">
                                   {new Date(reservation.start_time).toLocaleDateString(locale, {
@@ -1399,7 +1507,11 @@ export default function ClientsPage() {
                                     hour: '2-digit',
                                     minute: '2-digit',
                                   })}
+                                  {worker && ` · ${worker.name}`}
                                 </p>
+                                {reservation.notes && (
+                                  <p className="mt-1.5 text-xs text-foreground/80">{reservation.notes}</p>
+                                )}
                               </div>
                               <StatusBadge
                                 status={reservation.status}

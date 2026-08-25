@@ -79,6 +79,10 @@ export interface Client {
   is_active: boolean
   document_type: ClientDocumentType | null
   document_number: string | null
+  /** Month/day only, deliberately no year (scripts/071-client-birthdays.sql) -
+   * this feature doesn't need the client's age. */
+  birthday_month: number | null
+  birthday_day: number | null
 }
 
 export interface Service {

@@ -25,7 +25,7 @@ import { capitalizeFirst, cn } from '@/lib/utils'
 import { sedeAbbr, sedeTint } from '@/lib/sede-colors'
 import { createClient } from '@/lib/supabase/client'
 import type { CalendarView } from '@/lib/types'
-import { Plus, CalendarDays, CalendarRange, Calendar as CalendarIcon, Clock, ChevronDown, Building2, List, Eye, Loader2 } from 'lucide-react'
+import { Plus, CalendarDays, CalendarRange, Calendar as CalendarIcon, Clock, ChevronDown, Building2, List, Eye, Loader2, History } from 'lucide-react'
 
 interface Reservation {
   id: string
@@ -225,6 +225,9 @@ function CalendarPageInner() {
   const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null)
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view'>('create')
   const [modalInitialType, setModalInitialType] = useState<'booking' | 'visit'>('booking')
+  // Only true when opened via "Registrar cita pasada" below - see
+  // reservation-modal.tsx's own `backdated` prop docs for what it changes.
+  const [modalBackdated, setModalBackdated] = useState(false)
   const [followUpPrefill, setFollowUpPrefill] = useState<{
     clientId: string
     serviceId: string | null
@@ -264,6 +267,7 @@ function CalendarPageInner() {
     setSelectedReservation(null)
     setModalMode('create')
     setModalInitialType('booking')
+    setModalBackdated(false)
     setFollowUpPrefill(null)
     setCreatePrefill(null)
     setIsModalOpen(true)
@@ -273,6 +277,17 @@ function CalendarPageInner() {
     setSelectedReservation(null)
     setModalMode('create')
     setModalInitialType('visit')
+    setModalBackdated(false)
+    setFollowUpPrefill(null)
+    setCreatePrefill(null)
+    setIsModalOpen(true)
+  }
+
+  const handleCreateBackdated = () => {
+    setSelectedReservation(null)
+    setModalMode('create')
+    setModalInitialType('booking')
+    setModalBackdated(true)
     setFollowUpPrefill(null)
     setCreatePrefill(null)
     setIsModalOpen(true)
@@ -303,6 +318,7 @@ function CalendarPageInner() {
     setSelectedReservation(null)
     setModalMode('create')
     setModalInitialType('booking')
+    setModalBackdated(false)
     setFollowUpPrefill(null)
     setCreatePrefill({ resourceId, startHint: dateTimeLocal, endHint: endDateTimeLocal, date: dateTimeLocal.split('T')[0], serviceId })
     setIsModalOpen(true)
@@ -331,6 +347,7 @@ function CalendarPageInner() {
     setSelectedReservation(null)
     setModalMode('create')
     setModalInitialType('booking')
+    setModalBackdated(false)
     setFollowUpPrefill(source)
     setCreatePrefill(null)
   }
@@ -495,6 +512,15 @@ function CalendarPageInner() {
             <Plus className="h-4 w-4" />
             <span className="hidden sm:inline">{t.calendar.newVisit}</span>
             <span className="sm:hidden">{t.calendar.newVisitShort}</span>
+          </Button>
+          {/* Separate, always-visible entry point for logging a forgotten
+              appointment - deliberately not a quiet toggle inside the normal
+              create form (see reservation-modal.tsx's `backdated` prop docs
+              and memory/feedback_obvious_ui_for_secondary_actions.md). */}
+          <Button onClick={handleCreateBackdated} size="sm" variant="outline" className="gap-2">
+            <History className="h-4 w-4" />
+            <span className="hidden sm:inline">{t.calendar.newBackdated}</span>
+            <span className="sm:hidden">{t.calendar.newBackdatedShort}</span>
           </Button>
         </div>
       </div>
@@ -715,6 +741,7 @@ function CalendarPageInner() {
         prefillResourceId={createPrefill?.resourceId ?? undefined}
         prefillStartHint={createPrefill?.startHint}
         prefillEndHint={createPrefill?.endHint}
+        backdated={modalBackdated}
       />
     </div>
   )

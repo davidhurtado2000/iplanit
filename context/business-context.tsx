@@ -47,6 +47,12 @@ interface Business {
   notify_cancellations: boolean
   notify_reminders: boolean
   reminder_hours: number
+  /** Client birthday emails - see scripts/071-client-birthdays.sql. The
+   * discount is informational only (mentioned in the email, applied
+   * manually by the business) - nothing here touches pricing/checkout. */
+  birthday_emails_enabled: boolean
+  birthday_discount_percent: number | null
+  birthday_window: 'day' | 'week' | 'month'
   created_at: string
   updated_at: string
   /** 'owner' is computed client-side from owner_id; 'admin'/'sales' come

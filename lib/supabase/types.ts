@@ -294,6 +294,9 @@ export interface Database {
           notify_cancellations: boolean
           notify_reminders: boolean
           reminder_hours: number
+          birthday_emails_enabled: boolean
+          birthday_discount_percent: number | null
+          birthday_window: 'day' | 'week' | 'month'
           created_at: string
           updated_at: string
         }
@@ -324,6 +327,9 @@ export interface Database {
           notify_cancellations?: boolean
           notify_reminders?: boolean
           reminder_hours?: number
+          birthday_emails_enabled?: boolean
+          birthday_discount_percent?: number | null
+          birthday_window?: 'day' | 'week' | 'month'
           created_at?: string
           updated_at?: string
         }
@@ -354,6 +360,9 @@ export interface Database {
           notify_cancellations?: boolean
           notify_reminders?: boolean
           reminder_hours?: number
+          birthday_emails_enabled?: boolean
+          birthday_discount_percent?: number | null
+          birthday_window?: 'day' | 'week' | 'month'
           created_at?: string
           updated_at?: string
         }
@@ -506,6 +515,9 @@ export interface Database {
           document_type: 'dni' | 'ruc' | 'ein' | 'passport' | 'other' | null
           document_number: string | null
           is_active: boolean
+          birthday_month: number | null
+          birthday_day: number | null
+          last_birthday_email_sent_year: number | null
           created_at: string
           updated_at: string
         }
@@ -525,6 +537,9 @@ export interface Database {
           document_type?: 'dni' | 'ruc' | 'ein' | 'passport' | 'other' | null
           document_number?: string | null
           is_active?: boolean
+          birthday_month?: number | null
+          birthday_day?: number | null
+          last_birthday_email_sent_year?: number | null
           created_at?: string
           updated_at?: string
         }
@@ -539,6 +554,9 @@ export interface Database {
           document_type?: 'dni' | 'ruc' | 'ein' | 'passport' | 'other' | null
           document_number?: string | null
           is_active?: boolean
+          birthday_month?: number | null
+          birthday_day?: number | null
+          last_birthday_email_sent_year?: number | null
           created_at?: string
           updated_at?: string
         }
@@ -1052,6 +1070,18 @@ export interface Database {
           business_timezone: string
           business_country: 'PE' | 'US'
           start_time: string
+        }[]
+      }
+      get_clients_needing_birthday_email: {
+        Args: Record<string, never>
+        Returns: {
+          client_id: string
+          client_email: string
+          client_name: string
+          business_id: string
+          business_name: string
+          business_country: 'PE' | 'US'
+          discount_percent: number | null
         }[]
       }
     }

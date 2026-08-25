@@ -150,6 +150,7 @@ export default function PublicBookingPage() {
   }
   const [manageReservationId, setManageReservationId] = useState<string | null>(null)
   const [linkCopied, setLinkCopied] = useState(false)
+  const manageLinkInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!slug) return
@@ -465,6 +466,7 @@ export default function PublicBookingPage() {
                 <p className="text-xs text-muted-foreground">{tr.manageLinkDesc}</p>
                 <div className="flex gap-2">
                   <Input
+                    ref={manageLinkInputRef}
                     readOnly
                     value={typeof window !== 'undefined' ? `${window.location.origin}/reservar/cita/${manageReservationId}` : ''}
                     className="font-mono text-xs"
@@ -475,9 +477,25 @@ export default function PublicBookingPage() {
                     size="icon"
                     className="shrink-0"
                     onClick={async () => {
-                      await navigator.clipboard.writeText(`${window.location.origin}/reservar/cita/${manageReservationId}`)
-                      setLinkCopied(true)
-                      setTimeout(() => setLinkCopied(false), 2000)
+                      const link = `${window.location.origin}/reservar/cita/${manageReservationId}`
+                      try {
+                        // navigator.clipboard is missing or throws
+                        // (NotAllowedError) in several mobile in-app browsers
+                        // - notably WhatsApp's own webview, which is exactly
+                        // where a client opens this link from after getting
+                        // it in a WhatsApp message. Fall back to selecting
+                        // the (already visible, read-only) input's text so
+                        // they can still copy it via their phone's own
+                        // selection menu instead of hitting an unhandled error.
+                        if (!navigator.clipboard) throw new Error('Clipboard API unavailable')
+                        await navigator.clipboard.writeText(link)
+                        setLinkCopied(true)
+                        setTimeout(() => setLinkCopied(false), 2000)
+                      } catch (err) {
+                        console.error('[iplanit] Clipboard write failed, falling back to text selection:', err)
+                        manageLinkInputRef.current?.select()
+                        manageLinkInputRef.current?.setSelectionRange(0, link.length)
+                      }
                     }}
                   >
                     {linkCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}

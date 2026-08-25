@@ -65,7 +65,12 @@ export function generateAvailableSlots(
   busy: BusyRange[],
   tz: string,
   bufferBeforeMin = 0,
-  bufferAfterMin = 0
+  bufferAfterMin = 0,
+  /** Only ever passed true from the dashboard's "Registrar cita pasada"
+   * flow (reservation-modal.tsx), never from the public booking page - a
+   * visitor should never be able to book a slot that's already gone, but
+   * staff backfilling a forgotten appointment needs exactly that. */
+  allowPast = false
 ): Date[] {
   if (durationMinutes <= 0) return []
 
@@ -94,7 +99,7 @@ export function generateAvailableSlots(
     const mm = String(m % 60).padStart(2, '0')
     const slotStart = parseInTimezone(`${dateStr}T${hh}:${mm}`, tz)
     const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60000)
-    if (slotStart < now) continue
+    if (!allowPast && slotStart < now) continue
     // Busy ranges are expanded by each EXISTING reservation's own buffer
     // before they get here - expanding this candidate by its OWN buffer too
     // makes the check bidirectional, so a service with no buffer still can't

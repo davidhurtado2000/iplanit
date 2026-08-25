@@ -77,6 +77,15 @@ export const TurnstileWidget = forwardRef<
     loadTurnstileScript()
       .then(() => {
         if (cancelled || !window.turnstile) return
+        // The script load is async and shared across instances (module-scoped
+        // scriptPromise) - by the time it resolves, this widget's own
+        // container can already be gone (e.g. the user stepped back in a
+        // multi-step form before the script finished loading). The
+        // `cancelled` flag alone doesn't cover that: it's only set by THIS
+        // effect's own cleanup, which has nothing to do with whether the div
+        // is still in the DOM. Turnstile's render() throws/logs "Unable to
+        // find a container" instead of failing silently, so check first.
+        if (!document.getElementById(containerId)) return
         widgetIdRef.current = window.turnstile.render(`#${containerId}`, {
           sitekey: siteKey,
           callback: onVerify,

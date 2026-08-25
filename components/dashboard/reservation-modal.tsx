@@ -35,7 +35,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Loader2 } from 'lucide-react'
-import { Calendar, Clock, User, Briefcase, Trash2, MapPin, Repeat, DollarSign, ParkingSquare, ChevronDown, ChevronsUpDown, Check, Eye, UserPlus, Bold, List, UserCog } from 'lucide-react'
+import { Calendar, Clock, User, Briefcase, Trash2, MapPin, Repeat, DollarSign, ParkingSquare, ChevronDown, ChevronsUpDown, Check, Eye, UserPlus, Bold, List, UserCog, History } from 'lucide-react'
 import { renderSimpleMarkdown } from '@/lib/simple-markdown'
 import {
   DropdownMenu,
@@ -156,6 +156,15 @@ interface ReservationModalProps {
    * "Visita" inside the modal instead of needing to re-enter the duration
    * they'd already dragged out on the calendar. */
   prefillEndHint?: string
+  /** Only used in create mode, set by the "Registrar cita pasada" toolbar
+   * button (calendar/page.tsx) - lets the date/time picker offer slots that
+   * have already gone by (see generateAvailableSlots' allowPast) instead of
+   * showing none for a day that's already over, and defaults the new
+   * reservation straight to "completed" instead of "pending" since it
+   * already happened. Kept as its own explicit entry point rather than a
+   * quiet behavior change to the normal flow - see feedback in
+   * memory/feedback_obvious_ui_for_secondary_actions.md. */
+  backdated?: boolean
 }
 
 export function ReservationModal({
@@ -173,6 +182,7 @@ export function ReservationModal({
   prefillResourceId,
   prefillStartHint,
   prefillEndHint,
+  backdated = false,
 }: ReservationModalProps) {
   const supabase = createClient()
   const { user, profile } = useAuth()
@@ -264,6 +274,37 @@ export function ReservationModal({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, mode, hasPaidPlan, currentBusiness?.id])
+
+  // "Última visita" card, Pro+ only (see the plan gate below where it
+  // renders) - a lightweight, dedicated single-row lookup rather than
+  // filtering the shared `reservations` array, which only covers a ±90 day
+  // window (see clients/page.tsx's own clientHistory query for the same
+  // reasoning) and would silently miss exactly the client who hasn't been
+  // back in a while, which is when this card matters most.
+  const [lastVisit, setLastVisit] = useState<Reservation | null>(null)
+
+  useEffect(() => {
+    if (!hasPaidPlan || !formData.client_id) {
+      setLastVisit(null)
+      return
+    }
+    let cancelled = false
+    supabase
+      .from('reservations')
+      .select('*')
+      .eq('client_id', formData.client_id)
+      .lt('start_time', new Date().toISOString())
+      .neq('id', reservation?.id ?? '')
+      .order('start_time', { ascending: false })
+      .limit(1)
+      .then(({ data }) => {
+        if (!cancelled) setLastVisit(data?.[0] ?? null)
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.client_id, hasPaidPlan])
 
   const [repeatEnabled, setRepeatEnabled] = useState(false)
   const [repeatDays, setRepeatDays] = useState<number[]>([])
@@ -730,7 +771,8 @@ export function ReservationModal({
             busyRanges,
             tz,
             selectedService?.buffer_before_min || 0,
-            selectedService?.buffer_after_min || 0
+            selectedService?.buffer_after_min || 0,
+            backdated
           )
           if (selectedWorkerHours.length === 0) return businessSlots
           const workerSlots = generateAvailableSlots(
@@ -740,7 +782,8 @@ export function ReservationModal({
             busyRanges,
             tz,
             selectedService?.buffer_before_min || 0,
-            selectedService?.buffer_after_min || 0
+            selectedService?.buffer_after_min || 0,
+            backdated
           )
           return intersectSlots(businessSlots, workerSlots)
         })()
@@ -1074,14 +1117,18 @@ export function ReservationModal({
           // sold_by only belongs here, not in the shared reservationData
           // above - same reasoning as status: adding it there would
           // silently overwrite the original creator with whoever last
-          // edited the reservation.
-          .insert([{ ...reservationData, status: 'pending', follow_up_of_reservation_id: followUpOfReservationId || null, sold_by: user?.id ?? null }])
+          // edited the reservation. A backdated entry already happened, so
+          // it's logged as 'completed' instead of the normal 'pending'.
+          .insert([{ ...reservationData, status: backdated ? 'completed' : 'pending', follow_up_of_reservation_id: followUpOfReservationId || null, sold_by: user?.id ?? null }])
           .select('id')
           .single()
 
         if (error) throw error
         console.log('[v0] Reservation created successfully')
-        if (created && currentBusiness.notify_confirmations && selectedClient?.email) {
+        // No confirmation email for a backdated entry - it already
+        // happened, so a "your reservation is confirmed" email afterward
+        // would just be confusing.
+        if (!backdated && created && currentBusiness.notify_confirmations && selectedClient?.email) {
           sendReservationNotification('confirmation', created.id, clientEmailLanguage)
         }
       } else if (effectiveMode === 'edit' && reservation?.id) {
@@ -1450,6 +1497,13 @@ export function ReservationModal({
               </div>
             )}
 
+            {backdated && mode === 'create' && (
+              <div className="flex items-center gap-2 rounded-lg border-2 border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-400">
+                <History className="h-4 w-4 shrink-0" />
+                {t.reservation.backdatedBanner}
+              </div>
+            )}
+
             {/* Type - only choosable at creation, so visit/booking counts in
                 Reportes can't drift after the fact (see initialType above). */}
             {mode === 'create' && (
@@ -1702,6 +1756,29 @@ export function ReservationModal({
                 </PopoverContent>
               </Popover>
             </div>
+
+            {hasPaidPlan && lastVisit && (
+              <div className="rounded-lg border border-dashed bg-muted/30 p-3 text-sm">
+                <p className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <History className="h-3.5 w-3.5" />
+                  {t.reservation.lastVisitTitle}
+                </p>
+                <p className="text-foreground">
+                  {services.find((s) => s.id === lastVisit.service_id)?.name ?? t.calendar.unknownService}
+                  {' · '}
+                  {new Date(lastVisit.start_time).toLocaleDateString(locale, {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                  })}
+                  {(() => {
+                    const lastWorker = workers.find((w) => w.id === lastVisit.worker_id)
+                    return lastWorker ? ` · ${lastWorker.name}` : ''
+                  })()}
+                </p>
+                {lastVisit.notes && <p className="mt-1 text-xs text-muted-foreground">{lastVisit.notes}</p>}
+              </div>
+            )}
 
             {/* Service - required for a booking, optional for a visit (a
                 prospective client may just want to see the place). */}
@@ -2048,7 +2125,7 @@ export function ReservationModal({
 
             {/* Repeat (create mode only, Premium, bookings only - a
                 recurring showroom visit isn't a real use case) */}
-            {mode === 'create' && formData.type === 'booking' && (
+            {mode === 'create' && formData.type === 'booking' && !backdated && (
               <div className="space-y-3 rounded-lg border p-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
