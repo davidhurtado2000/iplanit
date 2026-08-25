@@ -201,7 +201,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
                     >
                       <item.icon className="h-5 w-5 shrink-0" />
                       <span>{item.key === 'workers' ? workerLabel.plural : t.nav[item.key]}</span>
-                      {item.key === 'analytics' && <PremiumBadge className="ml-auto" />}
+                      {item.key === 'analytics' && <PremiumBadge className="ml-auto" requiredPlan="pro" />}
                     </Link>
                   )
                 })}

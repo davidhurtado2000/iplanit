@@ -1156,7 +1156,7 @@ export default function SettingsPage() {
               <Users className="h-5 w-5 sm:h-4 sm:w-4" />
               <span className="flex items-center gap-1 text-xs sm:text-sm">
                 {t.settings.teamTab}
-                <PremiumBadge />
+                <PremiumBadge requiredPlan="pro" />
               </span>
             </TabsTrigger>
           )}

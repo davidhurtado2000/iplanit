@@ -28,6 +28,7 @@ import {
   Repeat,
   FileSpreadsheet,
   Headphones,
+  MapPin,
 } from 'lucide-react'
 import { useLanguage } from '@/context/language-context'
 import { useAuth } from '@/hooks/use-auth'
@@ -129,6 +130,7 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan }: Upgrade
   ]
 
   const PREMIUM_FEATURES = [
+    { icon: MapPin, title: m.featureSedesTitle, description: m.featureSedesDesc },
     { icon: Users, title: m.featureClientHistoryTitle, description: m.featureClientHistoryDesc },
     { icon: Layers, title: m.featureUnlimitedRecordsTitle, description: m.featureUnlimitedRecordsDesc },
     { icon: FileSpreadsheet, title: m.featureCsvTitle, description: m.featureCsvDesc },
@@ -251,7 +253,7 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan }: Upgrade
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-3xl">
         {step === 'plans' && (
           <>
             <DialogHeader>
@@ -296,7 +298,6 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan }: Upgrade
                         </div>
                         <div>
                           <p className="text-xs font-medium text-foreground">{f.title}</p>
-                          <p className="text-xs text-muted-foreground">{f.description}</p>
                         </div>
                       </div>
                     ))}
@@ -345,7 +346,6 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan }: Upgrade
                         </div>
                         <div>
                           <p className="text-xs font-medium text-foreground">{f.title}</p>
-                          <p className="text-xs text-muted-foreground">{f.description}</p>
                         </div>
                       </div>
                     ))}

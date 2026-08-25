@@ -64,6 +64,7 @@ export function Pricing() {
       highlight: true,
       includesLabel: l.planPremiumIncludesPro,
       features: [
+        { title: u.featureSedesTitle, desc: u.featureSedesDesc },
         { title: u.featureClientHistoryTitle, desc: u.featureClientHistoryDesc },
         { title: u.featureUnlimitedRecordsTitle, desc: u.featureUnlimitedRecordsDesc },
         { title: u.featureCsvTitle, desc: u.featureCsvDesc },
