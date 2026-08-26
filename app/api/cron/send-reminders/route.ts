@@ -46,7 +46,7 @@ export async function GET(request: Request) {
         startTime: row.start_time,
         timezone: row.business_timezone,
         language: row.business_country === 'US' ? 'en' : 'es',
-        manageUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'https://iplanit.io'}/reservar/cita/${row.reservation_id}`,
+        manageUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'https://www.iplanit.io'}/reservar/cita/${row.reservation_id}`,
       })
 
       await getResendClient().emails.send({

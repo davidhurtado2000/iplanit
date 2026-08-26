@@ -24,7 +24,7 @@ export async function POST() {
     return NextResponse.json({ error: 'no_subscription' }, { status: 400 })
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://iplanit.io'
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.iplanit.io'
   const stripe = getStripeClient()
 
   try {

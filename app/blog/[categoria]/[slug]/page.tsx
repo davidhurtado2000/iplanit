@@ -65,10 +65,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const image = ogImageFor(article)
 
   const languages: Record<string, string> = {
-    [article.language]: `https://iplanit.io/blog/${categoria}/${article.slug}`,
+    [article.language]: `https://www.iplanit.io/blog/${categoria}/${article.slug}`,
   }
   if (sibling) {
-    languages[sibling.language] = `https://iplanit.io/blog/${categoria}/${sibling.slug}`
+    languages[sibling.language] = `https://www.iplanit.io/blog/${categoria}/${sibling.slug}`
   }
 
   return {
@@ -113,19 +113,19 @@ export default async function BlogArticlePage({ params }: PageProps) {
         dateModified: article.updated_at,
         author: { '@type': 'Organization', name: article.author },
         image: ogImageFor(article) ? [ogImageFor(article)] : undefined,
-        publisher: { '@id': 'https://iplanit.io/#organization' },
+        publisher: { '@id': 'https://www.iplanit.io/#organization' },
       },
       {
         '@type': 'BreadcrumbList',
         itemListElement: [
-          { '@type': 'ListItem', position: 1, name: t.homeLabel, item: 'https://iplanit.io/' },
-          { '@type': 'ListItem', position: 2, name: t.blogLabel, item: 'https://iplanit.io/blog' },
-          { '@type': 'ListItem', position: 3, name: category.name, item: `https://iplanit.io/blog/${category.slug}` },
+          { '@type': 'ListItem', position: 1, name: t.homeLabel, item: 'https://www.iplanit.io/' },
+          { '@type': 'ListItem', position: 2, name: t.blogLabel, item: 'https://www.iplanit.io/blog' },
+          { '@type': 'ListItem', position: 3, name: category.name, item: `https://www.iplanit.io/blog/${category.slug}` },
           {
             '@type': 'ListItem',
             position: 4,
             name: article.title,
-            item: `https://iplanit.io/blog/${category.slug}/${article.slug}`,
+            item: `https://www.iplanit.io/blog/${category.slug}/${article.slug}`,
           },
         ],
       },

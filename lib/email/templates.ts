@@ -297,7 +297,7 @@ export function buildTrialEndingEmail(data: TrialEndingEmailData): { subject: st
   const { language, priceUsd, trialEndDate } = data
   const locale = language === 'es' ? 'es-PE' : 'en-US'
   const when = new Intl.DateTimeFormat(locale, { dateStyle: 'long' }).format(trialEndDate)
-  const manageUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://iplanit.io'}/dashboard/settings`
+  const manageUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://www.iplanit.io'}/dashboard/settings`
 
   if (language === 'es') {
     return {

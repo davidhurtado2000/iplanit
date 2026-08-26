@@ -6,7 +6,11 @@ import { createServerSupabaseClient } from '@/lib/supabase/server'
 // per-business /reservar/[slug] pages are customer-specific rather than
 // content Google should rank (see app/robots.ts, which disallows them).
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = 'https://iplanit.io'
+  // Must match the site's actual canonical domain (www redirects apex,
+  // confirmed live) - listing the apex domain here made every single URL in
+  // this sitemap resolve through a 308 redirect, which is exactly why
+  // Search Console started reporting the whole site as "Page with redirect".
+  const baseUrl = 'https://www.iplanit.io'
 
   const staticRoutes: MetadataRoute.Sitemap = [
     {

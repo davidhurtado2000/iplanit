@@ -97,7 +97,7 @@ export async function POST(request: Request) {
       startTime: reservation.start_time,
       timezone: reservation.business_timezone,
       language,
-      manageUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'https://iplanit.io'}/reservar/cita/${reservationId}`,
+      manageUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'https://www.iplanit.io'}/reservar/cita/${reservationId}`,
     }
 
     const { subject, html } =

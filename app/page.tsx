@@ -18,20 +18,20 @@ const JSON_LD = {
   '@graph': [
     {
       '@type': 'Organization',
-      '@id': 'https://iplanit.io/#organization',
+      '@id': 'https://www.iplanit.io/#organization',
       name: 'iPlanit',
-      url: 'https://iplanit.io',
-      logo: 'https://iplanit.io/favicon-96x96.png',
+      url: 'https://www.iplanit.io',
+      logo: 'https://www.iplanit.io/favicon-96x96.png',
     },
     {
       '@type': 'SoftwareApplication',
       name: 'iPlanit',
-      url: 'https://iplanit.io',
+      url: 'https://www.iplanit.io',
       applicationCategory: 'BusinessApplication',
       operatingSystem: 'Web',
       description:
         'SaaS platform for managing bookings, appointments, and schedules for service businesses',
-      publisher: { '@id': 'https://iplanit.io/#organization' },
+      publisher: { '@id': 'https://www.iplanit.io/#organization' },
       offers: [
         { '@type': 'Offer', name: 'Free', price: '0', priceCurrency: 'USD' },
         { '@type': 'Offer', name: 'Pro', price: '25', priceCurrency: 'USD' },

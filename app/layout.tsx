@@ -19,7 +19,11 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://iplanit.io'),
+  // www is the actual canonical host (apex redirects here) - metadataBase
+  // resolves every relative canonical/OG URL Next.js generates, so pointing
+  // it at the apex domain made every page's own canonical tag point at a
+  // URL that itself redirects, confusing Google about which one to index.
+  metadataBase: new URL('https://www.iplanit.io'),
   title: 'iPlanit - Booking and Scheduling Management',
   description:
     'SaaS platform for managing bookings, appointments, and schedules for service businesses',

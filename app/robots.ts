@@ -7,7 +7,9 @@ import type { MetadataRoute } from 'next'
 // search - indexing thousands of thin, customer-specific pages wouldn't
 // help iplanit.io's own ranking and risks thin-content signals.
 export default function robots(): MetadataRoute.Robots {
-  const baseUrl = 'https://iplanit.io'
+  // Same domain as sitemap.ts - must be the actual canonical (www) host,
+  // not the apex, which redirects here.
+  const baseUrl = 'https://www.iplanit.io'
 
   return {
     rules: {
