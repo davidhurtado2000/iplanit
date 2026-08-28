@@ -377,6 +377,13 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         { event: 'INSERT', schema: 'public', table: 'reservations', filter: `business_id=eq.${currentBusiness.id}` },
         (payload) => {
           const newReservation = payload.new as Reservation
+          // Guards against a real race when switching sedes: removeChannel()
+          // below unsubscribes asynchronously, so an insert already in
+          // flight for the PREVIOUS business can still land here just after
+          // switching to a new one, mixing that stale reservation into the
+          // new business's list (its resource_id then can't resolve against
+          // the new business's own resources - shows as "-" in Analytics).
+          if (newReservation.business_id !== currentBusiness.id) return
           setReservations((prev) =>
             prev.some((r) => r.id === newReservation.id)
               ? prev
