@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PremiumFeature } from '@/components/premium-feature'
 import { HeroKpiCard } from '@/components/dashboard/hero-kpi-card'
+import { CountUp } from '@/components/dashboard/count-up'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -713,21 +714,21 @@ export default function AnalyticsPage() {
                 label={tr.kpiRevenue}
                 icon={DollarSign}
                 iconClassName="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
-                value={`${currencySymbol} ${totalRevenue.toFixed(0)}`}
+                value={<CountUp value={totalRevenue} prefix={`${currencySymbol} `} />}
                 trend={<TrendBadge trend={revenueTrend} />}
               />
               <HeroKpiCard
                 label={tr.kpiReservations}
                 icon={CalendarDays}
                 iconClassName="bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400"
-                value={totalReservations}
+                value={<CountUp value={totalReservations} />}
                 trend={<TrendBadge trend={reservationsTrend} />}
               />
               <HeroKpiCard
                 label={tr.kpiOccupancy}
                 icon={Gauge}
                 iconClassName="bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-400"
-                value={`${occupancy.rate}%`}
+                value={<CountUp value={occupancy.rate} suffix="%" />}
                 trend={<TrendBadge trend={occupancyTrend} />}
                 caption={`${occupancy.bookedHours} ${tr.hoursBookedOf} ${occupancy.openHours} ${tr.hoursUnit}`}
               />
@@ -735,7 +736,7 @@ export default function AnalyticsPage() {
                 label={tr.kpiClientRetention}
                 icon={Users}
                 iconClassName="bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
-                value={`${clientRetention.retentionRate}%`}
+                value={<CountUp value={clientRetention.retentionRate} suffix="%" />}
                 caption={`${clientRetention.newClients} ${tr.newClientsUnit} · ${clientRetention.returningClients} ${tr.returningClientsUnit}`}
               />
             </div>

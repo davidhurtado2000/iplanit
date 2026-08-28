@@ -525,6 +525,7 @@ export default function PublicBookingPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4 px-4 sm:px-6">
+              <div key={step} className="animate-page-fade-in space-y-4">
               {step === 'service' && (
                 <div className="space-y-2">
                   {services.length === 0 ? (
@@ -893,6 +894,7 @@ export default function PublicBookingPage() {
                   <p className="text-center text-xs text-muted-foreground">{tr.pendingHint}</p>
                 </form>
               )}
+              </div>
             </CardContent>
           </>
         )}

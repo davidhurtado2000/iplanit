@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { LogoLoader } from '@/components/logo-loader'
 import { HeroKpiCard } from '@/components/dashboard/hero-kpi-card'
+import { CountUp } from '@/components/dashboard/count-up'
 import { cn } from '@/lib/utils'
 import {
   Dialog,
@@ -194,7 +195,7 @@ export default function ParkingPage() {
         label={t.parking.occupancyTitle}
         icon={ParkingSquare}
         iconClassName="bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400"
-        value={`${occupiedCount} / ${activeSpots.length}`}
+        value={<CountUp value={occupiedCount} suffix={` / ${activeSpots.length}`} />}
         caption={t.parking.occupancyDesc}
       />
 

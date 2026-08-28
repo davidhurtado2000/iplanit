@@ -77,6 +77,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { PremiumButton } from '@/components/premium-feature'
 import { HeroKpiCard } from '@/components/dashboard/hero-kpi-card'
+import { CountUp } from '@/components/dashboard/count-up'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { UpgradeModal } from '@/components/upgrade-modal'
 import { isPlanLimitReached } from '@/lib/plan-limits'
@@ -743,25 +744,29 @@ export default function ClientsPage() {
           label={t.clients.totalClients}
           icon={Users}
           iconClassName="bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400"
-          value={clients.length}
+          value={<CountUp value={clients.length} />}
         />
         <HeroKpiCard
           label={t.clients.newThisMonth}
           icon={Calendar}
           iconClassName="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
           value={
-            clients.filter((c) => {
-              const created = new Date(c.created_at)
-              const now = new Date()
-              return created.getMonth() === now.getMonth() && created.getFullYear() === now.getFullYear()
-            }).length
+            <CountUp
+              value={
+                clients.filter((c) => {
+                  const created = new Date(c.created_at)
+                  const now = new Date()
+                  return created.getMonth() === now.getMonth() && created.getFullYear() === now.getFullYear()
+                }).length
+              }
+            />
           }
         />
         <HeroKpiCard
           label={t.clients.inactiveClients}
           icon={UserX}
           iconClassName="bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
-          value={inactiveClientsCount}
+          value={<CountUp value={inactiveClientsCount} />}
           caption={t.clients.inactiveClientsHint}
         />
       </div>
@@ -1031,7 +1036,7 @@ export default function ClientsPage() {
               return (
                 <div
                   key={client.id}
-                  className="flex cursor-pointer items-start gap-3 p-4"
+                  className="flex cursor-pointer items-start gap-3 p-4 transition-colors active:bg-muted/50"
                   onClick={() => handleViewDetails(client)}
                 >
                   <Avatar>

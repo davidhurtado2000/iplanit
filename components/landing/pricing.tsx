@@ -86,8 +86,10 @@ export function Pricing() {
             <Reveal key={plan.name} delayMs={i * 100}>
               <div
                 className={cn(
-                  'relative flex h-full flex-col rounded-2xl border p-7',
-                  plan.highlight ? 'border-primary bg-card shadow-xl shadow-primary/10' : 'bg-card'
+                  'relative flex h-full flex-col rounded-2xl border p-7 transition-transform duration-300 hover:-translate-y-1',
+                  plan.highlight
+                    ? 'plan-glow-pulse border-primary bg-card'
+                    : 'bg-card hover:border-primary/30 hover:shadow-lg'
                 )}
               >
                 {plan.highlight && (

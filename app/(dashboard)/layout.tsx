@@ -5,6 +5,7 @@ import { Sidebar } from '@/components/dashboard/sidebar'
 import { MobileNav } from '@/components/dashboard/mobile-nav'
 import { FeedbackWidget } from '@/components/dashboard/feedback-widget'
 import { PlanUsageBanner } from '@/components/dashboard/plan-usage-banner'
+import { PageTransition } from '@/components/dashboard/page-transition'
 import { Toaster } from '@/components/ui/sonner'
 import { BusinessProvider } from '@/context/business-context'
 import { DashboardDataProvider } from '@/context/dashboard-data-context'
@@ -41,7 +42,7 @@ export default function DashboardLayout({
       >
         <div className="mx-auto max-w-[1600px] p-4 sm:p-6">
           <PlanUsageBanner />
-          {children}
+          <PageTransition>{children}</PageTransition>
         </div>
       </main>
 

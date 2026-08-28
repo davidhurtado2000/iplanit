@@ -32,6 +32,7 @@ import { UpgradeModal } from '@/components/upgrade-modal'
 import { OnboardingBanner } from '@/components/dashboard/onboarding-banner'
 import { ReservationModal } from '@/components/dashboard/reservation-modal'
 import { HeroKpiCard } from '@/components/dashboard/hero-kpi-card'
+import { CountUp } from '@/components/dashboard/count-up'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { VISIT_BLOCK_COLOR } from '@/components/dashboard/calendar-view'
 import { useBusinesses } from '@/hooks/use-businesses'
@@ -592,7 +593,7 @@ export default function DashboardPage() {
                 label={t.dashboard.clientsCard}
                 icon={Users}
                 iconClassName="bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400"
-                value={clientsCount}
+                value={<CountUp value={clientsCount} />}
                 caption={t.dashboard.manageClients}
                 className="cursor-pointer transition-shadow hover:shadow-md"
               />
@@ -610,7 +611,7 @@ export default function DashboardPage() {
                     label={t.dashboard.servicesCard}
                     icon={Briefcase}
                     iconClassName="bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-400"
-                    value={servicesCount}
+                    value={<CountUp value={servicesCount} />}
                     caption={t.dashboard.configureServices}
                     className="cursor-pointer transition-shadow hover:shadow-md"
                   />
@@ -626,7 +627,7 @@ export default function DashboardPage() {
                     label={t.dashboard.resourcesCard}
                     icon={Layers}
                     iconClassName="bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
-                    value={resourcesCount}
+                    value={<CountUp value={resourcesCount} />}
                     caption={t.dashboard.manageResources}
                     className="cursor-pointer transition-shadow hover:shadow-md"
                   />
@@ -643,7 +644,7 @@ export default function DashboardPage() {
                       label={t.dashboard.analyticsCard}
                       icon={BarChart3}
                       iconClassName="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
-                      value={monthReservationsCount}
+                      value={<CountUp value={monthReservationsCount} />}
                       caption={t.dashboard.reservationsThisMonth}
                       className="cursor-pointer transition-shadow hover:shadow-md"
                     />
