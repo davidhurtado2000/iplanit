@@ -43,6 +43,7 @@ import { useLanguage } from '@/context/language-context'
 import { useDashboardData, type Reservation } from '@/context/dashboard-data-context'
 import { StatusBadge } from '@/components/dashboard/status-badge'
 import { capitalizeFirst } from '@/lib/utils'
+import { isAiAddonActive } from '@/lib/ai-usage-client'
 
 export default function DashboardPage() {
   const { user, profile, loading: authLoading } = useAuth()
@@ -262,7 +263,7 @@ export default function DashboardPage() {
   const plan = (profile?.plan ?? 'free') as 'free' | 'pro' | 'premium'
   const isPremium = plan === 'premium'
   const isProOrPremium = plan === 'pro' || plan === 'premium'
-  const aiAddonActive = !!(profile?.ai_addon_active || profile?.ai_addon_override)
+  const aiAddonActive = isAiAddonActive(profile)
   const displayName = profile?.full_name?.split(' ')[0] || user.email?.split('@')[0] || 'Usuario'
   const displayEmail = profile?.email || user.email || ''
 

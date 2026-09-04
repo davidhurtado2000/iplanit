@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
 import { getWorkerLabel } from '@/lib/worker-label'
+import { isAiAddonActive } from '@/lib/ai-usage-client'
 import { createClient } from '@/lib/supabase/client'
 import {
   Calendar,
@@ -26,6 +27,7 @@ import {
   History,
   UserCog,
   Newspaper,
+  Sparkles,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
@@ -79,6 +81,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
   }, [user])
 
   const userPlan = profile?.plan || 'free'
+  const aiAddonActive = isAiAddonActive(profile)
   const userName = profile?.full_name || user?.email?.split('@')[0] || t.mobileNav.defaultUser
   const userEmail = profile?.email || user?.email || ''
 
@@ -232,6 +235,26 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
                   </Button>
                 )}
               </div>
+
+              {/* AI add-on - same reasoning as sidebar.tsx's desktop
+                  version: Pro and Premium both qualify to buy it. */}
+              {(userPlan === 'pro' || userPlan === 'premium') && (
+                <div className="px-4 pb-4">
+                  <Link
+                    href={aiAddonActive ? '/dashboard/analytics' : '/dashboard/settings?tab=plan'}
+                    onClick={onToggle}
+                    className={cn(
+                      'flex items-center gap-2 rounded-lg border p-3 text-sm font-medium transition-colors',
+                      aiAddonActive
+                        ? 'border-primary/20 bg-primary/5 hover:bg-primary/10'
+                        : 'border-dashed border-primary/30 hover:bg-primary/5'
+                    )}
+                  >
+                    <Sparkles className="h-4 w-4 shrink-0 text-primary" />
+                    {aiAddonActive ? t.sidebar.aiAddonBadgeActive : t.sidebar.aiAddonBadgeUpsell}
+                  </Link>
+                </div>
+              )}
 
               {isPlatformAdmin && (
                 <div className="border-t p-2">

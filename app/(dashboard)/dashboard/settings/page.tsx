@@ -39,6 +39,7 @@ import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
 import { useDashboardData } from '@/context/dashboard-data-context'
 import { AI_USAGE_WARNING_THRESHOLD } from '@/lib/ai-usage'
+import { formatResetDate, isAiAddonActive } from '@/lib/ai-usage-client'
 import { useTheme } from 'next-themes'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
@@ -323,7 +324,18 @@ function SettingsPageInner() {
     }
   }
 
-  const aiAddonActive = !!(authProfile?.ai_addon_active || authProfile?.ai_addon_override)
+  // Billed = currently paying for it right now (or the manual override) -
+  // the state that shows the usage bar + Deactivate button. graceUntil is
+  // the separate case of "cancelled, but the period already paid for
+  // hasn't ended yet" (scripts/078) - still usable (isAiAddonActive covers
+  // both), but the Settings card itself needs to tell these two apart to
+  // show the right message and button.
+  const aiAddonBilled = !!(authProfile?.ai_addon_active || authProfile?.ai_addon_override)
+  const aiAddonGraceUntil =
+    !aiAddonBilled && authProfile?.ai_addon_access_until && new Date(authProfile.ai_addon_access_until).getTime() > Date.now()
+      ? authProfile.ai_addon_access_until
+      : null
+  const aiAddonActive = isAiAddonActive(authProfile)
 
   const fetchAiUsage = async () => {
     if (!currentBusiness) return
@@ -1979,6 +1991,95 @@ function SettingsPageInner() {
 
         {/* Plan Tab */}
         <TabsContent value="plan" className="space-y-4">
+          {/* AI add-on - separate recurring charge on top of the plan
+              price, billed to the same card already on file (see
+              app/api/stripe/ai-addon/*). Available to Pro and Premium
+              alike. Kept above the plan card itself and visually called
+              out (tinted border/background, full-size CTA) - it used to
+              sit below the whole plan card as a plain, easy-to-miss card,
+              which is exactly why someone arriving here from the
+              sidebar/dashboard nudge to buy it couldn't actually find
+              where to do that. Free gets its own teaser version right
+              below (locked, no price action) instead of seeing nothing at
+              all - otherwise a Free user never learns this exists until
+              after upgrading. */}
+          {plan !== 'free' && (
+            <Card className="border-primary/20 bg-gradient-to-r from-primary/5 to-transparent">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  {t.settings.aiAddonTitle}
+                </CardTitle>
+                <CardDescription>{t.settings.aiAddonDesc}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {aiAddonActive && aiUsage && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">{t.settings.aiAddonUsageLabel}</span>
+                      <span className={cn('font-medium', aiUsage.used >= aiUsage.limit && 'text-destructive')}>
+                        {aiUsage.used} / {aiUsage.limit}
+                      </span>
+                    </div>
+                    <Progress value={Math.min(100, (aiUsage.used / aiUsage.limit) * 100)} className="h-2" />
+                    {aiUsage.used >= AI_USAGE_WARNING_THRESHOLD && aiUsage.used < aiUsage.limit && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400">{t.settings.aiAddonNearLimit}</p>
+                    )}
+                  </div>
+                )}
+                {aiAddonBilled ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPendingAiAddonAction('deactivate')}
+                    disabled={isAiAddonLoading}
+                  >
+                    {t.settings.aiAddonDeactivateBtn}
+                  </Button>
+                ) : aiAddonGraceUntil ? (
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">
+                      {t.settings.aiAddonGraceMessage.replace('{date}', formatResetDate(aiAddonGraceUntil, language))}
+                    </p>
+                    <Button className="gap-2" onClick={() => setPendingAiAddonAction('activate')} disabled={isAiAddonLoading}>
+                      <Sparkles className="h-4 w-4" />
+                      {t.settings.aiAddonReactivateBtn}
+                    </Button>
+                  </div>
+                ) : (
+                  <Button className="gap-2" onClick={() => setPendingAiAddonAction('activate')} disabled={isAiAddonLoading}>
+                    <Sparkles className="h-4 w-4" />
+                    {t.settings.aiAddonActivateBtn}
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {plan === 'free' && (
+            <Card className="border-primary/20 bg-gradient-to-r from-primary/5 to-transparent">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  {t.settings.aiAddonTitle}
+                </CardTitle>
+                <CardDescription>{t.settings.aiAddonFreeTeaserDesc}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button
+                  className="gap-2"
+                  onClick={() => {
+                    setUpgradeModalPlan(undefined)
+                    setShowUpgradeModal(true)
+                  }}
+                >
+                  <Crown className="h-4 w-4" />
+                  {t.settings.aiAddonFreeTeaserBtn}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle>{t.settings.planTitle}</CardTitle>
@@ -2299,54 +2400,6 @@ function SettingsPageInner() {
               )}
             </CardContent>
           </Card>
-
-          {/* AI add-on - separate recurring charge on top of the plan
-              price, billed to the same card already on file (see
-              app/api/stripe/ai-addon/*). Available to Pro and Premium
-              alike - Free never sees this, same as Analytics itself. */}
-          {plan !== 'free' && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-primary" />
-                  {t.settings.aiAddonTitle}
-                </CardTitle>
-                <CardDescription>{t.settings.aiAddonDesc}</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {aiAddonActive ? (
-                  <>
-                    {aiUsage && (
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-muted-foreground">{t.settings.aiAddonUsageLabel}</span>
-                          <span className={cn('font-medium', aiUsage.used >= aiUsage.limit && 'text-destructive')}>
-                            {aiUsage.used} / {aiUsage.limit}
-                          </span>
-                        </div>
-                        <Progress value={Math.min(100, (aiUsage.used / aiUsage.limit) * 100)} className="h-2" />
-                        {aiUsage.used >= AI_USAGE_WARNING_THRESHOLD && aiUsage.used < aiUsage.limit && (
-                          <p className="text-xs text-amber-600 dark:text-amber-400">{t.settings.aiAddonNearLimit}</p>
-                        )}
-                      </div>
-                    )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPendingAiAddonAction('deactivate')}
-                      disabled={isAiAddonLoading}
-                    >
-                      {t.settings.aiAddonDeactivateBtn}
-                    </Button>
-                  </>
-                ) : (
-                  <Button size="sm" onClick={() => setPendingAiAddonAction('activate')} disabled={isAiAddonLoading}>
-                    {t.settings.aiAddonActivateBtn}
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-          )}
         </TabsContent>
 
         {/* Team Tab - owner only, Premium-gated */}

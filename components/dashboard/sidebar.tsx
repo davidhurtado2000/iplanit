@@ -27,6 +27,7 @@ import {
   History,
   UserCog,
   Newspaper,
+  Sparkles,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
@@ -48,6 +49,7 @@ import { PremiumBadge } from '@/components/premium-feature'
 import { NotificationBell } from '@/components/dashboard/notification-bell'
 import { useLanguage } from '@/context/language-context'
 import { getWorkerLabel } from '@/lib/worker-label'
+import { isAiAddonActive } from '@/lib/ai-usage-client'
 
 interface SidebarProps {
   isCollapsed: boolean
@@ -102,6 +104,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
     : null
 
   const userPlan = profile?.plan || 'free'
+  const aiAddonActive = isAiAddonActive(profile)
   const userName = profile?.full_name || user?.email?.split('@')[0] || 'Usuario'
   const userEmail = profile?.email || user?.email || ''
 
@@ -323,15 +326,6 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         </nav>
 
         {/* Plan Badge */}
-        {!isCollapsed && userPlan === 'premium' && (
-          <div className="mx-2 mb-2 rounded-lg bg-gradient-to-r from-amber-500/20 to-orange-500/20 p-3">
-            <div className="flex items-center gap-2">
-              <Crown className="h-4 w-4 text-amber-400" />
-              <span className="text-xs font-medium text-sidebar-foreground">{t.settings.premiumPlanName}</span>
-            </div>
-          </div>
-        )}
-
         {!isCollapsed && userPlan === 'free' && (
           <div className="mx-2 mb-2">
             <Button
@@ -342,6 +336,29 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
               {t.settings.premiumPlanName}
             </Button>
           </div>
+        )}
+
+        {/* AI add-on - Pro and Premium both qualify to buy it
+            (scripts/077-ai-addon.sql). Replaces the old static "you have
+            Premium" badge that used to sit here (purely decorative, nothing
+            to click) - this slot is prime, scarce real estate, and an
+            actionable nudge toward a real add-on is worth more here than a
+            reassurance badge. Once active, still worth a permanent spot
+            since it's a quick way back into the chat, not just a one-time
+            upsell. */}
+        {!isCollapsed && (userPlan === 'pro' || userPlan === 'premium') && (
+          <Link
+            href={aiAddonActive ? '/dashboard/analytics' : '/dashboard/settings?tab=plan'}
+            className={cn(
+              'mx-2 mb-2 flex items-center gap-2 rounded-lg border p-3 text-xs font-medium text-sidebar-foreground transition-colors',
+              aiAddonActive
+                ? 'border-sidebar-primary/20 bg-sidebar-primary/10 hover:bg-sidebar-primary/15'
+                : 'border-dashed border-sidebar-primary/30 hover:bg-sidebar-primary/10'
+            )}
+          >
+            <Sparkles className="h-4 w-4 shrink-0 text-sidebar-primary" />
+            {aiAddonActive ? t.sidebar.aiAddonBadgeActive : t.sidebar.aiAddonBadgeUpsell}
+          </Link>
         )}
 
         {isPlatformAdmin && (

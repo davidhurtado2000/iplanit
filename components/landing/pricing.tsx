@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Check } from 'lucide-react'
+import { Check, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useLanguage } from '@/context/language-context'
 import { cn } from '@/lib/utils'
@@ -42,6 +42,7 @@ export function Pricing() {
       cta: l.planProCta,
       href: '/register',
       highlight: false,
+      hasAiAddon: true,
       includesLabel: l.planProIncludesFree,
       // Title + description per feature (not just the bare title upgrade-
       // modal.tsx uses in its own compact card) - a first-time visitor
@@ -62,6 +63,7 @@ export function Pricing() {
       cta: l.planPremiumCta,
       href: '/register',
       highlight: true,
+      hasAiAddon: true,
       includesLabel: l.planPremiumIncludesPro,
       features: [
         { title: u.featureSedesTitle, desc: u.featureSedesDesc },
@@ -124,6 +126,15 @@ export function Pricing() {
                     </li>
                   ))}
                 </ul>
+                {plan.hasAiAddon && (
+                  <div className="mt-5 flex items-start gap-2.5 rounded-lg border border-dashed border-primary/30 bg-primary/5 p-3">
+                    <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                    <span className="text-xs leading-snug">
+                      <span className="block font-medium text-foreground">{l.planAiAddonTitle}</span>
+                      <span className="mt-0.5 block text-muted-foreground">{l.planAiAddonDesc}</span>
+                    </span>
+                  </div>
+                )}
               </div>
             </Reveal>
           ))}

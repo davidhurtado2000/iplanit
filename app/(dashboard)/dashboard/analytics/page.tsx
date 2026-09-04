@@ -39,6 +39,7 @@ import {
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useAuth } from '@/hooks/use-auth'
 import { getWorkerLabel } from '@/lib/worker-label'
+import { isAiAddonActive } from '@/lib/ai-usage-client'
 import {
   useDashboardData,
   type Reservation,
@@ -219,7 +220,7 @@ function DemandHeatmap({
 export default function AnalyticsPage() {
   const { currentBusiness, businesses, loading: businessLoading } = useBusinesses()
   const { profile } = useAuth()
-  const aiAddonActive = !!(profile?.ai_addon_active || profile?.ai_addon_override)
+  const aiAddonActive = isAiAddonActive(profile)
   const {
     reservations: businessReservations,
     clients: businessClients,

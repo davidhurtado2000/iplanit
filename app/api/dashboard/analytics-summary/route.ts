@@ -4,6 +4,7 @@ import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { getOpenAIClient, AI_SUMMARY_MODEL } from '@/lib/openai'
 import { meetsPlan } from '@/lib/plan-limits'
 import { AI_USAGE_MONTHLY_LIMIT, getAiUsageThisMonth, logAiUsage, startOfNextMonthUtc } from '@/lib/ai-usage'
+import { isAiAddonActive } from '@/lib/ai-usage-client'
 import type { Database } from '@/lib/supabase/types'
 
 interface AnalyticsMetrics {
@@ -75,17 +76,18 @@ export async function POST(request: Request) {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('plan, ai_addon_active, ai_addon_override')
+      .select('plan, ai_addon_active, ai_addon_override, ai_addon_access_until')
       .eq('id', user.id)
       .single()
 
     // Defense in depth - the Analytics page already gates this client-side,
     // but a direct call to this route shouldn't be able to skip either
-    // check, since every call here costs real money. ai_addon_override lets
-    // a specific account (e.g. David's own, for testing on the real domain)
-    // skip the paid add-on requirement without touching Stripe at all - see
-    // scripts/077-ai-addon.sql.
-    if (!meetsPlan(profile?.plan, 'pro') || !(profile?.ai_addon_active || profile?.ai_addon_override)) {
+    // check, since every call here costs real money. isAiAddonActive covers
+    // the manual override (ai_addon_override, e.g. David's own account for
+    // testing on the real domain, see scripts/077-ai-addon.sql) and the
+    // post-cancellation grace period (ai_addon_access_until, see
+    // scripts/078) the same way the UI does.
+    if (!meetsPlan(profile?.plan, 'pro') || !isAiAddonActive(profile)) {
       return NextResponse.json({ error: 'plan_required' }, { status: 403 })
     }
 

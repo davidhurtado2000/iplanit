@@ -186,6 +186,7 @@ export interface Database {
           stripe_subscription_id: string | null
           ai_addon_active: boolean
           ai_addon_override: boolean
+          ai_addon_access_until: string | null
           created_at: string
           updated_at: string
         }
@@ -201,6 +202,7 @@ export interface Database {
           stripe_subscription_id?: string | null
           ai_addon_active?: boolean
           ai_addon_override?: boolean
+          ai_addon_access_until?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -216,6 +218,7 @@ export interface Database {
           stripe_subscription_id?: string | null
           ai_addon_active?: boolean
           ai_addon_override?: boolean
+          ai_addon_access_until?: string | null
           created_at?: string
           updated_at?: string
         }

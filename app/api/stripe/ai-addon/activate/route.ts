@@ -60,7 +60,14 @@ export async function POST() {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
-    await serviceSupabase.from('profiles').update({ ai_addon_active: true }).eq('id', user.id)
+    // Clears any leftover ai_addon_access_until from a previous
+    // cancellation (scripts/078) - reactivating mid-grace-period starts a
+    // fresh billing cycle right now, so that old grace-period date would
+    // otherwise incorrectly cut access off early once it passed.
+    await serviceSupabase
+      .from('profiles')
+      .update({ ai_addon_active: true, ai_addon_access_until: null })
+      .eq('id', user.id)
 
     return NextResponse.json({ success: true })
   } catch (err) {

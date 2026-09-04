@@ -13,6 +13,7 @@ export interface Profile {
   language: string
   ai_addon_active: boolean
   ai_addon_override: boolean
+  ai_addon_access_until: string | null
   created_at: string
 }
 
@@ -55,6 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           language: 'es',
           ai_addon_active: false,
           ai_addon_override: false,
+          ai_addon_access_until: null,
           created_at: new Date().toISOString(),
         })
       }
