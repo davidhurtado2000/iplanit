@@ -20,3 +20,38 @@ export function getStripeClient(): Stripe {
 export function getPriceIdForTier(tier: 'pro' | 'premium'): string | undefined {
   return tier === 'pro' ? process.env.STRIPE_PRICE_ID_PRO : process.env.STRIPE_PRICE_ID_PREMIUM
 }
+
+// The AI add-on's own recurring Price - a second item added to an existing
+// plan subscription (see app/api/stripe/ai-addon/*), never its own
+// subscription.
+export function getAiAddonPriceId(): string | undefined {
+  return process.env.STRIPE_PRICE_ID_AI_ADDON
+}
+
+// Which Stripe Price ID maps to which iPlanit plan tier - built once at
+// module load. STRIPE_PRICE_ID_PREMIUM_LEGACY is the original $35 Price
+// (pre-3-tier); kept here purely so existing subscribers on it still
+// resolve to 'premium' - it's never used to create new checkouts.
+const PRICE_TIER_MAP: Record<string, 'pro' | 'premium'> = {}
+if (process.env.STRIPE_PRICE_ID_PRO) PRICE_TIER_MAP[process.env.STRIPE_PRICE_ID_PRO] = 'pro'
+if (process.env.STRIPE_PRICE_ID_PREMIUM) PRICE_TIER_MAP[process.env.STRIPE_PRICE_ID_PREMIUM] = 'premium'
+if (process.env.STRIPE_PRICE_ID_PREMIUM_LEGACY) PRICE_TIER_MAP[process.env.STRIPE_PRICE_ID_PREMIUM_LEGACY] = 'premium'
+
+export function tierFromPriceId(priceId: string | undefined | null): 'pro' | 'premium' | null {
+  if (!priceId) return null
+  return PRICE_TIER_MAP[priceId] ?? null
+}
+
+// Finds the subscription item representing the base plan (Pro/Premium),
+// ignoring any other item on the same subscription (e.g. the AI add-on).
+// Stripe does not guarantee items.data ordering, so nothing may assume the
+// plan is items.data[0] once a second item can exist.
+export function getPlanItem(subscription: Stripe.Subscription): Stripe.SubscriptionItem | undefined {
+  return subscription.items.data.find((item) => tierFromPriceId(item.price.id) !== null)
+}
+
+export function getAddonItem(subscription: Stripe.Subscription): Stripe.SubscriptionItem | undefined {
+  const addonPriceId = getAiAddonPriceId()
+  if (!addonPriceId) return undefined
+  return subscription.items.data.find((item) => item.price.id === addonPriceId)
+}

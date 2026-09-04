@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,7 +15,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Building2, Clock, Loader2, CheckCircle2, XCircle, AlertTriangle, ParkingSquare } from 'lucide-react'
+import { Building2, Loader2, CheckCircle2, XCircle, AlertTriangle, ParkingSquare } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useLanguage } from '@/context/language-context'
 import { capitalizeFirst } from '@/lib/utils'
@@ -103,7 +103,7 @@ export default function ManageReservationPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-muted/30">
+      <div className="booking-shell flex min-h-screen items-center justify-center bg-background">
         <LogoLoader />
       </div>
     )
@@ -111,7 +111,7 @@ export default function ManageReservationPage() {
 
   if (notFound || !reservation) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-muted/30 px-4 text-center">
+      <div className="booking-shell flex min-h-screen flex-col items-center justify-center gap-3 bg-background px-4 text-center">
         <Building2 className="h-10 w-10 text-muted-foreground/50" />
         <h1 className="text-xl font-semibold">{tr.manageNotFoundTitle}</h1>
         <p className="text-sm text-muted-foreground">{tr.manageNotFoundDesc}</p>
@@ -122,81 +122,78 @@ export default function ManageReservationPage() {
   const canCancel = reservation.status === 'pending' || reservation.status === 'confirmed'
 
   return (
-    <div className="flex min-h-screen flex-col items-center bg-muted/30 px-4 py-10">
-      <LanguageToggle />
+    <div className="booking-shell flex min-h-screen flex-col items-center bg-background px-4 py-10">
+      <LanguageToggle className="max-w-md" />
 
-      <Card className="w-full max-w-lg">
-        <CardHeader className="px-4 sm:px-6">
-          <CardTitle className="flex items-center gap-2">
-            <Building2 className="h-5 w-5 text-primary" />
-            {reservation.business_name}
-          </CardTitle>
-          <CardDescription>{reservation.service_name}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4 px-4 sm:px-6">
-          <div className="flex items-center gap-3 rounded-lg border bg-muted/40 p-3 text-sm">
-            <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <span>
-              {capitalizeFirst(
-                new Date(reservation.start_time).toLocaleDateString(locale, {
-                  timeZone: reservation.business_timezone,
-                  weekday: 'long',
-                  day: 'numeric',
-                  month: 'long',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })
-              )}
-            </span>
-          </div>
+      <Card className="w-full max-w-md border-none shadow-lg shadow-foreground/5">
+        <CardContent className="flex flex-col items-center gap-0 px-4 py-8 text-center sm:px-6">
+          <p className="text-sm text-muted-foreground">
+            {capitalizeFirst(
+              new Date(reservation.start_time).toLocaleDateString(locale, {
+                timeZone: reservation.business_timezone,
+                weekday: 'long',
+                day: 'numeric',
+                month: 'long',
+              })
+            )}
+          </p>
+          <p className="font-display text-4xl text-foreground sm:text-5xl">
+            {new Date(reservation.start_time).toLocaleTimeString(locale, {
+              timeZone: reservation.business_timezone,
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </p>
+          <p className="mt-1 font-display text-lg text-foreground">{reservation.service_name}</p>
+          <p className="text-xs text-muted-foreground">{reservation.business_name}</p>
 
-          <div className="flex items-center gap-2 text-sm">
-            <span className="font-medium">{tr.manageStatusLabel}:</span>
+          <div className="mt-5 flex items-center gap-2 text-sm">
+            <span className="font-medium text-foreground">{tr.manageStatusLabel}:</span>
             <StatusBadge status={reservation.status} labels={t.reservation} />
           </div>
 
           {reservation.has_parking && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <p className="mt-2 flex items-center gap-2 text-sm text-[var(--confirm)]">
               <ParkingSquare className="h-4 w-4 shrink-0" />
               {tr.manageParkingConfirmed}
-            </div>
+            </p>
           )}
 
           {cancelled && (
-            <div className="flex items-center gap-2 rounded-md bg-green-50 p-3 text-sm text-green-700 dark:bg-green-950/40 dark:text-green-400">
-              <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <div className="mt-4 flex w-full items-center gap-2 rounded-lg border bg-muted/40 p-3 text-left text-sm text-foreground">
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-[var(--confirm)]" />
               {tr.manageCancelSuccess}
             </div>
           )}
 
           {!cancelled && reservation.status === 'cancelled' && (
-            <div className="flex items-center gap-2 rounded-md bg-muted p-3 text-sm text-muted-foreground">
+            <div className="mt-4 flex w-full items-center gap-2 rounded-lg border bg-muted/40 p-3 text-left text-sm text-muted-foreground">
               <XCircle className="h-4 w-4 shrink-0" />
               {tr.manageAlreadyCancelled}
             </div>
           )}
           {reservation.status === 'completed' && (
-            <div className="flex items-center gap-2 rounded-md bg-muted p-3 text-sm text-muted-foreground">
+            <div className="mt-4 flex w-full items-center gap-2 rounded-lg border bg-muted/40 p-3 text-left text-sm text-muted-foreground">
               <CheckCircle2 className="h-4 w-4 shrink-0" />
               {tr.manageAlreadyCompleted}
             </div>
           )}
           {reservation.status === 'no_show' && (
-            <div className="flex items-center gap-2 rounded-md bg-muted p-3 text-sm text-muted-foreground">
+            <div className="mt-4 flex w-full items-center gap-2 rounded-lg border bg-muted/40 p-3 text-left text-sm text-muted-foreground">
               <XCircle className="h-4 w-4 shrink-0" />
               {tr.manageAlreadyNoShow}
             </div>
           )}
 
           {cancelError && (
-            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{cancelError}</div>
+            <div className="mt-4 w-full rounded-md bg-destructive/10 p-3 text-sm text-destructive">{cancelError}</div>
           )}
 
           {canCancel && !cancelled && (
             <Button
               type="button"
               variant="destructive"
-              className="w-full"
+              className="mt-6 w-full"
               onClick={() => setShowConfirm(true)}
             >
               {tr.manageCancelBtn}

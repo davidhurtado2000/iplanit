@@ -26,6 +26,8 @@ import {
   Check,
   ExternalLink,
   Link2,
+  Sparkles,
+  ArrowRight,
 } from 'lucide-react'
 import Link from 'next/link'
 import { UpgradeModal } from '@/components/upgrade-modal'
@@ -260,6 +262,7 @@ export default function DashboardPage() {
   const plan = (profile?.plan ?? 'free') as 'free' | 'pro' | 'premium'
   const isPremium = plan === 'premium'
   const isProOrPremium = plan === 'pro' || plan === 'premium'
+  const aiAddonActive = !!(profile?.ai_addon_active || profile?.ai_addon_override)
   const displayName = profile?.full_name?.split(' ')[0] || user.email?.split('@')[0] || 'Usuario'
   const displayEmail = profile?.email || user.email || ''
 
@@ -287,6 +290,41 @@ export default function DashboardPage() {
         hasClients={clientsCount > 0}
         hasReservations={reservations.length > 0}
       />
+
+      {/* AI assistant CTA - hidden for Free (can't access it at all, and
+          Analytics is already Pro+ gated). Since this became a paid add-on
+          (scripts/077-ai-addon.sql), it's easy for a Pro/Premium owner to
+          never discover it just by browsing Analytics' tabs - placed high
+          on the Dashboard, right after onboarding, so it's seen on every
+          visit instead of relying on that. Content switches once active:
+          upsell before, quick access after. */}
+      {isProOrPremium && (
+        <Card className="border-primary/20 bg-gradient-to-r from-primary/5 to-transparent">
+          <CardContent className="py-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3 sm:items-center">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                  <Sparkles className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-foreground">
+                    {aiAddonActive ? t.dashboard.aiCtaActiveTitle : t.dashboard.aiCtaUpsellTitle}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {aiAddonActive ? t.dashboard.aiCtaActiveDesc : t.dashboard.aiCtaUpsellDesc}
+                  </p>
+                </div>
+              </div>
+              <Button size="sm" className="gap-2" asChild>
+                <Link href={aiAddonActive ? '/dashboard/analytics' : '/dashboard/settings?tab=plan'}>
+                  {aiAddonActive ? t.dashboard.aiCtaActiveBtn : t.dashboard.aiCtaUpsellBtn}
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Free Plan Usage Banner - hidden for Pro and Premium, both already
           paying, neither needs the "upgrade" nag. */}
@@ -443,8 +481,11 @@ export default function DashboardPage() {
         </Card>
 
         {/* Account info - static reference data, so it's compact and
-            secondary instead of competing with "Today" for attention. */}
-        <Card>
+            secondary instead of competing with "Today" for attention. Flat
+            (no border/shadow) is what actually makes it recede next to
+            "Today" - both used to be identical elevated cards despite this
+            comment already saying they shouldn't compete. */}
+        <Card className="border-none bg-muted/40 shadow-none">
           <CardContent className="divide-y p-0">
             <div className="p-4">
               <p className="text-xs font-medium text-muted-foreground">{t.dashboard.businessCard}</p>
@@ -548,7 +589,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-none bg-muted/40 shadow-none">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Link2 className="h-5 w-5 text-primary" />
@@ -592,7 +633,7 @@ export default function DashboardPage() {
               <HeroKpiCard
                 label={t.dashboard.clientsCard}
                 icon={Users}
-                iconClassName="bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400"
+                iconClassName="bg-primary/10 text-primary"
                 value={<CountUp value={clientsCount} />}
                 caption={t.dashboard.manageClients}
                 className="cursor-pointer transition-shadow hover:shadow-md"
@@ -610,7 +651,7 @@ export default function DashboardPage() {
                   <HeroKpiCard
                     label={t.dashboard.servicesCard}
                     icon={Briefcase}
-                    iconClassName="bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-400"
+                    iconClassName="bg-primary/10 text-primary"
                     value={<CountUp value={servicesCount} />}
                     caption={t.dashboard.configureServices}
                     className="cursor-pointer transition-shadow hover:shadow-md"
@@ -626,7 +667,7 @@ export default function DashboardPage() {
                   <HeroKpiCard
                     label={t.dashboard.resourcesCard}
                     icon={Layers}
-                    iconClassName="bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
+                    iconClassName="bg-primary/10 text-primary"
                     value={<CountUp value={resourcesCount} />}
                     caption={t.dashboard.manageResources}
                     className="cursor-pointer transition-shadow hover:shadow-md"
@@ -643,7 +684,7 @@ export default function DashboardPage() {
                     <HeroKpiCard
                       label={t.dashboard.analyticsCard}
                       icon={BarChart3}
-                      iconClassName="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                      iconClassName="bg-primary/10 text-primary"
                       value={<CountUp value={monthReservationsCount} />}
                       caption={t.dashboard.reservationsThisMonth}
                       className="cursor-pointer transition-shadow hover:shadow-md"
@@ -661,7 +702,7 @@ export default function DashboardPage() {
                     <HeroKpiCard
                       label={t.dashboard.analyticsCard}
                       icon={BarChart3}
-                      iconClassName="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                      iconClassName="bg-primary/10 text-primary"
                       value={<Lock className="h-6 w-6 text-muted-foreground" />}
                       caption={t.dashboard.unlockAnalyticsDesc}
                       className="cursor-pointer transition-shadow hover:shadow-md"

@@ -590,11 +590,21 @@ export default function ClientsPage() {
     if (!currentBusiness) return
 
     setSaveError('')
+
+    // Same rule as the public booking form (app/reservar/[slug]/page.tsx) -
+    // at least one way to reach the client, not specifically email. A
+    // client with only a phone is exactly who the WhatsApp reminder path
+    // (scripts/076-whatsapp-reminders.sql) exists for.
+    if (!formData.email.trim() && !formData.phone.trim()) {
+      setSaveError(t.clients.contactRequiredError)
+      return
+    }
+
     setSaving(true)
     try {
       const clientData = {
         name: formData.name,
-        email: formData.email,
+        email: formData.email || null,
         phone: formData.phone || null,
         notes: formData.notes || null,
         document_type: formData.documentNumber ? formData.documentType : null,
@@ -743,13 +753,13 @@ export default function ClientsPage() {
         <HeroKpiCard
           label={t.clients.totalClients}
           icon={Users}
-          iconClassName="bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400"
+          iconClassName="bg-primary/10 text-primary"
           value={<CountUp value={clients.length} />}
         />
         <HeroKpiCard
           label={t.clients.newThisMonth}
           icon={Calendar}
-          iconClassName="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+          iconClassName="bg-primary/10 text-primary"
           value={
             <CountUp
               value={
@@ -765,7 +775,7 @@ export default function ClientsPage() {
         <HeroKpiCard
           label={t.clients.inactiveClients}
           icon={UserX}
-          iconClassName="bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
+          iconClassName="bg-primary/10 text-primary"
           value={<CountUp value={inactiveClientsCount} />}
           caption={t.clients.inactiveClientsHint}
         />
@@ -1184,7 +1194,6 @@ export default function ClientsPage() {
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 placeholder={t.clients.emailPlaceholder}
-                required
               />
             </div>
 

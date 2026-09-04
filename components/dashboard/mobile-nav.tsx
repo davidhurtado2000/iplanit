@@ -193,13 +193,16 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
                       href={item.href}
                       onClick={onToggle}
                       className={cn(
-                        'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                        'relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                         isActive
-                          ? 'bg-primary/10 text-primary'
+                          ? 'bg-primary/10 text-foreground'
                           : 'text-foreground/70 hover:bg-muted hover:text-foreground'
                       )}
                     >
-                      <item.icon className="h-5 w-5 shrink-0" />
+                      {isActive && (
+                        <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary" />
+                      )}
+                      <item.icon className={cn('h-5 w-5 shrink-0', isActive && 'text-primary')} />
                       <span>{item.key === 'workers' ? workerLabel.plural : t.nav[item.key]}</span>
                       {item.key === 'analytics' && <PremiumBadge className="ml-auto" requiredPlan="pro" />}
                     </Link>
@@ -272,11 +275,13 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
                 key={item.key}
                 href={item.href}
                 className={cn(
-                  'flex flex-col items-center gap-1 p-2 text-xs transition-colors',
+                  'flex flex-col items-center gap-1 p-1.5 text-xs transition-colors',
                   isActive ? 'text-primary' : 'text-muted-foreground'
                 )}
               >
-                <item.icon className={cn('h-5 w-5', isActive && 'text-primary')} />
+                <span className={cn('flex items-center justify-center rounded-full p-1.5', isActive && 'bg-primary/10')}>
+                  <item.icon className="h-5 w-5" />
+                </span>
                 <span className="truncate max-w-[60px]">
                   {(item.key === 'workers' ? workerLabel.plural : t.nav[item.key]).slice(0, 6)}
                 </span>

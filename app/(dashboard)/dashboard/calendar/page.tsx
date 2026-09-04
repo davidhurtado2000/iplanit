@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { CalendarViewComponent, VISIT_BLOCK_COLOR } from '@/components/dashboard/calendar-view'
 import { ReservationModal } from '@/components/dashboard/reservation-modal'
+import { PageHeader } from '@/components/dashboard/page-header'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
 import { useDashboardData } from '@/context/dashboard-data-context'
@@ -475,55 +476,54 @@ function CalendarPageInner() {
 
   return (
     <div className="space-y-4 pb-20 lg:pb-6">
-      {/* Header */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-foreground sm:text-2xl">{t.calendar.title}</h1>
-          <p className="text-sm text-muted-foreground">{t.calendar.subtitle}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-2 bg-transparent">
-                {currentViewOption && <currentViewOption.icon className="h-4 w-4" />}
-                <span className="hidden xs:inline">{t.calendar.view}</span> {currentViewOption?.label}
-                <ChevronDown className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {VIEW_OPTIONS.map((option) => (
-                <DropdownMenuItem
-                  key={option.value}
-                  onClick={() => setView(option.value)}
-                  className="gap-2"
-                >
-                  <option.icon className="h-4 w-4" />
-                  {option.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button onClick={handleCreateReservation} size="sm" className="gap-2">
-            <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">{t.calendar.newReservation}</span>
-            <span className="sm:hidden">{t.calendar.newShort}</span>
-          </Button>
-          <Button onClick={handleCreateVisit} size="sm" variant="outline" className="gap-2">
-            <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">{t.calendar.newVisit}</span>
-            <span className="sm:hidden">{t.calendar.newVisitShort}</span>
-          </Button>
-          {/* Separate, always-visible entry point for logging a forgotten
-              appointment - deliberately not a quiet toggle inside the normal
-              create form (see reservation-modal.tsx's `backdated` prop docs
-              and memory/feedback_obvious_ui_for_secondary_actions.md). */}
-          <Button onClick={handleCreateBackdated} size="sm" variant="outline" className="gap-2">
-            <History className="h-4 w-4" />
-            <span className="hidden sm:inline">{t.calendar.newBackdated}</span>
-            <span className="sm:hidden">{t.calendar.newBackdatedShort}</span>
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title={t.calendar.title}
+        subtitle={t.calendar.subtitle}
+        actions={
+          <>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-2 bg-transparent">
+                  {currentViewOption && <currentViewOption.icon className="h-4 w-4" />}
+                  <span className="hidden xs:inline">{t.calendar.view}</span> {currentViewOption?.label}
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {VIEW_OPTIONS.map((option) => (
+                  <DropdownMenuItem
+                    key={option.value}
+                    onClick={() => setView(option.value)}
+                    className="gap-2"
+                  >
+                    <option.icon className="h-4 w-4" />
+                    {option.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button onClick={handleCreateReservation} size="sm" className="gap-2">
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">{t.calendar.newReservation}</span>
+              <span className="sm:hidden">{t.calendar.newShort}</span>
+            </Button>
+            <Button onClick={handleCreateVisit} size="sm" variant="outline" className="gap-2">
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">{t.calendar.newVisit}</span>
+              <span className="sm:hidden">{t.calendar.newVisitShort}</span>
+            </Button>
+            {/* Separate, always-visible entry point for logging a forgotten
+                appointment - deliberately not a quiet toggle inside the normal
+                create form (see reservation-modal.tsx's `backdated` prop docs
+                and memory/feedback_obvious_ui_for_secondary_actions.md). */}
+            <Button onClick={handleCreateBackdated} size="sm" variant="outline" className="gap-2">
+              <History className="h-4 w-4" />
+              <span className="hidden sm:inline">{t.calendar.newBackdated}</span>
+              <span className="sm:hidden">{t.calendar.newBackdatedShort}</span>
+            </Button>
+          </>
+        }
+      />
 
       {hasMultipleSedes && (
         <div className="flex flex-col gap-1 rounded-lg border bg-muted/30 px-3 py-2 sm:flex-row sm:items-center sm:gap-3">
@@ -664,7 +664,7 @@ function CalendarPageInner() {
               navigation. Day-view only: Week/Month don't have an hour grid
               to preview against. */}
           {view === 'day' && previewableServices.length > 0 && (
-            <Card>
+            <Card className="border-none bg-muted/40 shadow-none">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm">{t.calendar.previewServicePlaceholder}</CardTitle>
                 <p className="text-xs text-muted-foreground">{t.calendar.previewServiceHint}</p>

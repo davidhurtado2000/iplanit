@@ -6,7 +6,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/dashboard/page-header'
-import { Card, CardContent } from '@/components/ui/card'
+import { CatalogItemCard } from '@/components/dashboard/catalog-item-card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -671,16 +671,12 @@ export default function ServicesPage() {
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filteredServices.map((service) => (
-            <Card
+            <CatalogItemCard
               key={service.id}
-              className={cn(
-                'flex h-full cursor-pointer flex-col gap-0 overflow-hidden py-0 transition-shadow hover:shadow-md',
-                !service.is_active && 'opacity-70'
-              )}
+              color={service.color}
+              isActive={service.is_active}
               onClick={() => handleOpenServiceModal(service)}
             >
-              <div className="h-1.5 w-full" style={{ backgroundColor: service.color }} />
-              <CardContent className="flex flex-1 flex-col justify-between gap-4 p-5">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <h3 className="truncate font-semibold text-foreground">{service.name}</h3>
@@ -753,8 +749,7 @@ export default function ServicesPage() {
                     aria-label={service.is_active ? t.services.active : t.services.inactive}
                   />
                 </div>
-              </CardContent>
-            </Card>
+            </CatalogItemCard>
           ))}
         </div>
       )}

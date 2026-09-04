@@ -15,6 +15,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PremiumFeature } from '@/components/premium-feature'
 import { HeroKpiCard } from '@/components/dashboard/hero-kpi-card'
 import { CountUp } from '@/components/dashboard/count-up'
+import { AnalyticsAiSummary } from '@/components/dashboard/analytics-ai-summary'
+import { AnalyticsAiChat } from '@/components/dashboard/analytics-ai-chat'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -32,8 +34,10 @@ import {
   UserX,
   ShieldAlert,
   PieChart,
+  Sparkles,
 } from 'lucide-react'
 import { useBusinesses } from '@/hooks/use-businesses'
+import { useAuth } from '@/hooks/use-auth'
 import { getWorkerLabel } from '@/lib/worker-label'
 import {
   useDashboardData,
@@ -214,6 +218,8 @@ function DemandHeatmap({
 
 export default function AnalyticsPage() {
   const { currentBusiness, businesses, loading: businessLoading } = useBusinesses()
+  const { profile } = useAuth()
+  const aiAddonActive = !!(profile?.ai_addon_active || profile?.ai_addon_override)
   const {
     reservations: businessReservations,
     clients: businessClients,
@@ -255,6 +261,7 @@ export default function AnalyticsPage() {
     clients: Client[]
     services: Service[]
     resources: Resource[]
+    businessHours: (BusinessHour & { business_id: string })[]
   } | null>(null)
 
   const timezone = currentBusiness?.timezone || 'America/Lima'
@@ -364,21 +371,25 @@ export default function AnalyticsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ensureReservationsInRange])
 
-  // Org-wide fetch for "todas las sedes" - only runs when the toggle is on
-  // and there's actually more than one sede. reservations/services/
-  // resources scoped by business_id in (...) since each row belongs to
-  // exactly one sede; clients scoped by organization_id since a client is
-  // now a single org-wide row, not one per sede.
+  // Org-wide fetch - powers both "todas las sedes" (combines every sede's
+  // data into the page's own metrics) and the "Comparar sedes" tab (keeps
+  // them apart, one row per sede), so it runs whenever there's more than
+  // one sede rather than only while the toggle is on - the compare tab
+  // needs this data even if the toggle itself is off. reservations/
+  // services/resources/business_hours scoped by business_id in (...) since
+  // each row belongs to exactly one sede; clients scoped by
+  // organization_id since a client is now a single org-wide row, not one
+  // per sede.
   const orgBusinessIdsKey = orgBusinessIds.join(',')
   useEffect(() => {
-    if (!allSedes || !hasMultipleSedes || !currentBusiness) {
+    if (!hasMultipleSedes || !currentBusiness) {
       setOrgData(null)
       return
     }
     let cancelled = false
     const rangeFrom = range === 'all' ? from : prevFrom
     ;(async () => {
-      const [{ data: res }, { data: cli }, { data: svc }, { data: rsc }] = await Promise.all([
+      const [{ data: res }, { data: cli }, { data: svc }, { data: rsc }, { data: hrs }] = await Promise.all([
         supabase
           .from('reservations')
           .select('*')
@@ -388,6 +399,7 @@ export default function AnalyticsPage() {
         supabase.from('clients').select('*').eq('organization_id', currentBusiness.organization_id),
         supabase.from('services').select('*').in('business_id', orgBusinessIds),
         supabase.from('resources').select('*').in('business_id', orgBusinessIds),
+        supabase.from('business_hours').select('*').in('business_id', orgBusinessIds),
       ])
       if (!cancelled) {
         setOrgData({
@@ -395,6 +407,7 @@ export default function AnalyticsPage() {
           clients: (cli || []) as Client[],
           services: (svc || []) as Service[],
           resources: (rsc || []) as Resource[],
+          businessHours: (hrs || []) as (BusinessHour & { business_id: string })[],
         })
       }
     })()
@@ -402,7 +415,33 @@ export default function AnalyticsPage() {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allSedes, hasMultipleSedes, orgBusinessIdsKey, range, from, to, prevFrom, currentBusiness?.organization_id])
+  }, [hasMultipleSedes, orgBusinessIdsKey, range, from, to, prevFrom, currentBusiness?.organization_id])
+
+  // "Comparar sedes" tab - one row per sede instead of the "todas las
+  // sedes" toggle's combined totals. Each sede gets its own business_hours/
+  // timezone/currency for occupancy and revenue, since those can genuinely
+  // differ location to location (unlike the combined view, which only ever
+  // needs the current sede's business_hours as an approximation).
+  const sedeComparison = useMemo(() => {
+    if (!hasMultipleSedes || !orgData) return []
+    return orgBusinessIds.map((bizId) => {
+      const biz = businesses.find((b) => b.id === bizId)
+      const bizReservations = orgData.reservations.filter((r) => r.business_id === bizId)
+      const bizServices = orgData.services.filter((s) => s.business_id === bizId)
+      const bizHours = orgData.businessHours.filter((h) => h.business_id === bizId)
+      const bizTimezone = biz?.timezone || timezone
+      const breakdown = getServiceBreakdown(bizReservations, bizServices, from, to)
+      return {
+        businessId: bizId,
+        name: biz?.name || '—',
+        currencySymbol: biz?.currency === 'USD' ? '$' : 'S/',
+        count: breakdown.reduce((sum, s) => sum + s.count, 0),
+        revenue: getTotalRevenue(breakdown),
+        averageTicket: getAverageTicket(bizReservations, from, to),
+        occupancyRate: getOccupancy(bizReservations, bizHours, from, to, bizTimezone).rate,
+      }
+    })
+  }, [hasMultipleSedes, orgData, orgBusinessIds, businesses, from, to, timezone])
 
   const dailyDemand = useMemo(
     () => getDailyDemand(filteredReservations, from, to, timezone, locale),
@@ -699,6 +738,11 @@ export default function AnalyticsPage() {
             {(filterableResources.length > 0 || filterableWorkers.length > 0 || sellerBreakdown.length > 0) && (
               <TabsTrigger value="team">{tr.tabTeam}</TabsTrigger>
             )}
+            {hasMultipleSedes && <TabsTrigger value="compare">{tr.tabCompareSedes}</TabsTrigger>}
+            <TabsTrigger value="ai-chat" className="gap-1.5">
+              <Sparkles className="h-3.5 w-3.5" />
+              {tr.tabAiChat}
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-4">
@@ -713,21 +757,21 @@ export default function AnalyticsPage() {
               <HeroKpiCard
                 label={tr.kpiRevenue}
                 icon={DollarSign}
-                iconClassName="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                iconClassName="bg-primary/10 text-primary"
                 value={<CountUp value={totalRevenue} prefix={`${currencySymbol} `} />}
                 trend={<TrendBadge trend={revenueTrend} />}
               />
               <HeroKpiCard
                 label={tr.kpiReservations}
                 icon={CalendarDays}
-                iconClassName="bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400"
+                iconClassName="bg-primary/10 text-primary"
                 value={<CountUp value={totalReservations} />}
                 trend={<TrendBadge trend={reservationsTrend} />}
               />
               <HeroKpiCard
                 label={tr.kpiOccupancy}
                 icon={Gauge}
-                iconClassName="bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-400"
+                iconClassName="bg-primary/10 text-primary"
                 value={<CountUp value={occupancy.rate} suffix="%" />}
                 trend={<TrendBadge trend={occupancyTrend} />}
                 caption={`${occupancy.bookedHours} ${tr.hoursBookedOf} ${occupancy.openHours} ${tr.hoursUnit}`}
@@ -735,11 +779,34 @@ export default function AnalyticsPage() {
               <HeroKpiCard
                 label={tr.kpiClientRetention}
                 icon={Users}
-                iconClassName="bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
+                iconClassName="bg-primary/10 text-primary"
                 value={<CountUp value={clientRetention.retentionRate} suffix="%" />}
                 caption={`${clientRetention.newClients} ${tr.newClientsUnit} · ${clientRetention.returningClients} ${tr.returningClientsUnit}`}
               />
             </div>
+
+            {currentBusiness && (
+              <AnalyticsAiSummary
+                businessId={currentBusiness.id}
+                aiAddonActive={aiAddonActive}
+                metrics={{
+                  currencySymbol,
+                  totalRevenue,
+                  totalReservations,
+                  occupancyRate: occupancy.rate,
+                  bookedHours: occupancy.bookedHours,
+                  openHours: occupancy.openHours,
+                  retentionRate: clientRetention.retentionRate,
+                  newClients: clientRetention.newClients,
+                  returningClients: clientRetention.returningClients,
+                  topServiceName: topService?.name ?? null,
+                  topServiceCount: topService?.count ?? null,
+                  averageTicket,
+                  noShowRate: noShowRate.rate,
+                  cancellationRate: cancellationRate.rate,
+                }}
+              />
+            )}
 
             <Card>
               <CardContent className="grid grid-cols-2 gap-x-4 gap-y-4 p-4 md:grid-cols-5 md:gap-y-0 md:divide-x">
@@ -1194,6 +1261,49 @@ export default function AnalyticsPage() {
               )}
             </TabsContent>
           )}
+
+          {hasMultipleSedes && (
+            <TabsContent value="compare" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>{tr.compareSedesTitle}</CardTitle>
+                  <CardDescription>{tr.compareSedesDesc}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {sedeComparison.length === 0 ? (
+                    <p className="py-10 text-center text-sm text-muted-foreground">{tr.noData}</p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{tr.compareSedesColSede}</TableHead>
+                          <TableHead className="text-right">{tr.compareSedesColReservations}</TableHead>
+                          <TableHead className="text-right">{tr.compareSedesColRevenue}</TableHead>
+                          <TableHead className="text-right">{tr.compareSedesColAvgTicket}</TableHead>
+                          <TableHead className="text-right">{tr.compareSedesColOccupancy}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {sedeComparison.map((s) => (
+                          <TableRow key={s.businessId}>
+                            <TableCell className="font-medium">{s.name}</TableCell>
+                            <TableCell className="text-right">{s.count}</TableCell>
+                            <TableCell className="text-right">{s.currencySymbol} {s.revenue.toFixed(0)}</TableCell>
+                            <TableCell className="text-right">{s.currencySymbol} {s.averageTicket.toFixed(0)}</TableCell>
+                            <TableCell className="text-right">{s.occupancyRate}%</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
+
+          <TabsContent value="ai-chat">
+            {currentBusiness && <AnalyticsAiChat businessId={currentBusiness.id} aiAddonActive={aiAddonActive} />}
+          </TabsContent>
         </Tabs>
       </PremiumFeature>
     </div>

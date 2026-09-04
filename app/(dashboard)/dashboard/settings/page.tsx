@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, type FormEvent, type ChangeEvent } from 'react'
+import { useState, useEffect, useRef, Suspense, type FormEvent, type ChangeEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -38,8 +38,9 @@ import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
 import { useDashboardData } from '@/context/dashboard-data-context'
+import { AI_USAGE_WARNING_THRESHOLD } from '@/lib/ai-usage'
 import { useTheme } from 'next-themes'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { translateAuthError, withAuthLockRetry, withTimeout, AuthTimeoutError } from '@/lib/supabase/auth-errors'
@@ -157,13 +158,20 @@ function SaveBar({
   )
 }
 
-export default function SettingsPage() {
+// Split out from the default export so useSearchParams() (needed to read
+// ?tab= for deep-linking straight to the Plan tab, e.g. from the AI add-on
+// upsell card) has the Suspense boundary Next.js requires around it -
+// without this, `next build` fails outright rather than just warning - same
+// pattern already used in dashboard/calendar/page.tsx for the same reason.
+function SettingsPageInner() {
   const { user, profile: authProfile, loading: authLoading, refreshProfile } = useAuth()
   const { currentBusiness, businesses, loading: businessLoading, updateBusiness, fetchBusinesses, switchBusiness } = useBusinesses()
   const { businessHours: realBusinessHours, refetchBusinessHours } = useDashboardData()
   const { language, setLanguage, t } = useLanguage()
   const { theme, setTheme } = useTheme()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const initialTab = searchParams.get('tab') === 'plan' ? 'plan' : 'profile'
   const [isPortalLoading, setIsPortalLoading] = useState(false)
   const [isChangingPlan, setIsChangingPlan] = useState(false)
   // Non-null opens the confirmation dialog below - set by the 3 upgrade
@@ -171,6 +179,9 @@ export default function SettingsPage() {
   // always sees the new price and proration disclosure before the charge
   // fires, never after.
   const [pendingPlanChange, setPendingPlanChange] = useState<'pro' | 'premium' | null>(null)
+  const [isAiAddonLoading, setIsAiAddonLoading] = useState(false)
+  const [pendingAiAddonAction, setPendingAiAddonAction] = useState<'activate' | 'deactivate' | null>(null)
+  const [aiUsage, setAiUsage] = useState<{ used: number; limit: number } | null>(null)
   const [mounted, setMounted] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
@@ -309,6 +320,47 @@ export default function SettingsPage() {
       toast.error(t.settings.changePlanError)
     } finally {
       setIsChangingPlan(false)
+    }
+  }
+
+  const aiAddonActive = !!(authProfile?.ai_addon_active || authProfile?.ai_addon_override)
+
+  const fetchAiUsage = async () => {
+    if (!currentBusiness) return
+    try {
+      const res = await fetch(`/api/dashboard/ai-usage?businessId=${currentBusiness.id}`)
+      const data = await res.json()
+      if (res.ok) setAiUsage({ used: data.used, limit: data.limit })
+    } catch (err) {
+      console.error('[iplanit] Error fetching AI usage:', err)
+    }
+  }
+
+  useEffect(() => {
+    if (plan !== 'free' && aiAddonActive) fetchAiUsage()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentBusiness?.id, aiAddonActive])
+
+  // Same optimistic-write-then-refetch pattern as handleChangePlan above -
+  // the Stripe webhook confirms ai_addon_active independently afterward.
+  const handleAiAddonAction = async (action: 'activate' | 'deactivate') => {
+    setIsAiAddonLoading(true)
+    try {
+      const res = await fetch(`/api/stripe/ai-addon/${action}`, { method: 'POST' })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(action === 'activate' ? t.settings.aiAddonActivateSuccess : t.settings.aiAddonDeactivateSuccess)
+        await refreshProfile()
+        setTimeout(() => refreshProfile(), 2000)
+        if (action === 'activate') fetchAiUsage()
+        return
+      }
+      toast.error(t.settings.aiAddonActionError)
+    } catch (err) {
+      console.error('[iplanit] Error updating AI add-on:', err)
+      toast.error(t.settings.aiAddonActionError)
+    } finally {
+      setIsAiAddonLoading(false)
     }
   }
 
@@ -1111,7 +1163,7 @@ export default function SettingsPage() {
       {/* Header */}
       <PageHeader title={t.settings.title} subtitle={t.settings.subtitle} />
 
-      <Tabs defaultValue="profile" className="space-y-6">
+      <Tabs defaultValue={initialTab} className="space-y-6">
         <TabsList
           className={cn(
             'grid h-auto w-full grid-cols-2 gap-2 bg-muted/50 p-2 lg:w-auto',
@@ -2247,6 +2299,54 @@ export default function SettingsPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* AI add-on - separate recurring charge on top of the plan
+              price, billed to the same card already on file (see
+              app/api/stripe/ai-addon/*). Available to Pro and Premium
+              alike - Free never sees this, same as Analytics itself. */}
+          {plan !== 'free' && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  {t.settings.aiAddonTitle}
+                </CardTitle>
+                <CardDescription>{t.settings.aiAddonDesc}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {aiAddonActive ? (
+                  <>
+                    {aiUsage && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">{t.settings.aiAddonUsageLabel}</span>
+                          <span className={cn('font-medium', aiUsage.used >= aiUsage.limit && 'text-destructive')}>
+                            {aiUsage.used} / {aiUsage.limit}
+                          </span>
+                        </div>
+                        <Progress value={Math.min(100, (aiUsage.used / aiUsage.limit) * 100)} className="h-2" />
+                        {aiUsage.used >= AI_USAGE_WARNING_THRESHOLD && aiUsage.used < aiUsage.limit && (
+                          <p className="text-xs text-amber-600 dark:text-amber-400">{t.settings.aiAddonNearLimit}</p>
+                        )}
+                      </div>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPendingAiAddonAction('deactivate')}
+                      disabled={isAiAddonLoading}
+                    >
+                      {t.settings.aiAddonDeactivateBtn}
+                    </Button>
+                  </>
+                ) : (
+                  <Button size="sm" onClick={() => setPendingAiAddonAction('activate')} disabled={isAiAddonLoading}>
+                    {t.settings.aiAddonActivateBtn}
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* Team Tab - owner only, Premium-gated */}
@@ -2589,6 +2689,36 @@ export default function SettingsPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={pendingAiAddonAction !== null} onOpenChange={(open) => !open && setPendingAiAddonAction(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {pendingAiAddonAction === 'activate' ? t.settings.aiAddonActivateConfirmTitle : t.settings.aiAddonDeactivateConfirmTitle}
+            </DialogTitle>
+            <DialogDescription>
+              {pendingAiAddonAction === 'activate' ? t.settings.aiAddonActivateConfirmDesc : t.settings.aiAddonDeactivateConfirmDesc}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingAiAddonAction(null)} disabled={isAiAddonLoading}>
+              {t.settings.changePlanCancelBtn}
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!pendingAiAddonAction) return
+                await handleAiAddonAction(pendingAiAddonAction)
+                setPendingAiAddonAction(null)
+              }}
+              disabled={isAiAddonLoading}
+              className="gap-2"
+            >
+              {isAiAddonLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+              {pendingAiAddonAction === 'activate' ? t.settings.aiAddonActivateBtn : t.settings.aiAddonDeactivateBtn}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog
         open={showPasswordDialog}
         onOpenChange={(open) => {
@@ -2681,5 +2811,19 @@ export default function SettingsPage() {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center py-24">
+          <LogoLoader />
+        </div>
+      }
+    >
+      <SettingsPageInner />
+    </Suspense>
   )
 }

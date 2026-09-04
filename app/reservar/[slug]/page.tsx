@@ -98,6 +98,19 @@ function addDays(dateStr: string, days: number) {
   return d.toISOString().slice(0, 10)
 }
 
+// The steps after "service" genuinely vary per service (duration/hours/
+// resource are each conditional on how that service is configured) - this
+// mirrors the exact same branching handleSelectService/goToResourceOrDatetime
+// already use, just to know what to show in the progress indicator.
+function getStepSequence(svc: PublicService): Step[] {
+  const steps: Step[] = []
+  if (svc.pricing_mode === 'preset') steps.push('duration')
+  if (svc.pricing_mode === 'hourly') steps.push('hours')
+  if (svc.resources.length > 1) steps.push('resource')
+  steps.push('datetime', 'contact')
+  return steps
+}
+
 export default function PublicBookingPage() {
   const params = useParams<{ slug: string }>()
   const slug = params?.slug
@@ -379,7 +392,7 @@ export default function PublicBookingPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-muted/30">
+      <div className="booking-shell flex min-h-screen items-center justify-center bg-background">
         <LogoLoader />
       </div>
     )
@@ -387,7 +400,7 @@ export default function PublicBookingPage() {
 
   if (notFound || !business) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-muted/30 px-4 text-center">
+      <div className="booking-shell flex min-h-screen flex-col items-center justify-center gap-3 bg-background px-4 text-center">
         <Building2 className="h-10 w-10 text-muted-foreground/50" />
         <h1 className="text-xl font-semibold">{tr.notFoundTitle}</h1>
         <p className="text-sm text-muted-foreground">{tr.notFoundDesc}</p>
@@ -395,22 +408,25 @@ export default function PublicBookingPage() {
     )
   }
 
-  return (
-    <div className="flex min-h-screen flex-col items-center bg-muted/30 px-4 py-10">
-      <LanguageToggle />
+  const stepSequence = selectedService ? getStepSequence(selectedService) : []
+  const stepIndex = stepSequence.indexOf(step)
 
-      <div className="mb-6 flex w-full max-w-lg flex-col items-center text-center">
-        <Avatar className="h-14 w-14 rounded-xl">
+  return (
+    <div className="booking-shell flex min-h-screen flex-col items-center bg-background px-4 py-10">
+      <LanguageToggle className="max-w-md" />
+
+      <div className="mb-6 flex w-full max-w-md flex-col items-center text-center">
+        <Avatar className="h-16 w-16 rounded-2xl shadow-sm">
           <AvatarImage src={business.logo_url || undefined} alt={business.name} className="object-cover" />
-          <AvatarFallback className="rounded-xl bg-primary/10">
-            <Building2 className="h-7 w-7 text-primary" />
+          <AvatarFallback className="rounded-2xl bg-primary/10">
+            <Building2 className="h-8 w-8 text-primary" />
           </AvatarFallback>
         </Avatar>
-        <h1 className="mt-3 text-2xl font-bold text-foreground">{business.name}</h1>
+        <h1 className="mt-4 font-display text-3xl text-foreground">{business.name}</h1>
         {business.description && (
-          <p className="mt-1 text-sm text-muted-foreground">{business.description}</p>
+          <p className="mt-1.5 text-sm text-muted-foreground">{business.description}</p>
         )}
-        <div className="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
           {business.address && (
             <span className="flex items-center gap-1">
               <MapPin className="h-3.5 w-3.5" />
@@ -426,88 +442,101 @@ export default function PublicBookingPage() {
         </div>
       </div>
 
-      <Card className="w-full max-w-lg">
+      <Card className="w-full max-w-md border-none shadow-lg shadow-foreground/5">
         {step === 'success' ? (
-          <CardContent className="flex flex-col items-center gap-4 py-10 text-center">
+          <CardContent className="flex flex-col items-center gap-0 px-4 py-8 text-center sm:px-6">
             <Confetti />
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-              <CheckCircle2 className="h-8 w-8 text-primary" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-foreground">{tr.successTitle}</h2>
-              <p className="mt-2 text-sm text-muted-foreground">{tr.successDesc}</p>
-            </div>
+            <span className="-rotate-2 inline-flex items-center gap-1.5 rounded-full border border-[var(--confirm)] px-3 py-1 text-xs font-medium text-[var(--confirm)]">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              {tr.successTitle}
+            </span>
+            <p className="mt-3 max-w-xs text-sm text-muted-foreground">{tr.successDesc}</p>
+
             {selectedService && selectedSlot && (
-              <div className="w-full rounded-lg border bg-muted/40 p-3 text-left text-sm">
-                <p className="font-medium">{selectedService.name}</p>
-                <p className="text-muted-foreground">
+              <div className="mt-5 w-full">
+                <p className="text-sm text-muted-foreground">
                   {capitalizeFirst(
                     selectedSlot.toLocaleDateString(locale, {
                       timeZone: tz,
                       weekday: 'long',
                       day: 'numeric',
                       month: 'long',
-                      hour: '2-digit',
-                      minute: '2-digit',
                     })
                   )}
                 </p>
+                <p className="font-display text-4xl text-foreground sm:text-5xl">
+                  {selectedSlot.toLocaleTimeString(locale, { timeZone: tz, hour: '2-digit', minute: '2-digit' })}
+                </p>
+                <p className="mt-1 font-display text-lg text-foreground">{selectedService.name}</p>
+                <p className="text-xs text-muted-foreground">{business.name}</p>
               </div>
             )}
+
             {needsParking && (
-              <div className="flex w-full items-center gap-2 rounded-lg border bg-muted/40 p-3 text-left text-sm text-muted-foreground">
+              <p className="mt-3 flex items-center gap-2 text-sm text-[var(--confirm)]">
                 <ParkingSquare className="h-4 w-4 shrink-0" />
                 {tr.parkingConfirmed}
-              </div>
+              </p>
             )}
+
             {manageReservationId && (
-              <div className="w-full space-y-2 rounded-lg border border-dashed p-3 text-left">
-                <p className="text-xs font-medium text-foreground">{tr.manageLinkTitle}</p>
-                <p className="text-xs text-muted-foreground">{tr.manageLinkDesc}</p>
-                <div className="flex gap-2">
-                  <Input
-                    ref={manageLinkInputRef}
-                    readOnly
-                    value={typeof window !== 'undefined' ? `${window.location.origin}/reservar/cita/${manageReservationId}` : ''}
-                    className="font-mono text-xs"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="shrink-0"
-                    onClick={async () => {
-                      const link = `${window.location.origin}/reservar/cita/${manageReservationId}`
-                      try {
-                        // navigator.clipboard is missing or throws
-                        // (NotAllowedError) in several mobile in-app browsers
-                        // - notably WhatsApp's own webview, which is exactly
-                        // where a client opens this link from after getting
-                        // it in a WhatsApp message. Fall back to selecting
-                        // the (already visible, read-only) input's text so
-                        // they can still copy it via their phone's own
-                        // selection menu instead of hitting an unhandled error.
-                        if (!navigator.clipboard) throw new Error('Clipboard API unavailable')
-                        await navigator.clipboard.writeText(link)
-                        setLinkCopied(true)
-                        setTimeout(() => setLinkCopied(false), 2000)
-                      } catch (err) {
-                        console.error('[iplanit] Clipboard write failed, falling back to text selection:', err)
-                        manageLinkInputRef.current?.select()
-                        manageLinkInputRef.current?.setSelectionRange(0, link.length)
-                      }
-                    }}
-                  >
-                    {linkCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  </Button>
+              <>
+                <div className="ticket-tear mt-6 w-full" />
+                <div className="w-full space-y-2 pt-4 text-left">
+                  <p className="text-xs font-medium text-foreground">{tr.manageLinkTitle}</p>
+                  <p className="text-xs text-muted-foreground">{tr.manageLinkDesc}</p>
+                  <div className="flex gap-2">
+                    <Input
+                      ref={manageLinkInputRef}
+                      readOnly
+                      value={typeof window !== 'undefined' ? `${window.location.origin}/reservar/cita/${manageReservationId}` : ''}
+                      className="font-mono text-xs"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="shrink-0"
+                      onClick={async () => {
+                        const link = `${window.location.origin}/reservar/cita/${manageReservationId}`
+                        try {
+                          // navigator.clipboard is missing or throws
+                          // (NotAllowedError) in several mobile in-app browsers
+                          // - notably WhatsApp's own webview, which is exactly
+                          // where a client opens this link from after getting
+                          // it in a WhatsApp message. Fall back to selecting
+                          // the (already visible, read-only) input's text so
+                          // they can still copy it via their phone's own
+                          // selection menu instead of hitting an unhandled error.
+                          if (!navigator.clipboard) throw new Error('Clipboard API unavailable')
+                          await navigator.clipboard.writeText(link)
+                          setLinkCopied(true)
+                          setTimeout(() => setLinkCopied(false), 2000)
+                        } catch (err) {
+                          console.error('[iplanit] Clipboard write failed, falling back to text selection:', err)
+                          manageLinkInputRef.current?.select()
+                          manageLinkInputRef.current?.setSelectionRange(0, link.length)
+                        }
+                      }}
+                    >
+                      {linkCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                    </Button>
+                  </div>
                 </div>
-              </div>
+              </>
             )}
           </CardContent>
         ) : (
           <>
             <CardHeader className="px-4 sm:px-6">
-              <CardTitle>
+              {stepIndex >= 0 && (
+                <div className="booking-steps mb-1">
+                  {stepSequence.map((s, i) => (
+                    <span key={s} data-done={i <= stepIndex} />
+                  ))}
+                </div>
+              )}
+              <CardTitle className="font-display text-2xl font-normal">
                 {step === 'service' && tr.stepService}
                 {step === 'duration' && tr.stepDuration}
                 {step === 'hours' && tr.stepHours}
@@ -540,7 +569,7 @@ export default function PublicBookingPage() {
                       >
                         <div className="h-10 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: svc.color }} />
                         <div className="min-w-0 flex-1">
-                          <p className="font-medium">{svc.name}</p>
+                          <p className="font-display text-base text-foreground">{svc.name}</p>
                           <p className="text-xs text-muted-foreground">
                             {svc.pricing_mode === 'preset' && tr.flexibleDurationTag}
                             {svc.pricing_mode === 'hourly' && tr.hourlyTag}
@@ -664,7 +693,7 @@ export default function PublicBookingPage() {
                         className="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50"
                       >
                         <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: res.color }} />
-                        <span className="flex-1 font-medium">{res.name}</span>
+                        <span className="font-display flex-1 text-base text-foreground">{res.name}</span>
                         <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                       </button>
                     ))}
@@ -766,7 +795,7 @@ export default function PublicBookingPage() {
                   </Button>
 
                   <div className="rounded-lg border bg-muted/40 p-3 text-sm">
-                    <p className="font-medium">
+                    <p className="font-display text-base text-foreground">
                       {selectedService.name}
                       {selectedDurationOption &&
                         ` (${selectedDurationOption.duration_minutes} min${
@@ -872,7 +901,7 @@ export default function PublicBookingPage() {
                         <p className="pl-1 text-xs text-muted-foreground">{tr.checkingParkingAvailability}</p>
                       )}
                       {parkingAvailability === 'available' && (
-                        <p className="flex items-center gap-1 pl-1 text-xs text-emerald-600 dark:text-emerald-400">
+                        <p className="flex items-center gap-1 pl-1 text-xs text-[var(--confirm)]">
                           <Check className="h-3 w-3 shrink-0" />
                           {tr.parkingAvailableAtSlot}
                         </p>

@@ -6,7 +6,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/dashboard/page-header'
-import { Card, CardContent } from '@/components/ui/card'
+import { CatalogItemCard, CatalogItemIcon } from '@/components/dashboard/catalog-item-card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
@@ -418,25 +418,16 @@ export default function WorkersPage() {
               ? sedes.filter((s) => s.id !== currentBusiness?.id && !siblingSedes.some((w) => w.business_id === s.id))
               : []
             return (
-              <Card
+              <CatalogItemCard
                 key={worker.id}
-                className={cn(
-                  'flex h-full cursor-pointer flex-col gap-0 overflow-hidden py-0 transition-shadow hover:shadow-md',
-                  !worker.is_active && 'opacity-70'
-                )}
+                color={workerColor}
+                isActive={worker.is_active}
                 onClick={() => handleOpenWorkerModal(worker)}
               >
-                <div className="h-1.5 w-full" style={{ backgroundColor: workerColor }} />
-                <CardContent className="flex flex-1 flex-col justify-between gap-4 p-5">
                   <div className="space-y-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex min-w-0 items-center gap-3">
-                        <div
-                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
-                          style={{ backgroundColor: `${workerColor}20`, color: workerColor }}
-                        >
-                          <UserCog className="h-4 w-4" />
-                        </div>
+                        <CatalogItemIcon icon={UserCog} color={workerColor} />
                         <div className="min-w-0">
                           <h3 className="truncate font-semibold text-foreground">{worker.name}</h3>
                           {hasCustomHours && (
@@ -535,8 +526,7 @@ export default function WorkersPage() {
                       ))}
                     </div>
                   )}
-                </CardContent>
-              </Card>
+              </CatalogItemCard>
             )
           })}
         </div>

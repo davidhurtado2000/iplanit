@@ -1,0 +1,89 @@
+/* Public booking flow palette + a couple of structural helpers (step
+   progress, ticket perforation). Scoped entirely under .booking-shell
+   (applied by app/reservar/[slug]/page.tsx and app/reservar/cita/[id]/
+   page.tsx) by overriding the app's existing semantic tokens - every
+   shadcn primitive (Button, Input, Card, Checkbox, Avatar...) already
+   reads these CSS vars, so nothing else needs to change to pick up the
+   new palette. Deliberately not touching :root/.dark in globals.css - the
+   dashboard and marketing site keep their own look untouched. */
+.booking-shell {
+  --background: oklch(0.975 0.005 255);
+  --foreground: oklch(0.24 0.035 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.24 0.035 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.24 0.035 260);
+  --primary: oklch(0.28 0.05 260);
+  --primary-foreground: oklch(0.99 0 0);
+  --muted: oklch(0.96 0.006 255);
+  --muted-foreground: oklch(0.48 0.02 260);
+  --border: oklch(0.88 0.008 260);
+  --input: oklch(0.88 0.008 260);
+  --ring: oklch(0.28 0.05 260);
+  --accent: oklch(0.94 0.012 260);
+  --accent-foreground: oklch(0.24 0.035 260);
+  --radius: 0.85rem;
+  /* Not an existing semantic token - the one accent reserved for
+     "confirmed/available" moments (the success ticket, a free parking
+     slot), kept separate from --primary so it isn't diluted by everyday
+     interactive states. */
+  --confirm: oklch(0.5 0.08 155);
+  --confirm-foreground: oklch(0.99 0 0);
+}
+
+.dark .booking-shell {
+  --background: oklch(0.14 0.02 260);
+  --foreground: oklch(0.94 0.01 255);
+  --card: oklch(0.19 0.02 260);
+  --card-foreground: oklch(0.94 0.01 255);
+  --popover: oklch(0.19 0.02 260);
+  --popover-foreground: oklch(0.94 0.01 255);
+  --primary: oklch(0.72 0.09 260);
+  --primary-foreground: oklch(0.15 0.02 260);
+  --muted: oklch(0.22 0.02 260);
+  --muted-foreground: oklch(0.65 0.02 260);
+  --border: oklch(0.28 0.02 260);
+  --input: oklch(0.28 0.02 260);
+  --ring: oklch(0.72 0.09 260);
+  --accent: oklch(0.26 0.03 260);
+  --accent-foreground: oklch(0.94 0.01 255);
+  --confirm: oklch(0.68 0.1 155);
+  --confirm-foreground: oklch(0.15 0.04 155);
+}
+
+/* Row of segments showing progress through the booking steps. The
+   sequence genuinely varies per service (duration/hours/resource steps
+   are conditional on how that service is configured), computed in the
+   page itself - this only renders it. */
+.booking-steps {
+  display: flex;
+  gap: 0.375rem;
+}
+.booking-steps > span {
+  height: 0.25rem;
+  flex: 1 1 0%;
+  border-radius: 999px;
+  background: var(--border);
+  transition: background-color 200ms ease;
+}
+.booking-steps > span[data-done='true'] {
+  background: var(--primary);
+}
+
+/* Ticket perforation, used once on the booking confirmation screen - a
+   row of punched-through circles rendered in the page's own --background,
+   so the "holes" always match whatever is actually behind the card in
+   both light and dark mode instead of a hardcoded color. */
+.ticket-tear {
+  height: 1.25rem;
+  margin: 0 -1rem;
+  background-image: radial-gradient(circle at center, var(--background) 0 7px, transparent 7.5px);
+  background-size: 20px 20px;
+  background-position: center;
+  background-repeat: repeat-x;
+}
+@media (min-width: 640px) {
+  .ticket-tear {
+    margin: 0 -1.5rem;
+  }
+}

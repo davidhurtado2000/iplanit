@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
-import { getStripeClient, getPriceIdForTier } from '@/lib/stripe'
+import { getStripeClient, getPriceIdForTier, getPlanItem } from '@/lib/stripe'
 
 // Switches an EXISTING subscriber (already has an active subscription)
 // between Pro and Premium by updating the price on their current
@@ -49,10 +49,13 @@ export async function POST(request: Request) {
 
   try {
     const subscription = await stripe.subscriptions.retrieve(profile.stripe_subscription_id)
-    const item = subscription.items.data[0]
+    // Finds the plan item specifically (not items.data[0]) - the AI add-on
+    // may already be a second item on this same subscription, and Stripe
+    // doesn't guarantee array order.
+    const item = getPlanItem(subscription)
 
     if (!item) {
-      console.error('[iplanit] change-plan: subscription has no items', {
+      console.error('[iplanit] change-plan: subscription has no recognized plan item', {
         subscriptionId: profile.stripe_subscription_id,
       })
       return NextResponse.json({ error: 'change_failed' }, { status: 500 })

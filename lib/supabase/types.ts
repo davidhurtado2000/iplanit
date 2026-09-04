@@ -184,6 +184,8 @@ export interface Database {
           language: string
           stripe_customer_id: string | null
           stripe_subscription_id: string | null
+          ai_addon_active: boolean
+          ai_addon_override: boolean
           created_at: string
           updated_at: string
         }
@@ -197,6 +199,8 @@ export interface Database {
           language?: string
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
+          ai_addon_active?: boolean
+          ai_addon_override?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -210,6 +214,8 @@ export interface Database {
           language?: string
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
+          ai_addon_active?: boolean
+          ai_addon_override?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -844,6 +850,27 @@ export interface Database {
         }
         Relationships: []
       }
+      ai_usage_log: {
+        Row: {
+          id: string
+          business_id: string
+          type: 'summary' | 'chat'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          business_id: string
+          type: 'summary' | 'chat'
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          business_id?: string
+          type?: 'summary' | 'chat'
+          created_at?: string
+        }
+        Relationships: []
+      }
       workers: {
         Row: {
           id: string
@@ -1063,6 +1090,7 @@ export interface Database {
         Returns: {
           reservation_id: string
           client_email: string | null
+          client_phone: string | null
           client_name: string
           service_name: string | null
           reservation_type: 'booking' | 'visit'

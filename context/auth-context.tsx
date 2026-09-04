@@ -11,6 +11,8 @@ export interface Profile {
   avatar_url: string | null
   plan: 'free' | 'pro' | 'premium'
   language: string
+  ai_addon_active: boolean
+  ai_addon_override: boolean
   created_at: string
 }
 
@@ -51,6 +53,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           avatar_url: null,
           plan: 'free',
           language: 'es',
+          ai_addon_active: false,
+          ai_addon_override: false,
           created_at: new Date().toISOString(),
         })
       }

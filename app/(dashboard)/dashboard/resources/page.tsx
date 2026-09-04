@@ -6,7 +6,7 @@ import { useState, useMemo } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/dashboard/page-header'
-import { Card, CardContent } from '@/components/ui/card'
+import { CatalogItemCard, CatalogItemIcon } from '@/components/dashboard/catalog-item-card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -372,25 +372,16 @@ export default function ResourcesPage() {
             const linkedCount = serviceResources.filter((sr) => sr.resource_id === resource.id).length
             const resourceColor = resource.color || '#3B82F6'
             return (
-              <Card
+              <CatalogItemCard
                 key={resource.id}
-                className={cn(
-                  'flex h-full cursor-pointer flex-col gap-0 overflow-hidden py-0 transition-shadow hover:shadow-md',
-                  !resource.is_active && 'opacity-70'
-                )}
+                color={resourceColor}
+                isActive={resource.is_active}
                 onClick={() => handleOpenResourceModal(resource)}
               >
-                <div className="h-1.5 w-full" style={{ backgroundColor: resourceColor }} />
-                <CardContent className="flex flex-1 flex-col justify-between gap-4 p-5">
                   <div className="space-y-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex min-w-0 items-center gap-3">
-                        <div
-                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
-                          style={{ backgroundColor: `${resourceColor}20`, color: resourceColor }}
-                        >
-                          <Icon className="h-4 w-4" />
-                        </div>
+                        <CatalogItemIcon icon={Icon} color={resourceColor} />
                         <div className="min-w-0">
                           <h3 className="truncate font-semibold text-foreground">{resource.name}</h3>
                           <p className="text-xs text-muted-foreground">
@@ -470,8 +461,7 @@ export default function ResourcesPage() {
                       aria-label={resource.is_active ? t.services.active : t.services.inactive}
                     />
                   </div>
-                </CardContent>
-              </Card>
+              </CatalogItemCard>
             )
           })}
         </div>

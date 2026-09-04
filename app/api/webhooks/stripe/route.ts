@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import type Stripe from 'stripe'
-import { getStripeClient } from '@/lib/stripe'
+import { getStripeClient, getPlanItem, getAddonItem, tierFromPriceId } from '@/lib/stripe'
 import { getResendClient, NOTIFICATIONS_FROM_EMAIL } from '@/lib/email/resend'
 import { buildTrialEndingEmail } from '@/lib/email/templates'
 import type { Database } from '@/lib/supabase/types'
@@ -17,28 +17,14 @@ const supabase = createClient<Database>(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-async function setPlanByUserId(userId: string, plan: 'free' | 'pro' | 'premium', extra: Record<string, string | null> = {}) {
+async function setPlanByUserId(userId: string, plan: 'free' | 'pro' | 'premium', extra: Record<string, string | boolean | null> = {}) {
   const { error } = await supabase.from('profiles').update({ plan, ...extra }).eq('id', userId)
   if (error) console.error('[iplanit] Error updating profile plan:', error)
 }
 
-async function setPlanByCustomerId(customerId: string, plan: 'free' | 'pro' | 'premium', extra: Record<string, string | null> = {}) {
+async function setPlanByCustomerId(customerId: string, plan: 'free' | 'pro' | 'premium', extra: Record<string, string | boolean | null> = {}) {
   const { error } = await supabase.from('profiles').update({ plan, ...extra }).eq('stripe_customer_id', customerId)
   if (error) console.error('[iplanit] Error updating profile plan by customer id:', error)
-}
-
-// Which Stripe Price ID maps to which iPlanit tier - built once at module
-// load, not per-request. STRIPE_PRICE_ID_PREMIUM_LEGACY is the original $35
-// Price (pre-3-tier); kept here purely so existing subscribers on it still
-// resolve to 'premium' - it's never used to create new checkouts.
-const PRICE_TIER_MAP: Record<string, 'pro' | 'premium'> = {}
-if (process.env.STRIPE_PRICE_ID_PRO) PRICE_TIER_MAP[process.env.STRIPE_PRICE_ID_PRO] = 'pro'
-if (process.env.STRIPE_PRICE_ID_PREMIUM) PRICE_TIER_MAP[process.env.STRIPE_PRICE_ID_PREMIUM] = 'premium'
-if (process.env.STRIPE_PRICE_ID_PREMIUM_LEGACY) PRICE_TIER_MAP[process.env.STRIPE_PRICE_ID_PREMIUM_LEGACY] = 'premium'
-
-function tierFromPriceId(priceId: string | undefined | null): 'pro' | 'premium' | null {
-  if (!priceId) return null
-  return PRICE_TIER_MAP[priceId] ?? null
 }
 
 export async function POST(request: Request) {
@@ -91,10 +77,10 @@ export async function POST(request: Request) {
       // extra retrieve to resolve which tier was actually purchased,
       // instead of trusting client-supplied checkout metadata.
       const subscription = await getStripeClient().subscriptions.retrieve(subscriptionId)
-      const tier = tierFromPriceId(subscription.items.data[0]?.price.id)
+      const tier = tierFromPriceId(getPlanItem(subscription)?.price.id)
       if (!tier) {
         console.error('[iplanit] checkout.session.completed: unrecognized price id', {
-          priceId: subscription.items.data[0]?.price.id,
+          priceId: getPlanItem(subscription)?.price.id,
         })
         break
       }
@@ -116,23 +102,35 @@ export async function POST(request: Request) {
       const isActive = subscription.status === 'active' || subscription.status === 'trialing'
 
       if (!isActive) {
-        await setPlanByCustomerId(customerId, 'free', { stripe_subscription_id: null })
+        await setPlanByCustomerId(customerId, 'free', { stripe_subscription_id: null, ai_addon_active: false })
         break
       }
 
       // The subscription IS event.data.object here, and its price is
       // already a full object (never needs expand) - no extra API call,
-      // unlike the checkout.session.completed case above.
-      const tier = tierFromPriceId(subscription.items.data[0]?.price.id)
+      // unlike the checkout.session.completed case above. getPlanItem finds
+      // the plan item specifically rather than assuming items.data[0] -
+      // the AI add-on may be a second item on this same subscription, and
+      // Stripe doesn't guarantee array order.
+      const planItem = getPlanItem(subscription)
+      const tier = tierFromPriceId(planItem?.price.id)
       if (!tier) {
         console.error('[iplanit] subscription event: unrecognized price id', {
-          priceId: subscription.items.data[0]?.price.id,
+          priceId: planItem?.price.id,
           customerId,
         })
         break
       }
 
-      await setPlanByCustomerId(customerId, tier, { stripe_subscription_id: subscription.id })
+      // Independent of the plan tier - deleting only the add-on item still
+      // leaves the base subscription (and isActive) untouched, so this has
+      // to be derived from item presence, not from the branch above.
+      const addonActive = !!getAddonItem(subscription)
+
+      await setPlanByCustomerId(customerId, tier, {
+        stripe_subscription_id: subscription.id,
+        ai_addon_active: addonActive,
+      })
       break
     }
 
@@ -153,7 +151,7 @@ export async function POST(request: Request) {
           .single()
         if (!profile) break
 
-        const tier = tierFromPriceId(subscription.items.data[0]?.price.id)
+        const tier = tierFromPriceId(getPlanItem(subscription)?.price.id)
         const priceUsd = tier === 'premium' ? 40 : 25
         const trialEndDate = new Date((subscription.trial_end ?? 0) * 1000)
         const language = profile.language === 'en' ? 'en' : 'es'

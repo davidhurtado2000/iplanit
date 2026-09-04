@@ -292,13 +292,16 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
                 key={item.key}
                 href={item.href}
                 className={cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                  'relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                   isActive
-                    ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                    ? 'bg-sidebar-primary/10 text-sidebar-foreground'
                     : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
                 )}
               >
-                <item.icon className="h-5 w-5 shrink-0" />
+                {isActive && (
+                  <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-sidebar-primary" />
+                )}
+                <item.icon className={cn('h-5 w-5 shrink-0', isActive && 'text-sidebar-primary')} />
                 {!isCollapsed && <span>{label}</span>}
                 {!isCollapsed && item.key === 'analytics' && <PremiumBadge className="ml-auto" requiredPlan="pro" />}
               </Link>

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getResendClient, NOTIFICATIONS_FROM_EMAIL } from '@/lib/email/resend'
 import { buildReminderEmail } from '@/lib/email/templates'
+import { sendWhatsappReminder } from '@/lib/twilio'
 import type { Database } from '@/lib/supabase/types'
 
 // Triggered by Vercel Cron (see vercel.json) - no logged-in user, so it
@@ -32,29 +33,49 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'query_failed' }, { status: 500 })
   }
 
+  // Off switch for the WhatsApp channel specifically - lets it stay wired up
+  // and tested (see scripts/076-whatsapp-reminders.sql) without actually
+  // sending anything while David isn't paying for Twilio. Unset/anything
+  // other than 'true' means disabled (fail closed, same convention as
+  // CRON_SECRET above). Flip to 'true' in .env.local / Vercel to resume -
+  // no code change needed either way.
+  const whatsappEnabled = process.env.WHATSAPP_REMINDERS_ENABLED === 'true'
+
   const rows = data || []
   let sent = 0
   let failed = 0
+  let skipped = 0
 
   for (const row of rows) {
     try {
-      const { subject, html } = buildReminderEmail({
-        clientName: row.client_name,
-        businessName: row.business_name,
-        serviceName: row.service_name,
-        reservationType: row.reservation_type,
-        startTime: row.start_time,
-        timezone: row.business_timezone,
-        language: row.business_country === 'US' ? 'en' : 'es',
-        manageUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'https://www.iplanit.io'}/reservar/cita/${row.reservation_id}`,
-      })
+      // Email stays the default channel when a client has one - WhatsApp
+      // only covers the clients who'd otherwise get no reminder at all
+      // (see scripts/076-whatsapp-reminders.sql).
+      if (row.client_email) {
+        const { subject, html } = buildReminderEmail({
+          clientName: row.client_name,
+          businessName: row.business_name,
+          serviceName: row.service_name,
+          reservationType: row.reservation_type,
+          startTime: row.start_time,
+          timezone: row.business_timezone,
+          language: row.business_country === 'US' ? 'en' : 'es',
+          manageUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'https://www.iplanit.io'}/reservar/cita/${row.reservation_id}`,
+        })
 
-      await getResendClient().emails.send({
-        from: NOTIFICATIONS_FROM_EMAIL,
-        to: row.client_email!,
-        subject,
-        html,
-      })
+        await getResendClient().emails.send({
+          from: NOTIFICATIONS_FROM_EMAIL,
+          to: row.client_email,
+          subject,
+          html,
+        })
+      } else if (row.client_phone) {
+        if (!whatsappEnabled) {
+          skipped++
+          continue
+        }
+        await sendWhatsappReminder(row.client_phone)
+      }
 
       // Marked right after a successful send, one row at a time, so a
       // mid-batch failure never leaves an earlier success unmarked (which
@@ -72,5 +93,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ sent, failed, total: rows.length })
+  return NextResponse.json({ sent, failed, skipped, total: rows.length })
 }
