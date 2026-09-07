@@ -110,12 +110,14 @@ function CalendarPageInner() {
     services,
     resources: allResources,
     serviceResources,
+    reservationAttendees,
     calendarStartHour,
     calendarEndHour,
     businessHours,
     loading,
     loadingMoreReservations,
     refetchReservations,
+    refetchReservationAttendees,
     ensureReservationsInRange,
   } = useDashboardData()
   // Parking spots are a resource type but are never the "main" resource a
@@ -377,6 +379,7 @@ function CalendarPageInner() {
   // if vista expandida isn't even on (fetchOrgData's own guard).
   const handleReservationSaved = () => {
     refetchReservations()
+    refetchReservationAttendees()
     fetchOrgData(true)
   }
 
@@ -463,6 +466,15 @@ function CalendarPageInner() {
   const clientsMap = Object.fromEntries(effectiveClients.map((c) => [c.id, c]))
   const servicesMap = Object.fromEntries(effectiveServices.map((s) => [s.id, s]))
   const resourcesMap = Object.fromEntries(effectiveResources.map((r) => [r.id, r]))
+  // Confirmed additional-attendee count per reservation (scripts/081-
+  // group-reservations.sql) - the reservation's own client_id (the
+  // primary) isn't counted here, only the extras.
+  const attendeesCountMap = reservationAttendees
+    .filter((a) => a.status === 'confirmed')
+    .reduce<Record<string, number>>((acc, a) => {
+      acc[a.reservation_id] = (acc[a.reservation_id] ?? 0) + 1
+      return acc
+    }, {})
 
   // Use the business timezone so "today" is correct regardless of UTC offset
   const tz = currentBusiness?.timezone || 'America/Lima'
@@ -561,6 +573,7 @@ function CalendarPageInner() {
             clientsMap={clientsMap}
             servicesMap={servicesMap}
             resourcesMap={resourcesMap}
+            attendeesCountMap={isExpanded ? undefined : attendeesCountMap}
             startHour={calendarStartHour}
             endHour={calendarEndHour}
             timezone={tz}

@@ -47,7 +47,7 @@ import { isAiAddonActive } from '@/lib/ai-usage-client'
 
 export default function DashboardPage() {
   const { user, profile, loading: authLoading } = useAuth()
-  const { currentBusiness } = useBusinesses()
+  const { currentBusiness, aiAddonStatus } = useBusinesses()
   const { t, locale } = useLanguage()
   const { reservations, services, clients, resources: allResources, loading: dataLoading, refetchReservations } = useDashboardData()
   // Parking spots aren't a real "resource" a client ever picks - same
@@ -263,7 +263,7 @@ export default function DashboardPage() {
   const plan = (profile?.plan ?? 'free') as 'free' | 'pro' | 'premium'
   const isPremium = plan === 'premium'
   const isProOrPremium = plan === 'pro' || plan === 'premium'
-  const aiAddonActive = isAiAddonActive(profile)
+  const aiAddonActive = isAiAddonActive(aiAddonStatus)
   const displayName = profile?.full_name?.split(' ')[0] || user.email?.split('@')[0] || 'Usuario'
   const displayEmail = profile?.email || user.email || ''
 

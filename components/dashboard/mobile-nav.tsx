@@ -67,7 +67,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
   const pathname = usePathname()
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const { user, profile, signOut } = useAuth()
-  const { currentBusiness, loading: businessLoading } = useBusinesses()
+  const { currentBusiness, loading: businessLoading, aiAddonStatus } = useBusinesses()
   const { t } = useLanguage()
   const workerLabel = getWorkerLabel(currentBusiness, t)
 
@@ -81,7 +81,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
   }, [user])
 
   const userPlan = profile?.plan || 'free'
-  const aiAddonActive = isAiAddonActive(profile)
+  const aiAddonActive = isAiAddonActive(aiAddonStatus)
   const userName = profile?.full_name || user?.email?.split('@')[0] || t.mobileNav.defaultUser
   const userEmail = profile?.email || user?.email || ''
 

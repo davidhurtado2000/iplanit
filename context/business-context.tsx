@@ -64,6 +64,13 @@ interface Business {
   role: 'owner' | 'admin' | 'sales'
 }
 
+interface AiAddonStatus {
+  plan: 'free' | 'pro' | 'premium'
+  ai_addon_active: boolean | null
+  ai_addon_override: boolean | null
+  ai_addon_access_until: string | null
+}
+
 type BusinessContextType = {
   businesses: Business[]
   /** The business every dashboard page should operate on. A user can now
@@ -79,6 +86,13 @@ type BusinessContextType = {
   createBusiness: (data: Omit<Business, 'id' | 'owner_id' | 'created_at' | 'updated_at' | 'role'>) => Promise<Business | undefined>
   updateBusiness: (id: string, updates: Partial<Omit<Business, 'role'>>) => Promise<Business | undefined>
   deleteBusiness: (id: string) => Promise<void>
+  /** currentBusiness's plan/AI-addon status, resolved through its OWNER
+   * (scripts/079-ai-addon-owner-resolution.sql) rather than the logged-in
+   * user's own profile - the fix for staff on a Pro/Premium business
+   * otherwise being denied AI access, since their own profile is a
+   * separate signup that never bought anything. Null while loading or if
+   * the business isn't accessible. */
+  aiAddonStatus: AiAddonStatus | null
 }
 
 const BusinessContext = createContext<BusinessContextType | undefined>(undefined)
@@ -114,6 +128,23 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
   }, [businesses])
 
   const currentBusiness = businesses.find((b) => b.id === currentBusinessId) || businesses[0]
+
+  const [aiAddonStatus, setAiAddonStatus] = useState<AiAddonStatus | null>(null)
+
+  useEffect(() => {
+    if (!currentBusiness?.id) {
+      setAiAddonStatus(null)
+      return
+    }
+    let cancelled = false
+    supabase.rpc('get_business_ai_addon_status', { p_business_id: currentBusiness.id }).then(({ data }) => {
+      if (cancelled) return
+      setAiAddonStatus(data && typeof data === 'object' && !('error' in data) ? (data as unknown as AiAddonStatus) : null)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [currentBusiness?.id])
 
   const fetchBusinesses = useCallback(async () => {
     if (!user) {
@@ -206,6 +237,7 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
       createBusiness,
       updateBusiness,
       deleteBusiness,
+      aiAddonStatus,
     }}>
       {children}
     </BusinessContext.Provider>

@@ -187,6 +187,7 @@ export interface Database {
           ai_addon_active: boolean
           ai_addon_override: boolean
           ai_addon_access_until: string | null
+          extra_seats_purchased: number
           created_at: string
           updated_at: string
         }
@@ -203,6 +204,7 @@ export interface Database {
           ai_addon_active?: boolean
           ai_addon_override?: boolean
           ai_addon_access_until?: string | null
+          extra_seats_purchased?: number
           created_at?: string
           updated_at?: string
         }
@@ -219,6 +221,7 @@ export interface Database {
           ai_addon_active?: boolean
           ai_addon_override?: boolean
           ai_addon_access_until?: string | null
+          extra_seats_purchased?: number
           created_at?: string
           updated_at?: string
         }
@@ -394,6 +397,7 @@ export interface Database {
           max_hours: number | null
           buffer_before_min: number
           buffer_after_min: number
+          max_attendees: number | null
           is_active: boolean
           duplicate_group_id: string | null
           created_at: string
@@ -415,6 +419,7 @@ export interface Database {
           max_hours?: number | null
           buffer_before_min?: number
           buffer_after_min?: number
+          max_attendees?: number | null
           is_active?: boolean
           duplicate_group_id?: string | null
           created_at?: string
@@ -436,6 +441,7 @@ export interface Database {
           max_hours?: number | null
           buffer_before_min?: number
           buffer_after_min?: number
+          max_attendees?: number | null
           is_active?: boolean
           duplicate_group_id?: string | null
           created_at?: string
@@ -967,6 +973,33 @@ export interface Database {
         }
         Relationships: []
       }
+      reservation_attendees: {
+        Row: {
+          id: string
+          reservation_id: string
+          client_id: string
+          business_id: string
+          status: 'confirmed' | 'cancelled'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          reservation_id: string
+          client_id: string
+          business_id: string
+          status?: 'confirmed' | 'cancelled'
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          reservation_id?: string
+          client_id?: string
+          business_id?: string
+          status?: 'confirmed' | 'cancelled'
+          created_at?: string
+        }
+        Relationships: []
+      }
       service_resources: {
         Row: {
           id: string
@@ -1032,6 +1065,10 @@ export interface Database {
         Returns: boolean
       }
       get_plan_usage: {
+        Args: { p_business_id: string }
+        Returns: Json
+      }
+      get_business_ai_addon_status: {
         Args: { p_business_id: string }
         Returns: Json
       }
@@ -1101,6 +1138,7 @@ export interface Database {
           business_timezone: string
           business_country: 'PE' | 'US'
           start_time: string
+          is_primary: boolean
         }[]
       }
       get_clients_needing_birthday_email: {

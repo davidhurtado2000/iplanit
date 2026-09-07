@@ -218,9 +218,9 @@ function DemandHeatmap({
 }
 
 export default function AnalyticsPage() {
-  const { currentBusiness, businesses, loading: businessLoading } = useBusinesses()
+  const { currentBusiness, businesses, loading: businessLoading, aiAddonStatus } = useBusinesses()
   const { profile } = useAuth()
-  const aiAddonActive = isAiAddonActive(profile)
+  const aiAddonActive = isAiAddonActive(aiAddonStatus)
   const {
     reservations: businessReservations,
     clients: businessClients,

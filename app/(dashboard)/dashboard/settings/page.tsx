@@ -47,7 +47,7 @@ import { createClient } from '@/lib/supabase/client'
 import { translateAuthError, withAuthLockRetry, withTimeout, AuthTimeoutError } from '@/lib/supabase/auth-errors'
 import { getPasswordChecks, isPasswordStrongEnough } from '@/lib/password'
 import { cn } from '@/lib/utils'
-import { FREE_LIMITS, PRO_LIMITS } from '@/lib/plan-limits'
+import { FREE_LIMITS, PRO_LIMITS, PREMIUM_LIMITS } from '@/lib/plan-limits'
 import { sedeAbbr, sedeTint, buildBusinessColorIndex } from '@/lib/sede-colors'
 import {
   User,
@@ -62,6 +62,7 @@ import {
   Check,
   Loader2,
   Plus,
+  Minus,
   KeyRound,
   Eye,
   EyeOff,
@@ -101,6 +102,14 @@ interface PlanUsage {
   services: number
   resources: number
   team_seats: number
+  // Resolved through the business owner (scripts/079-ai-addon-owner-
+  // resolution.sql) - the source of truth for staff, whose own profile
+  // never reflects the business's real billing state.
+  ai_addon_active: boolean | null
+  ai_addon_override: boolean | null
+  ai_addon_access_until: string | null
+  // Premium only - see scripts/080-premium-extra-seats.sql.
+  extra_seats_purchased: number
 }
 
 // business_hours.day_of_week is 0-6 (0=Sunday), matching the convention
@@ -172,7 +181,8 @@ function SettingsPageInner() {
   const { theme, setTheme } = useTheme()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const initialTab = searchParams.get('tab') === 'plan' ? 'plan' : 'profile'
+  const tabParam = searchParams.get('tab')
+  const initialTab = tabParam === 'plan' || tabParam === 'team' ? tabParam : 'profile'
   const [isPortalLoading, setIsPortalLoading] = useState(false)
   const [isChangingPlan, setIsChangingPlan] = useState(false)
   // Non-null opens the confirmation dialog below - set by the 3 upgrade
@@ -182,6 +192,12 @@ function SettingsPageInner() {
   const [pendingPlanChange, setPendingPlanChange] = useState<'pro' | 'premium' | null>(null)
   const [isAiAddonLoading, setIsAiAddonLoading] = useState(false)
   const [pendingAiAddonAction, setPendingAiAddonAction] = useState<'activate' | 'deactivate' | null>(null)
+  const [isUpdatingSeats, setIsUpdatingSeats] = useState(false)
+  // Staged locally - the +/- buttons only edit this, never call Stripe
+  // directly, so a quick "oops, +1 then -1" never touches billing at all.
+  // Only "Confirmar cambio" actually calls handleExtraSeatsChange. Synced
+  // back to the committed value below once planUsage reflects it.
+  const [pendingExtraSeats, setPendingExtraSeats] = useState(0)
   const [aiUsage, setAiUsage] = useState<{ used: number; limit: number } | null>(null)
   const [mounted, setMounted] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -220,13 +236,33 @@ function SettingsPageInner() {
   // Usage vs. the caps enforced in scripts/048-free-plan-limits.sql. Fetched
   // for both plans - free shows "used / limit" bars, premium shows the same
   // counts labeled "Unlimited" since is_business_premium() bypasses every
-  // cap in those triggers.
-  useEffect(() => {
+  // cap in those triggers. Also the source of truth for plan/ai_addon_*
+  // (resolved through the owner, scripts/079) - callable directly so
+  // handleAiAddonAction can refresh it right after a mutation, not just
+  // wait for authProfile?.plan to change (which it doesn't, on an AI
+  // add-on toggle).
+  const fetchPlanUsage = async () => {
     if (!currentBusiness?.id) {
       setPlanUsage(null)
       return
     }
+    const { data } = await supabase.rpc('get_plan_usage', { p_business_id: currentBusiness.id })
+    if (data && typeof data === 'object' && !('error' in data)) {
+      setPlanUsage(data as unknown as PlanUsage)
+    }
+  }
+
+  // Guards against a stale response overwriting fresher data if the user
+  // switches business again before this resolves - fetchPlanUsage() itself
+  // (called directly after a mutation, where currentBusiness can't change
+  // mid-flight) doesn't need that guard, so it stays a separate, simpler
+  // function rather than folding this in.
+  useEffect(() => {
     let cancelled = false
+    if (!currentBusiness?.id) {
+      setPlanUsage(null)
+      return
+    }
     supabase.rpc('get_plan_usage', { p_business_id: currentBusiness.id }).then(({ data }) => {
       if (!cancelled && data && typeof data === 'object' && !('error' in data)) {
         setPlanUsage(data as unknown as PlanUsage)
@@ -236,6 +272,13 @@ function SettingsPageInner() {
       cancelled = true
     }
   }, [currentBusiness?.id, authProfile?.plan, supabase])
+
+  // Keeps the staged seat stepper in sync with the last COMMITTED value -
+  // runs on every business switch and right after a confirmed change
+  // (fetchPlanUsage's refetch updates planUsage, which lands here).
+  useEffect(() => {
+    setPendingExtraSeats(planUsage?.extra_seats_purchased ?? 0)
+  }, [planUsage?.extra_seats_purchased])
 
   // Trial end date / next-charge visibility (see app/api/stripe/subscription-status)
   // - David specifically asked for this after testing the embedded checkout:
@@ -330,12 +373,16 @@ function SettingsPageInner() {
   // hasn't ended yet" (scripts/078) - still usable (isAiAddonActive covers
   // both), but the Settings card itself needs to tell these two apart to
   // show the right message and button.
-  const aiAddonBilled = !!(authProfile?.ai_addon_active || authProfile?.ai_addon_override)
+  //
+  // Sourced from planUsage (resolved through the business owner, scripts/
+  // 079), not authProfile directly - a staff member's own profile never
+  // reflects the business's real billing state.
+  const aiAddonBilled = !!(planUsage?.ai_addon_active || planUsage?.ai_addon_override)
   const aiAddonGraceUntil =
-    !aiAddonBilled && authProfile?.ai_addon_access_until && new Date(authProfile.ai_addon_access_until).getTime() > Date.now()
-      ? authProfile.ai_addon_access_until
+    !aiAddonBilled && planUsage?.ai_addon_access_until && new Date(planUsage.ai_addon_access_until).getTime() > Date.now()
+      ? planUsage.ai_addon_access_until
       : null
-  const aiAddonActive = isAiAddonActive(authProfile)
+  const aiAddonActive = isAiAddonActive(planUsage)
 
   const fetchAiUsage = async () => {
     if (!currentBusiness) return
@@ -362,8 +409,11 @@ function SettingsPageInner() {
       const data = await res.json()
       if (data.success) {
         toast.success(action === 'activate' ? t.settings.aiAddonActivateSuccess : t.settings.aiAddonDeactivateSuccess)
-        await refreshProfile()
-        setTimeout(() => refreshProfile(), 2000)
+        await Promise.all([refreshProfile(), fetchPlanUsage()])
+        setTimeout(() => {
+          refreshProfile()
+          fetchPlanUsage()
+        }, 2000)
         if (action === 'activate') fetchAiUsage()
         return
       }
@@ -376,11 +426,50 @@ function SettingsPageInner() {
     }
   }
 
+  // Sets the extra-seat add-on to an absolute target quantity (see
+  // app/api/stripe/extra-seats) - same optimistic-write-then-refetch
+  // pattern as handleAiAddonAction above.
+  const handleExtraSeatsChange = async (newQuantity: number) => {
+    if (newQuantity < 0) return
+    setIsUpdatingSeats(true)
+    try {
+      const res = await fetch('/api/stripe/extra-seats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quantity: newQuantity }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(t.settings.team.extraSeatsUpdateSuccess.replace('{count}', String(newQuantity)))
+        await fetchPlanUsage()
+        setTimeout(() => fetchPlanUsage(), 2000)
+        return
+      }
+      if (data.error === 'members_exceed_new_cap') {
+        toast.error(
+          t.settings.team.extraSeatsMembersExceedCap.replace('{count}', String(data.activeMemberCount ?? ''))
+        )
+        return
+      }
+      toast.error(t.settings.team.extraSeatsUpdateError)
+    } catch (err) {
+      console.error('[iplanit] Error updating extra seats:', err)
+      toast.error(t.settings.team.extraSeatsUpdateError)
+    } finally {
+      setIsUpdatingSeats(false)
+    }
+  }
+
   // Staff (Premium team members) can't see/edit Configuracion or manage the
   // team themselves - only the owner can. Defaults to owner when there's no
   // business yet (the "create your business" flow).
   const isOwner = currentBusiness ? currentBusiness.role === 'owner' : true
-  const plan = (authProfile?.plan ?? 'free') as 'free' | 'pro' | 'premium'
+  // planUsage is resolved through the business owner (scripts/079) - the
+  // correct source for a staff member, whose own authProfile?.plan is
+  // typically 'free' (their own separate signup). Falls back to
+  // authProfile while planUsage hasn't loaded yet, and to 'free' with no
+  // business at all (the "create your business" flow).
+  const plan = (planUsage?.plan ?? authProfile?.plan ?? 'free') as 'free' | 'pro' | 'premium'
   const sedes = businesses.filter((b) => b.organization_id === currentBusiness?.organization_id)
   const orgBusinessIds = sedes.map((s) => s.id)
   const hasMultipleSedes = sedes.length > 1
@@ -411,17 +500,13 @@ function SettingsPageInner() {
   // (business_id, user_id), so this is exactly what that form already does
   // under the hood for a single sede).
   const [addingSedeFor, setAddingSedeFor] = useState<string | null>(null)
-  // Seat cap is per-business (Pro = 2 seats/sede) - only block the whole
-  // form when every currently-targeted sede is already at cap.
-  const seatCountByBusiness = teamMembers.reduce<Record<string, number>>((acc, m) => {
-    acc[m.business_id] = (acc[m.business_id] || 0) + 1
-    return acc
-  }, {})
-  const targetBusinessIds = hasMultipleSedes ? inviteBusinessIds : currentBusiness ? [currentBusiness.id] : []
-  const atSeatCap =
-    plan === 'pro' &&
-    targetBusinessIds.length > 0 &&
-    targetBusinessIds.every((id) => (seatCountByBusiness[id] || 0) >= 2)
+  // Seats are org-wide now (scripts/080-premium-extra-seats.sql) - a
+  // distinct person counts once no matter how many of the owner's sedes
+  // they're staffed on - so the cap check reads planUsage.team_seats
+  // directly instead of re-deriving a per-business count client-side.
+  const totalSeatsIncluded =
+    plan === 'pro' ? PRO_LIMITS.teamSeats : PREMIUM_LIMITS.includedSeats + (planUsage?.extra_seats_purchased ?? 0)
+  const atSeatCap = (plan === 'pro' || plan === 'premium') && (planUsage?.team_seats ?? 0) >= totalSeatsIncluded
 
   useEffect(() => {
     setInviteBusinessIds(orgBusinessIds)
@@ -605,7 +690,7 @@ function SettingsPageInner() {
               {
                 user_not_found: 'errorNotFound',
                 plan_required: 'errorPlanRequired',
-                seat_limit_reached: 'errorSeatLimit',
+                seat_limit_reached: plan === 'premium' ? 'errorSeatLimitPremium' : 'errorSeatLimit',
                 is_owner: 'errorIsOwner',
               } as const
             )[result.error] ?? 'errorGeneric'
@@ -2027,7 +2112,15 @@ function SettingsPageInner() {
                     )}
                   </div>
                 )}
-                {aiAddonBilled ? (
+                {!isOwner ? (
+                  // Staff can see whether the business has AI active, but
+                  // activate/deactivate can only ever succeed for the owner
+                  // (only they hold stripe_subscription_id) - showing them
+                  // a fully-enabled-looking button here would just 403.
+                  <p className="text-sm text-muted-foreground">
+                    {aiAddonActive ? t.settings.aiAddonStaffStatusActive : t.settings.aiAddonStaffStatusInactive}
+                  </p>
+                ) : aiAddonBilled ? (
                   <Button
                     variant="outline"
                     size="sm"
@@ -2307,14 +2400,19 @@ function SettingsPageInner() {
                         </span>
                       </div>
                     ))}
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">{t.settings.teamSeatsLabel}</span>
-                      <span className="flex items-center gap-2">
-                        <span className="font-medium">{planUsage.team_seats}</span>
-                        <Badge variant="secondary" className="text-emerald-600 dark:text-emerald-400">
-                          {t.settings.unlimitedLabel}
-                        </Badge>
-                      </span>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">{t.settings.teamSeatsLabel}</span>
+                        <span className={cn('font-medium', planUsage.team_seats >= totalSeatsIncluded && 'text-destructive')}>
+                          {planUsage.team_seats} / {totalSeatsIncluded}
+                        </span>
+                      </div>
+                      <Progress value={Math.min(100, (planUsage.team_seats / totalSeatsIncluded) * 100)} className="h-2" />
+                      {(planUsage.extra_seats_purchased ?? 0) > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          {t.settings.team.extraSeatsCount.replace('{count}', String(planUsage.extra_seats_purchased))}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </>
@@ -2415,11 +2513,6 @@ function SettingsPageInner() {
                 <CardDescription>{t.settings.team.desc}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                {plan === 'pro' && currentBusiness && (
-                  <p className="text-xs font-medium text-muted-foreground">
-                    {t.settings.team.seatsUsedLabel.replace('{used}', String(seatCountByBusiness[currentBusiness.id] || 0))}
-                  </p>
-                )}
                 <form onSubmit={handleInvite} className="space-y-3">
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <div className="flex-1 space-y-2">
@@ -2449,6 +2542,9 @@ function SettingsPageInner() {
                       {t.settings.team.addBtn}
                     </Button>
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    {inviteRole === 'admin' ? t.settings.team.roleAdminDesc : t.settings.team.roleSalesDesc}
+                  </p>
                   {hasMultipleSedes && (
                     <div className="space-y-1.5 rounded-lg border p-3">
                       <label className="flex items-center gap-2 text-sm font-medium">
@@ -2479,25 +2575,109 @@ function SettingsPageInner() {
                     </div>
                   )}
                 </form>
-                <p className="text-xs text-muted-foreground">
-                  {inviteRole === 'admin' ? t.settings.team.roleAdminDesc : t.settings.team.roleSalesDesc}
-                </p>
-                {atSeatCap && (
-                  <p className="text-sm text-destructive">
-                    {t.settings.team.errorSeatLimit}
-                    {' '}
-                    <button
-                      type="button"
-                      className="underline disabled:opacity-50"
-                      disabled={isChangingPlan}
-                      onClick={() => setPendingPlanChange('premium')}
-                    >
-                      {t.settings.upgradeToPremiumBtn}
-                    </button>
-                  </p>
-                )}
                 {inviteError && <p className="text-sm text-destructive">{inviteError}</p>}
                 {inviteSuccess && <p className="text-sm text-green-600">{inviteSuccess}</p>}
+
+                {(plan === 'pro' || plan === 'premium') && planUsage && (
+                  <div className={cn('space-y-3 rounded-lg border p-3', atSeatCap && 'border-destructive/40 bg-destructive/5')}>
+                    <p className="text-sm font-medium text-foreground">
+                      {t.settings.team.seatsUsedLabel
+                        .replace('{used}', String(planUsage.team_seats))
+                        .replace('{total}', String(totalSeatsIncluded))}
+                    </p>
+                    {atSeatCap && plan === 'pro' && (
+                      <p className="text-sm text-destructive">
+                        {t.settings.team.errorSeatLimit}
+                        {' '}
+                        <button
+                          type="button"
+                          className="underline disabled:opacity-50"
+                          disabled={isChangingPlan}
+                          onClick={() => setPendingPlanChange('premium')}
+                        >
+                          {t.settings.upgradeToPremiumBtn}
+                        </button>
+                      </p>
+                    )}
+                    {atSeatCap && plan === 'premium' && (
+                      <p className="text-sm text-destructive">{t.settings.team.errorSeatLimitPremium}</p>
+                    )}
+                    {plan === 'premium' && (
+                      <div className="space-y-2 border-t pt-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium text-foreground">{t.settings.team.extraSeatsLabel}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {t.settings.team.extraSeatsDesc.replace('{price}', String(PREMIUM_LIMITS.extraSeatPriceUsd))}
+                            </p>
+                          </div>
+                          {/* +/- only edit pendingExtraSeats locally - nothing is charged
+                              until "Confirmar cambio" below is clicked, so a quick +1
+                              then -1 never touches billing at all. */}
+                          <div className="flex shrink-0 items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-8 w-8"
+                              aria-label={t.settings.team.extraSeatsRemoveAria}
+                              disabled={isUpdatingSeats || pendingExtraSeats <= 0}
+                              onClick={() => setPendingExtraSeats((n) => Math.max(0, n - 1))}
+                            >
+                              <Minus className="h-4 w-4" />
+                            </Button>
+                            <span className="w-6 text-center text-sm font-medium">{pendingExtraSeats}</span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-8 w-8"
+                              aria-label={t.settings.team.extraSeatsAddAria}
+                              disabled={isUpdatingSeats}
+                              onClick={() => setPendingExtraSeats((n) => n + 1)}
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground">{t.settings.team.extraSeatsHint}</p>
+                        {pendingExtraSeats !== (planUsage.extra_seats_purchased ?? 0) && (
+                          <div className="flex flex-col gap-2 rounded-md bg-muted/50 p-2.5 sm:flex-row sm:items-center sm:justify-between">
+                            <p className="text-xs text-foreground">
+                              {(pendingExtraSeats > (planUsage.extra_seats_purchased ?? 0)
+                                ? t.settings.team.extraSeatsConfirmIncrease
+                                : t.settings.team.extraSeatsConfirmDecrease
+                              )
+                                .replace('{count}', String(pendingExtraSeats))
+                                .replace('{total}', String(pendingExtraSeats * PREMIUM_LIMITS.extraSeatPriceUsd))}
+                            </p>
+                            <div className="flex shrink-0 gap-2">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                disabled={isUpdatingSeats}
+                                onClick={() => setPendingExtraSeats(planUsage.extra_seats_purchased ?? 0)}
+                              >
+                                {t.settings.team.extraSeatsCancelBtn}
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="gap-2"
+                                disabled={isUpdatingSeats}
+                                onClick={() => handleExtraSeatsChange(pendingExtraSeats)}
+                              >
+                                {isUpdatingSeats && <Loader2 className="h-4 w-4 animate-spin" />}
+                                {t.settings.team.extraSeatsConfirmBtn}
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <Separator />
 

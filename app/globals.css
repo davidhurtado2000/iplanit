@@ -22,7 +22,15 @@
   --secondary-foreground: oklch(0.25 0.02 250);
   --muted: oklch(0.94 0.01 240);
   --muted-foreground: oklch(0.5 0.02 250);
-  --accent: oklch(0.7 0.15 165);
+  /* Was oklch(0.7 0.15 165) - same saturated-green problem already fixed
+     for dark mode below (see that comment), just never applied to light
+     mode. Every menu/dropdown/combobox hover (DropdownMenuItem, SelectItem,
+     CommandItem all use bg-accent) rendered as a vivid green block instead
+     of a quiet highlight. Brought into --muted/--secondary's own lightness
+     range with chroma cut way down, same fix shape as dark mode, keeping
+     only a faint hint of the brand's teal hue (165) instead of announcing
+     it as its own color. */
+  --accent: oklch(0.94 0.02 165);
   --accent-foreground: oklch(0.15 0.02 250);
   --destructive: oklch(0.55 0.2 25);
   --destructive-foreground: oklch(0.99 0 0);

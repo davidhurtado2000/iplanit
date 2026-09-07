@@ -60,11 +60,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'business_not_found' }, { status: 404 })
     }
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('plan, ai_addon_active, ai_addon_override, ai_addon_access_until')
-      .eq('id', user.id)
-      .single()
+    // Resolved through the business owner (scripts/079-ai-addon-owner-
+    // resolution.sql), not the caller's own profile - a staff member's own
+    // profile is a separate signup that never bought anything, so checking
+    // it directly would wrongly deny AI access on a Pro/Premium business
+    // they're staff on.
+    const { data: addonStatusData } = await supabase.rpc('get_business_ai_addon_status', { p_business_id: businessId })
+    const addonStatus =
+      addonStatusData && typeof addonStatusData === 'object' && !('error' in addonStatusData)
+        ? (addonStatusData as unknown as {
+            plan: string
+            ai_addon_active: boolean | null
+            ai_addon_override: boolean | null
+            ai_addon_access_until: string | null
+          })
+        : null
 
     // Defense in depth - Analytics is already gated client-side, but a
     // direct call to this route shouldn't be able to skip either check,
@@ -72,7 +82,7 @@ export async function POST(request: Request) {
     // the manual override (ai_addon_override, see scripts/077) and the
     // post-cancellation grace period (ai_addon_access_until, see
     // scripts/078) the same way the UI does.
-    if (!meetsPlan(profile?.plan, 'pro') || !isAiAddonActive(profile)) {
+    if (!meetsPlan(addonStatus?.plan, 'pro') || !isAiAddonActive(addonStatus)) {
       return NextResponse.json({ error: 'plan_required' }, { status: 403 })
     }
 

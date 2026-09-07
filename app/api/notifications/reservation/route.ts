@@ -75,6 +75,9 @@ export async function POST(request: Request) {
       business_timezone: string
       notify_confirmations: boolean
       notify_cancellations: boolean
+      // Additional attendees on a group reservation (scripts/081-group-
+      // reservations.sql) - empty array for every normal 1:1 reservation.
+      attendees: { name: string; email: string | null }[]
     }
 
     if (!reservation.client_email) {
@@ -89,30 +92,54 @@ export async function POST(request: Request) {
       return NextResponse.json({ skipped: 'notifications_disabled' })
     }
 
-    const emailData = {
-      clientName: reservation.client_name,
+    const sharedEmailData = {
       businessName: reservation.business_name,
       serviceName: reservation.service_name,
       reservationType: reservation.reservation_type,
       startTime: reservation.start_time,
       timezone: reservation.business_timezone,
       language,
-      manageUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'https://www.iplanit.io'}/reservar/cita/${reservationId}`,
     }
 
-    const { subject, html } =
-      type === 'confirmation'
+    const buildEmail = (clientName: string, manageUrl?: string) => {
+      const emailData = { ...sharedEmailData, clientName, manageUrl }
+      return type === 'confirmation'
         ? buildConfirmationEmail(emailData)
         : type === 'approved'
           ? buildApprovedEmail(emailData)
           : buildCancellationEmail(emailData)
+    }
 
+    const primaryEmail = buildEmail(
+      reservation.client_name,
+      `${process.env.NEXT_PUBLIC_APP_URL || 'https://www.iplanit.io'}/reservar/cita/${reservationId}`
+    )
     await getResendClient().emails.send({
       from: NOTIFICATIONS_FROM_EMAIL,
       to: reservation.client_email,
-      subject,
-      html,
+      subject: primaryEmail.subject,
+      html: primaryEmail.html,
     })
+
+    // Additional attendees on a group reservation (scripts/081-group-
+    // reservations.sql) get the same notification, personalized with their
+    // own name - but no manageUrl, since that page can cancel the WHOLE
+    // reservation and only the primary contact should hold that link.
+    // Each send is independent so one bad address can't block the rest.
+    for (const attendee of reservation.attendees ?? []) {
+      if (!attendee.email) continue
+      try {
+        const attendeeEmail = buildEmail(attendee.name)
+        await getResendClient().emails.send({
+          from: NOTIFICATIONS_FROM_EMAIL,
+          to: attendee.email,
+          subject: attendeeEmail.subject,
+          html: attendeeEmail.html,
+        })
+      } catch (err) {
+        console.error('[iplanit] Error sending reservation email to attendee:', err)
+      }
+    }
 
     await supabase.from('notification_send_log').insert({ reservation_id: reservationId, type })
 

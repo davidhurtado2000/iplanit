@@ -116,6 +116,11 @@ interface CalendarViewProps {
   clientsMap?: Record<string, Client>
   servicesMap?: Record<string, Service>
   resourcesMap?: Record<string, Resource>
+  /** Confirmed additional-attendee count per reservation id (scripts/081-
+   * group-reservations.sql) - the reservation's own client_id is the
+   * primary and isn't counted here, so a solo 1:1 reservation is simply
+   * absent from this map. Undefined/missing entries render nothing extra. */
+  attendeesCountMap?: Record<string, number>
   startHour?: number
   endHour?: number
   timezone?: string
@@ -191,6 +196,7 @@ export function CalendarViewComponent({
   clientsMap = {},
   servicesMap = {},
   resourcesMap = {},
+  attendeesCountMap = {},
   startHour = DEFAULT_START,
   endHour   = DEFAULT_END,
   timezone  = DEFAULT_TZ,
@@ -299,6 +305,7 @@ export function CalendarViewComponent({
           reservations={reservations}
           clientsMap={clientsMap}
           servicesMap={servicesMap}
+          attendeesCountMap={attendeesCountMap}
           onSelectReservation={onSelectReservation}
           timezone={timezone}
           t={t}
@@ -431,8 +438,8 @@ export function CalendarViewComponent({
         </Popover>
       </div>
 
-      {view === 'day'   && <DayView   date={currentDate} reservations={reservations} resources={resources} selectedResourceId={selectedResourceId} clientsMap={clientsMap} servicesMap={servicesMap} resourcesMap={resourcesMap} onSelectReservation={onSelectReservation} startHour={startHour} endHour={endHour} timezone={timezone} t={t} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} businessHours={businessHours} onCreateAtSlot={onCreateAtSlot} previewService={previewService} previewAllowedResourceIds={previewAllowedResourceIds} />}
-      {view === 'week'  && <WeekView  date={currentDate} reservations={reservations} clientsMap={clientsMap} servicesMap={servicesMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
+      {view === 'day'   && <DayView   date={currentDate} reservations={reservations} resources={resources} selectedResourceId={selectedResourceId} clientsMap={clientsMap} servicesMap={servicesMap} resourcesMap={resourcesMap} attendeesCountMap={attendeesCountMap} onSelectReservation={onSelectReservation} startHour={startHour} endHour={endHour} timezone={timezone} t={t} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} businessHours={businessHours} onCreateAtSlot={onCreateAtSlot} previewService={previewService} previewAllowedResourceIds={previewAllowedResourceIds} />}
+      {view === 'week'  && <WeekView  date={currentDate} reservations={reservations} clientsMap={clientsMap} servicesMap={servicesMap} attendeesCountMap={attendeesCountMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
       {view === 'month' && <MonthView date={currentDate} reservations={reservations} servicesMap={servicesMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
     </div>
   )
@@ -441,7 +448,7 @@ export function CalendarViewComponent({
 // ─── Day View — time grid × resource columns ───────────────────────────────
 function DayView({
   date, reservations, resources, selectedResourceId,
-  clientsMap, servicesMap, resourcesMap, onSelectReservation,
+  clientsMap, servicesMap, resourcesMap, attendeesCountMap = {}, onSelectReservation,
   startHour, endHour, timezone, t, businessNameById, businessColorIndexById, businessHours, onCreateAtSlot,
   previewService, previewAllowedResourceIds,
 }: {
@@ -452,6 +459,7 @@ function DayView({
   clientsMap: Record<string, Client>
   servicesMap: Record<string, Service>
   resourcesMap: Record<string, Resource>
+  attendeesCountMap?: Record<string, number>
   onSelectReservation: (r: any) => void
   startHour: number
   endHour: number
@@ -962,6 +970,9 @@ function DayView({
                     const endHM   = getTzHourMin(r.end_time, timezone)
                     const fmt = (hh: number, mm: number) =>
                       `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+                    // scripts/081-group-reservations.sql - extra attendees
+                    // beyond the primary client above.
+                    const attendeesExtra = attendeesCountMap[r.id] ?? 0
 
                     return (
                       <button
@@ -984,12 +995,18 @@ function DayView({
                           <p className="flex items-center gap-1 text-[10px] font-semibold leading-tight truncate">
                             {r.type === 'visit' && <Eye className="h-2.5 w-2.5 shrink-0" />}
                             {client?.name ?? '—'}
+                            {attendeesExtra > 0 && ` +${attendeesExtra}`}
                           </p>
                         ) : (
                           <>
                             <p className="flex items-center gap-1 text-xs font-semibold leading-tight truncate">
                               {r.type === 'visit' && <Eye className="h-3 w-3 shrink-0" />}
                               {client?.name ?? '—'}
+                              {attendeesExtra > 0 && (
+                                <span className="font-normal opacity-80">
+                                  {' · '}{t.calendar.attendeesCount.replace('{count}', String(attendeesExtra + 1))}
+                                </span>
+                              )}
                             </p>
                             {service && (
                               <p className="text-[10px] leading-tight truncate opacity-80">
@@ -1023,12 +1040,13 @@ function DayView({
 
 // ─── Week View ─────────────────────────────────────────────────────────────
 function WeekView({
-  date, reservations, clientsMap, servicesMap, onSelectReservation, onDayClick, timezone, t, locale, businessNameById, businessColorIndexById,
+  date, reservations, clientsMap, servicesMap, attendeesCountMap = {}, onSelectReservation, onDayClick, timezone, t, locale, businessNameById, businessColorIndexById,
 }: {
   date: Date
   reservations: any[]
   clientsMap: Record<string, Client>
   servicesMap: Record<string, Service>
+  attendeesCountMap?: Record<string, number>
   onSelectReservation: (r: any) => void
   onDayClick: (d: Date) => void
   timezone: string
@@ -1130,7 +1148,10 @@ function WeekView({
                         </span>
                       )}
                       {r.type === 'visit' && <Eye className="h-2.5 w-2.5 shrink-0" />}
-                      <span className="truncate">{fmt} {client?.name ?? '—'}</span>
+                      <span className="truncate">
+                        {fmt} {client?.name ?? '—'}
+                        {(attendeesCountMap[r.id] ?? 0) > 0 && ` +${attendeesCountMap[r.id]}`}
+                      </span>
                     </div>
                   )
                 })}
@@ -1281,11 +1302,12 @@ function MonthView({
 const LIST_PAGE_SIZE = 20
 
 function ListView({
-  reservations, clientsMap, servicesMap, onSelectReservation, timezone, t, locale, businessNameById, businessColorIndexById,
+  reservations, clientsMap, servicesMap, attendeesCountMap = {}, onSelectReservation, timezone, t, locale, businessNameById, businessColorIndexById,
 }: {
   reservations: any[]
   clientsMap: Record<string, Client>
   servicesMap: Record<string, Service>
+  attendeesCountMap?: Record<string, number>
   onSelectReservation: (r: any) => void
   timezone: string
   t: ReturnType<typeof useLanguage>['t']
@@ -1387,7 +1409,14 @@ function ListView({
                     )}{' '}
                     {String(h).padStart(2, '0')}:{String(m).padStart(2, '0')}
                   </TableCell>
-                  <TableCell className="whitespace-normal">{client?.name ?? '—'}</TableCell>
+                  <TableCell className="whitespace-normal">
+                    {client?.name ?? '—'}
+                    {(attendeesCountMap[r.id] ?? 0) > 0 && (
+                      <span className="text-muted-foreground">
+                        {' · '}{t.calendar.attendeesCount.replace('{count}', String(attendeesCountMap[r.id] + 1))}
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell className="whitespace-normal">
                     <span className="flex items-center gap-1.5">
                       {r.type === 'visit' ? (

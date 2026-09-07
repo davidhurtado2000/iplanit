@@ -17,6 +17,16 @@ export const PRO_LIMITS = {
   teamSeats: 2,
 }
 
+// Premium is no longer unconditionally unlimited on seats - includes 5,
+// shared org-wide across every sede an owner runs (see scripts/080-
+// premium-extra-seats.sql), then $10/mo per extra seat purchased via
+// app/api/stripe/extra-seats (a quantity-based line item on the same
+// subscription, same pattern as the AI add-on's second item).
+export const PREMIUM_LIMITS = {
+  includedSeats: 5,
+  extraSeatPriceUsd: 10,
+}
+
 export type PlanTier = 'free' | 'pro' | 'premium'
 export type PlanUsageKind = 'reservations_this_month' | 'clients' | 'services' | 'resources'
 

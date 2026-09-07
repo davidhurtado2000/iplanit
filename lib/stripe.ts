@@ -55,3 +55,17 @@ export function getAddonItem(subscription: Stripe.Subscription): Stripe.Subscrip
   if (!addonPriceId) return undefined
   return subscription.items.data.find((item) => item.price.id === addonPriceId)
 }
+
+// Premium's extra-seat add-on - a quantity-based line item on the same
+// subscription (see app/api/stripe/extra-seats), unlike the AI add-on's
+// flat second item. quantity === number of EXTRA seats beyond Premium's 5
+// included (scripts/080-premium-extra-seats.sql).
+export function getExtraSeatPriceId(): string | undefined {
+  return process.env.STRIPE_PRICE_ID_EXTRA_SEAT
+}
+
+export function getSeatItem(subscription: Stripe.Subscription): Stripe.SubscriptionItem | undefined {
+  const seatPriceId = getExtraSeatPriceId()
+  if (!seatPriceId) return undefined
+  return subscription.items.data.find((item) => item.price.id === seatPriceId)
+}

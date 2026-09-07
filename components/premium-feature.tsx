@@ -7,6 +7,7 @@ import { Crown, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { UpgradeModal } from '@/components/upgrade-modal'
 import { useAuth } from '@/hooks/use-auth'
+import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
 import { cn } from '@/lib/utils'
 import { meetsPlan } from '@/lib/plan-limits'
@@ -21,8 +22,17 @@ interface PremiumFeatureProps {
 export function PremiumFeature({ children, featureName, className, requiredPlan = 'premium' }: PremiumFeatureProps) {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const { profile } = useAuth()
+  // Resolved through the business owner (aiAddonStatus.plan, see scripts/
+  // 079-ai-addon-owner-resolution.sql - named for the AI add-on but
+  // carries the business's real plan generally), not the caller's own
+  // profile - a staff member's own profile.plan is typically 'free' (their
+  // own separate signup), which would otherwise lock every Pro/Premium
+  // feature behind this component for staff on a paid business. This is
+  // the single shared gate used across the whole dashboard, so this fix
+  // covers every PremiumFeature/PremiumButton/PremiumBadge usage at once.
+  const { aiAddonStatus } = useBusinesses()
   const { t } = useLanguage()
-  const hasAccess = meetsPlan(profile?.plan, requiredPlan)
+  const hasAccess = meetsPlan(aiAddonStatus?.plan ?? profile?.plan, requiredPlan)
 
   if (hasAccess) {
     return <>{children}</>
@@ -91,7 +101,8 @@ export function PremiumButton({
 }: PremiumButtonProps) {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const { profile } = useAuth()
-  const hasAccess = meetsPlan(profile?.plan, requiredPlan)
+  const { aiAddonStatus } = useBusinesses()
+  const hasAccess = meetsPlan(aiAddonStatus?.plan ?? profile?.plan, requiredPlan)
 
   const handleClick = () => {
     if (hasAccess) {
@@ -135,7 +146,8 @@ interface PremiumBadgeProps {
 
 export function PremiumBadge({ className, requiredPlan = 'premium' }: PremiumBadgeProps) {
   const { profile } = useAuth()
-  const hasAccess = meetsPlan(profile?.plan, requiredPlan)
+  const { aiAddonStatus } = useBusinesses()
+  const hasAccess = meetsPlan(aiAddonStatus?.plan ?? profile?.plan, requiredPlan)
 
   if (hasAccess) return null
 

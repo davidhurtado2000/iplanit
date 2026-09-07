@@ -54,6 +54,7 @@ import { createClient } from '@/lib/supabase/client'
 import { getResourceTypeLabel } from '@/lib/resource-display'
 import { isPlanLimitReached } from '@/lib/plan-limits'
 import { UpgradeModal } from '@/components/upgrade-modal'
+import { PremiumFeature } from '@/components/premium-feature'
 import { sedeAbbr, sedeTint, buildBusinessColorIndex } from '@/lib/sede-colors'
 import { FormSection } from '@/components/dashboard/form-section'
 import { DurationInput } from '@/components/dashboard/duration-input'
@@ -90,6 +91,7 @@ interface Service {
   max_hours: number | null
   buffer_before_min: number
   buffer_after_min: number
+  max_attendees: number | null
   is_active: boolean
   duplicate_group_id: string | null
 }
@@ -188,6 +190,9 @@ export default function ServicesPage() {
     maxHours: 8 as number | '',
     bufferBeforeMin: 0 as number | '',
     bufferAfterMin: 0 as number | '',
+    // '' = not a group service (max_attendees null), unchanged behavior -
+    // see scripts/081-group-reservations.sql.
+    maxAttendees: '' as number | '',
   })
   const [durationOptions, setDurationOptions] = useState<DurationOptionForm[]>([])
   const [selectedResourceIds, setSelectedResourceIds] = useState<string[]>([])
@@ -289,6 +294,7 @@ export default function ServicesPage() {
         maxHours: service.max_hours ?? 8,
         bufferBeforeMin: service.buffer_before_min ?? 0,
         bufferAfterMin: service.buffer_after_min ?? 0,
+        maxAttendees: service.max_attendees ?? '',
       }
       nextDurationOptions = serviceDurationOptions
         .filter((o) => o.service_id === service.id)
@@ -315,6 +321,7 @@ export default function ServicesPage() {
         maxHours: 8,
         bufferBeforeMin: 0,
         bufferAfterMin: 0,
+        maxAttendees: '',
       }
       nextDurationOptions = []
       nextResourceIds = []
@@ -352,6 +359,7 @@ export default function ServicesPage() {
       maxHours: service.max_hours ?? 8,
       bufferBeforeMin: service.buffer_before_min ?? 0,
       bufferAfterMin: service.buffer_after_min ?? 0,
+      maxAttendees: service.max_attendees ?? '',
     }
     const nextDurationOptions: DurationOptionForm[] = serviceDurationOptions
       .filter((o) => o.service_id === service.id)
@@ -475,6 +483,9 @@ export default function ServicesPage() {
         max_hours: serviceForm.pricingMode === 'hourly' && serviceForm.maxHours !== '' ? serviceForm.maxHours : null,
         buffer_before_min: serviceForm.bufferBeforeMin !== '' ? serviceForm.bufferBeforeMin : 0,
         buffer_after_min: serviceForm.bufferAfterMin !== '' ? serviceForm.bufferAfterMin : 0,
+        // null (not 0) - 0 isn't a valid class size, null means "not a
+        // group service" (scripts/081-group-reservations.sql).
+        max_attendees: serviceForm.maxAttendees !== '' ? serviceForm.maxAttendees : null,
       }
 
       let serviceId: string
@@ -1036,6 +1047,26 @@ export default function ServicesPage() {
                 </div>
                 <p className="text-xs text-muted-foreground">{t.services.bufferHint}</p>
               </div>
+
+              <PremiumFeature featureName={t.services.maxAttendeesFeatureName} requiredPlan="pro">
+                <div className="space-y-2">
+                  <Label htmlFor="service-max-attendees">{t.services.maxAttendeesLabel}</Label>
+                  <Input
+                    id="service-max-attendees"
+                    type="number"
+                    min={1}
+                    placeholder={t.services.maxAttendeesPlaceholder}
+                    value={serviceForm.maxAttendees}
+                    onChange={(e) =>
+                      setServiceForm({
+                        ...serviceForm,
+                        maxAttendees: e.target.value !== '' ? Math.max(1, parseInt(e.target.value) || 1) : '',
+                      })
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">{t.services.maxAttendeesHint}</p>
+                </div>
+              </PremiumFeature>
 
               {resources.length > 0 && targetBusinessId === currentBusiness?.id && (
                 <div className="space-y-2">

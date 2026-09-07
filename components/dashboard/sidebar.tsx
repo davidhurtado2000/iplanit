@@ -74,7 +74,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [now, setNow] = useState<Date | null>(null)
   const { user, profile, loading: authLoading, signOut } = useAuth()
-  const { businesses, currentBusiness, switchBusiness, loading: businessLoading } = useBusinesses()
+  const { businesses, currentBusiness, switchBusiness, loading: businessLoading, aiAddonStatus } = useBusinesses()
   const { t, locale } = useLanguage()
   const workerLabel = getWorkerLabel(currentBusiness, t)
 
@@ -104,7 +104,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
     : null
 
   const userPlan = profile?.plan || 'free'
-  const aiAddonActive = isAiAddonActive(profile)
+  const aiAddonActive = isAiAddonActive(aiAddonStatus)
   const userName = profile?.full_name || user?.email?.split('@')[0] || 'Usuario'
   const userEmail = profile?.email || user?.email || ''
 

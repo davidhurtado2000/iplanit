@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import type Stripe from 'stripe'
-import { getStripeClient, getPlanItem, getAddonItem, tierFromPriceId } from '@/lib/stripe'
+import { getStripeClient, getPlanItem, getAddonItem, getSeatItem, tierFromPriceId } from '@/lib/stripe'
 import { getResendClient, NOTIFICATIONS_FROM_EMAIL } from '@/lib/email/resend'
 import { buildTrialEndingEmail } from '@/lib/email/templates'
 import type { Database } from '@/lib/supabase/types'
@@ -17,12 +17,12 @@ const supabase = createClient<Database>(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-async function setPlanByUserId(userId: string, plan: 'free' | 'pro' | 'premium', extra: Record<string, string | boolean | null> = {}) {
+async function setPlanByUserId(userId: string, plan: 'free' | 'pro' | 'premium', extra: Record<string, string | boolean | number | null> = {}) {
   const { error } = await supabase.from('profiles').update({ plan, ...extra }).eq('id', userId)
   if (error) console.error('[iplanit] Error updating profile plan:', error)
 }
 
-async function setPlanByCustomerId(customerId: string, plan: 'free' | 'pro' | 'premium', extra: Record<string, string | boolean | null> = {}) {
+async function setPlanByCustomerId(customerId: string, plan: 'free' | 'pro' | 'premium', extra: Record<string, string | boolean | number | null> = {}) {
   const { error } = await supabase.from('profiles').update({ plan, ...extra }).eq('stripe_customer_id', customerId)
   if (error) console.error('[iplanit] Error updating profile plan by customer id:', error)
 }
@@ -102,7 +102,11 @@ export async function POST(request: Request) {
       const isActive = subscription.status === 'active' || subscription.status === 'trialing'
 
       if (!isActive) {
-        await setPlanByCustomerId(customerId, 'free', { stripe_subscription_id: null, ai_addon_active: false })
+        await setPlanByCustomerId(customerId, 'free', {
+          stripe_subscription_id: null,
+          ai_addon_active: false,
+          extra_seats_purchased: 0,
+        })
         break
       }
 
@@ -124,12 +128,15 @@ export async function POST(request: Request) {
 
       // Independent of the plan tier - deleting only the add-on item still
       // leaves the base subscription (and isActive) untouched, so this has
-      // to be derived from item presence, not from the branch above.
+      // to be derived from item presence, not from the branch above. Same
+      // reasoning for the seat item's quantity.
       const addonActive = !!getAddonItem(subscription)
+      const extraSeats = getSeatItem(subscription)?.quantity ?? 0
 
       await setPlanByCustomerId(customerId, tier, {
         stripe_subscription_id: subscription.id,
         ai_addon_active: addonActive,
+        extra_seats_purchased: extraSeats,
       })
       break
     }

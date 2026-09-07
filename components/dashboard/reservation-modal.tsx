@@ -35,7 +35,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Loader2 } from 'lucide-react'
-import { Calendar, Clock, User, Briefcase, Trash2, MapPin, Repeat, DollarSign, ParkingSquare, ChevronDown, ChevronsUpDown, Check, Eye, UserPlus, Bold, List, UserCog, History } from 'lucide-react'
+import { Calendar, Clock, User, Briefcase, Trash2, MapPin, Repeat, DollarSign, ParkingSquare, ChevronDown, ChevronsUpDown, Check, Eye, UserPlus, Bold, List, UserCog, History, Plus, X, Users } from 'lucide-react'
 import { renderSimpleMarkdown } from '@/lib/simple-markdown'
 import {
   DropdownMenu,
@@ -186,10 +186,24 @@ export function ReservationModal({
 }: ReservationModalProps) {
   const supabase = createClient()
   const { user, profile } = useAuth()
-  const { currentBusiness } = useBusinesses()
+  const { currentBusiness, aiAddonStatus } = useBusinesses()
   const { t, locale } = useLanguage()
   const workerLabel = getWorkerLabel(currentBusiness, t)
-  const { clients, services, resources: allResources, serviceResources, serviceDurationOptions, businessHours, workers, workerHours, workerServices, reservations, refetchClients } = useDashboardData()
+  const {
+    clients,
+    services,
+    resources: allResources,
+    serviceResources,
+    serviceDurationOptions,
+    businessHours,
+    workers,
+    workerHours,
+    workerServices,
+    reservations,
+    reservationAttendees,
+    refetchClients,
+    refetchReservationAttendees,
+  } = useDashboardData()
   // Parking is a separate concept from a service's linked resource (see the
   // needsParking switch below) - never offered as a pickable resource here.
   const resources = allResources.filter((r) => r.type !== 'parking')
@@ -217,6 +231,17 @@ export function ReservationModal({
   const [isSavingNewClient, setIsSavingNewClient] = useState(false)
   const [newClientError, setNewClientError] = useState('')
   const [showClientLimitModal, setShowClientLimitModal] = useState(false)
+
+  // Group reservations (scripts/081-group-reservations.sql) - additional
+  // attendees beyond the primary client above. In create mode these are
+  // only staged here and bulk-inserted once the reservation itself exists;
+  // in edit mode each add/remove is its own immediate call (see
+  // handleAddAttendee/handleRemoveAttendee) since the reservation row
+  // already exists there.
+  const [additionalAttendeeIds, setAdditionalAttendeeIds] = useState<string[]>([])
+  const [attendeeComboOpen, setAttendeeComboOpen] = useState(false)
+  const [attendeeSearch, setAttendeeSearch] = useState('')
+  const [isUpdatingAttendees, setIsUpdatingAttendees] = useState(false)
 
   const [formData, setFormData] = useState({
     client_id: '',
@@ -248,7 +273,13 @@ export function ReservationModal({
 
   // Pro and Premium are both unlimited on reservations - only Free is
   // capped (see scripts/052-three-tier-plans.sql's check_reservation_limit).
-  const hasPaidPlan = meetsPlan(profile?.plan, 'pro')
+  // Resolved through the business owner (aiAddonStatus.plan, see scripts/
+  // 079-ai-addon-owner-resolution.sql - the field is named for the AI
+  // add-on but carries the business's real plan generally), not the
+  // caller's own profile - a staff member's own profile.plan is typically
+  // 'free' (their own separate signup), which would otherwise wrongly hide
+  // every Pro/Premium feature in this modal for staff on a paid business.
+  const hasPaidPlan = meetsPlan(aiAddonStatus?.plan ?? profile?.plan, 'pro')
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
 
   // Checked fresh right when a "create" open is requested, rather than on
@@ -449,6 +480,10 @@ export function ReservationModal({
     setRepeatDays([])
     setSessionCount(4)
     setSeriesResult(null)
+    // Only meaningful in create mode (edit mode reads existingAttendees
+    // from context instead) - cleared on every open so switching from one
+    // reservation/create flow to another never carries stale picks over.
+    setAdditionalAttendeeIds([])
   }, [reservation, selectedDate, mode, tz, initialType, serviceDurationOptions, isUSD, services, prefillClientId, prefillServiceId, prefillResourceId])
 
   // Fetch how many future sessions remain in this reservation's series (if
@@ -512,6 +547,43 @@ export function ReservationModal({
         c.name.toLowerCase().includes(q) ||
         (c.email && c.email.toLowerCase().includes(q)) ||
         (c.document_number && c.document_number.toLowerCase().includes(q))
+    )
+  })()
+
+  // Group reservations - only offered for services marked as group-capable
+  // (max_attendees set) on a Pro/Premium business. Staff-only, see
+  // scripts/081-group-reservations.sql.
+  const canAddAttendees = hasPaidPlan && !!selectedService?.max_attendees
+
+  // Trims the staged attendee list (create mode) if the selected service
+  // changes to a lower/no capacity mid-form - without this, someone who
+  // picks attendees under one service and then switches to a stricter one
+  // would silently keep the extra picks past that service's own limit.
+  // Edit mode doesn't need this: its picker inserts/caps live against
+  // whatever service is currently selected (see handleAddAttendee), and
+  // already-committed attendees aren't retroactively removed if the
+  // reservation's service changes afterward, same as reducing a service's
+  // limit doesn't retroactively trim an existing reservation.
+  useEffect(() => {
+    const maxExtra = hasPaidPlan && selectedService?.max_attendees ? selectedService.max_attendees - 1 : 0
+    setAdditionalAttendeeIds((prev) => (prev.length > maxExtra ? prev.slice(0, maxExtra) : prev))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.service_id])
+  // Sourced from context (already loaded per-business, same as
+  // serviceResources/workerServices) rather than a fresh fetch - reservation
+  // is only set in edit/view mode, so this is empty in create mode.
+  const existingAttendees = reservation
+    ? reservationAttendees.filter((a) => a.reservation_id === reservation.id && a.status === 'confirmed')
+    : []
+  const existingAttendeeClientIds = existingAttendees.map((a) => a.client_id)
+  const totalAttendeeCount = 1 + existingAttendeeClientIds.length + additionalAttendeeIds.length
+  const attendeeSearchResults = (() => {
+    const q = attendeeSearch.trim().toLowerCase()
+    const excluded = new Set([formData.client_id, ...existingAttendeeClientIds, ...additionalAttendeeIds])
+    const candidates = activeClients.filter((c) => !excluded.has(c.id))
+    if (!q) return candidates
+    return candidates.filter(
+      (c) => c.name.toLowerCase().includes(q) || (c.email && c.email.toLowerCase().includes(q))
     )
   })()
   // Same default-by-country logic as clients/page.tsx's own form.
@@ -1125,6 +1197,23 @@ export function ReservationModal({
 
         if (error) throw error
         console.log('[v0] Reservation created successfully')
+
+        // Group reservations (scripts/081) - additional attendees staged
+        // while this reservation didn't exist yet, inserted now that it
+        // does. Before the notification call below so the widened
+        // get_public_reservation_status RPC already sees them.
+        if (created && additionalAttendeeIds.length > 0) {
+          const { error: attendeesError } = await supabase.from('reservation_attendees').insert(
+            additionalAttendeeIds.map((client_id) => ({
+              reservation_id: created.id,
+              client_id,
+              business_id: currentBusiness.id,
+            }))
+          )
+          if (attendeesError) console.error('[v0] Error adding attendees:', attendeesError)
+          else await refetchReservationAttendees()
+        }
+
         // No confirmation email for a backdated entry - it already
         // happened, so a "your reservation is confirmed" email afterward
         // would just be confusing.
@@ -1211,6 +1300,67 @@ export function ReservationModal({
       console.error('[v0] Error updating reservation status:', error)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  // In create mode the reservation doesn't exist yet, so a picked attendee
+  // is only staged in additionalAttendeeIds (bulk-inserted after the main
+  // create succeeds, see handleSave). In edit mode the row already exists,
+  // so this writes immediately - a group reservation's attendee list isn't
+  // part of the main "Save" action, same reasoning as handleDelete/
+  // handleUpdateStatus above being their own immediate actions.
+  const handleAddAttendee = async (clientId: string) => {
+    setAttendeeComboOpen(false)
+    setAttendeeSearch('')
+    if (effectiveMode !== 'edit' || !reservation?.id) {
+      setAdditionalAttendeeIds((prev) => [...prev, clientId])
+      return
+    }
+    if (!currentBusiness?.id) return
+    setIsUpdatingAttendees(true)
+    try {
+      // upsert, not insert - re-adding someone previously removed hits the
+      // (reservation_id, client_id) unique constraint (scripts/081) on a
+      // plain insert, since handleRemoveAttendee soft-cancels rather than
+      // deletes. onConflict revives that same row back to 'confirmed'
+      // instead of failing, same "upsert over a soft-delete" shape as
+      // add_business_staff's own on-conflict-do-update.
+      const { error } = await supabase
+        .from('reservation_attendees')
+        .upsert(
+          { reservation_id: reservation.id, client_id: clientId, business_id: currentBusiness.id, status: 'confirmed' },
+          { onConflict: 'reservation_id,client_id' }
+        )
+      if (error) throw error
+      setError('')
+      await refetchReservationAttendees()
+    } catch (error) {
+      console.error('[v0] Error adding attendee:', error)
+      setError(t.reservation.attendeeUpdateError)
+    } finally {
+      setIsUpdatingAttendees(false)
+    }
+  }
+
+  // Soft-cancels the join row rather than deleting it, and never touches
+  // the reservation itself - removing one person from a class doesn't
+  // cancel it for everyone else. Silent for v1: no cancellation email is
+  // sent to the removed attendee (staff tells them directly).
+  const handleRemoveAttendee = async (attendeeRowId: string) => {
+    setIsUpdatingAttendees(true)
+    try {
+      const { error } = await supabase
+        .from('reservation_attendees')
+        .update({ status: 'cancelled' })
+        .eq('id', attendeeRowId)
+      if (error) throw error
+      setError('')
+      await refetchReservationAttendees()
+    } catch (error) {
+      console.error('[v0] Error removing attendee:', error)
+      setError(t.reservation.attendeeUpdateError)
+    } finally {
+      setIsUpdatingAttendees(false)
     }
   }
 
@@ -1311,6 +1461,19 @@ export function ReservationModal({
                 <span className="font-medium">{t.reservation.clientLabel}</span>
                 <span>{viewClient?.name ?? reservation.client_id}</span>
               </div>
+              {existingAttendees.length > 0 && (
+                <div className="flex items-start gap-3 text-sm">
+                  <Users className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="font-medium">{t.reservation.attendeesLabel}</span>
+                  <span className="flex flex-wrap gap-1.5">
+                    {existingAttendees.map((a) => (
+                      <Badge key={a.id} variant="secondary" className="font-normal">
+                        {clients.find((c) => c.id === a.client_id)?.name ?? '—'}
+                      </Badge>
+                    ))}
+                  </span>
+                </div>
+              )}
               <div className="flex items-center gap-3 text-sm">
                 <Briefcase className="h-4 w-4 text-muted-foreground" />
                 <span className="font-medium">
@@ -1546,6 +1709,200 @@ export function ReservationModal({
               </div>
             )}
 
+            {/* Service - required for a booking, optional for a visit (a
+                prospective client may just want to see the place). Chosen
+                before the client: a group service's attendee limit only
+                means something once you know which service this is, and
+                every other field below (resource, duration/price, worker,
+                available slots) already derives from the service anyway. */}
+            <div className="space-y-2">
+              <Label htmlFor="service">
+                {t.reservation.serviceSelect}
+                {formData.type === 'visit' && (
+                  <span className="ml-1 font-normal text-muted-foreground">{t.reservation.resourceOptional}</span>
+                )}
+              </Label>
+              <Select
+                value={formData.service_id}
+                onValueChange={(val) => {
+                  const service = services.find((s) => s.id === val)
+                  // A visit's service is just an interest hint (see the
+                  // label above) - never suggest a price for it, since the
+                  // price field itself doesn't even show for a visit.
+                  const suggestedPrice = formData.type !== 'visit' && service && service.pricing_mode === 'fixed'
+                    ? (isUSD ? service.price_usd : service.price) ?? ''
+                    : ''
+                  setFormData({
+                    ...formData,
+                    service_id: val,
+                    resource_id: '',
+                    worker_id: '',
+                    duration_option_id: '',
+                    hours: '',
+                    price: suggestedPrice,
+                    // Changing the service changes its duration, which can
+                    // invalidate whatever slot was already picked.
+                    start_time: '',
+                  })
+                }}
+              >
+                <SelectTrigger id="service">
+                  <SelectValue
+                    placeholder={formData.type === 'visit' ? t.reservation.selectServiceVisit : t.reservation.selectService}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {services.length === 0 ? (
+                    <SelectItem value="_empty" disabled>
+                      {t.reservation.noServices}
+                    </SelectItem>
+                  ) : (
+                    services.filter((s) => s.is_active && isServiceBookable(s)).map((service) => (
+                      <SelectItem key={service.id} value={service.id}>
+                        <span className="font-medium">{service.name}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {service.pricing_mode === 'preset' && t.reservation.flexibleDurationTag}
+                          {service.pricing_mode === 'hourly' &&
+                            `${t.reservation.hourlyTag}${
+                              (isUSD ? service.hourly_rate_usd : service.hourly_rate)
+                                ? ` · ${isUSD ? '$' : 'S/'} ${isUSD ? service.hourly_rate_usd : service.hourly_rate}${t.services.perHour}`
+                                : ''
+                            }`}
+                          {service.pricing_mode === 'fixed' &&
+                            `${formatDuration(service.duration_minutes)}${
+                              (isUSD ? service.price_usd : service.price)
+                                ? ` · ${isUSD ? '$' : 'S/'} ${isUSD ? service.price_usd : service.price}`
+                                : ''
+                            }`}
+                          {!!service.max_attendees &&
+                            ` · ${t.reservation.groupServiceTag.replace('{count}', String(service.max_attendees))}`}
+                        </span>
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+
+              {formData.type !== 'visit' && selectedService?.pricing_mode === 'preset' && (
+                <Select
+                  value={formData.duration_option_id}
+                  onValueChange={(val) => {
+                    const option = selectedServiceDurationOptions.find((o) => o.id === val)
+                    setFormData({
+                      ...formData,
+                      duration_option_id: val,
+                      price: option ? ((isUSD ? option.price_usd : option.price) ?? '') : '',
+                      start_time: '',
+                    })
+                  }}
+                >
+                  <SelectTrigger id="duration-option" className="mt-2">
+                    <SelectValue placeholder={t.reservation.selectDuration} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {selectedServiceDurationOptions.length === 0 ? (
+                      <SelectItem value="_empty" disabled>
+                        {t.reservation.noDurationOptions}
+                      </SelectItem>
+                    ) : (
+                      selectedServiceDurationOptions.map((option) => (
+                        <SelectItem key={option.id} value={option.id}>
+                          {formatDuration(option.duration_minutes)}
+                          {(isUSD ? option.price_usd : option.price)
+                            ? ` · ${isUSD ? '$' : 'S/'} ${isUSD ? option.price_usd : option.price}`
+                            : ''}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {formData.type !== 'visit' && selectedService?.pricing_mode === 'hourly' && (
+                <div className="mt-2 space-y-1">
+                  <Input
+                    type="number"
+                    min={selectedService.min_hours ?? 1}
+                    max={selectedService.max_hours ?? undefined}
+                    step={1}
+                    placeholder={t.reservation.hoursLabel}
+                    value={formData.hours}
+                    onChange={(e) => {
+                      const hours = e.target.value !== '' ? parseInt(e.target.value) : ''
+                      const rate = isUSD ? selectedService.hourly_rate_usd : selectedService.hourly_rate
+                      setFormData({
+                        ...formData,
+                        hours,
+                        price: hours !== '' && rate ? hours * rate : '',
+                        start_time: '',
+                      })
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {t.reservation.hoursRangeHint
+                      .replace('{min}', String(selectedService.min_hours ?? 1))
+                      .replace('{max}', String(selectedService.max_hours ?? '—'))}
+                  </p>
+                </div>
+              )}
+
+              {formData.type === 'visit' && (
+                <div className="mt-2 space-y-1">
+                  <Label htmlFor="visit-duration" className="text-xs font-normal text-muted-foreground">
+                    {t.reservation.visitDurationLabel}
+                  </Label>
+                  <DurationInput
+                    key={reservation?.id ?? mode}
+                    id="visit-duration"
+                    value={formData.visitDurationMinutes}
+                    onChange={(minutes) => setFormData({ ...formData, visitDurationMinutes: minutes, start_time: '' })}
+                  />
+                  <p className="text-xs text-muted-foreground">{t.reservation.visitDurationHint}</p>
+                </div>
+              )}
+
+              {effectiveDurationMinutes && (
+                <p className="text-xs text-muted-foreground">
+                  {t.reservation.durationInfo} {formatDuration(effectiveDurationMinutes)} — {t.reservation.durationEnd}{' '}
+                  {formData.start_time
+                    ? new Date(
+                        new Date(formData.start_time).getTime() +
+                          effectiveDurationMinutes * 60 * 1000
+                      ).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
+                    : '—'}
+                </p>
+              )}
+            </div>
+
+            {/* Price - pre-filled from the service/duration option but
+                editable for one-off quotes ("cotizaciones"); snapshotted
+                onto the reservation so later service price changes don't
+                retroactively rewrite past revenue (see lib/analytics.ts).
+                Hidden for a visit - it never generates revenue regardless
+                of what's saved here (excluded by type, not by price), so
+                showing an editable price would just look like it charges
+                for something the system silently ignores. */}
+            {formData.type !== 'visit' && (
+              <div className="space-y-2">
+                <Label htmlFor="reservation-price">
+                  {t.reservation.priceLabel} ({isUSD ? '$' : 'S/.'})
+                </Label>
+                <Input
+                  id="reservation-price"
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={formData.price}
+                  onChange={(e) => setFormData({ ...formData, price: e.target.value !== '' ? parseFloat(e.target.value) : '' })}
+                  onBlur={(e) => {
+                    if (e.target.value === '') return
+                    const rounded = Math.round(parseFloat(e.target.value) * 100) / 100
+                    setFormData({ ...formData, price: isNaN(rounded) ? '' : rounded })
+                  }}
+                />
+              </div>
+            )}
+
             {/* Client */}
             <div className="space-y-2">
               <Label htmlFor="client">{t.reservation.clientSelect}</Label>
@@ -1757,6 +2114,120 @@ export function ReservationModal({
               </Popover>
             </div>
 
+            {canAddAttendees && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-1.5">
+                    <Users className="h-3.5 w-3.5" />
+                    {t.reservation.attendeesLabel}
+                  </Label>
+                  <span
+                    className={cn(
+                      'text-xs',
+                      totalAttendeeCount >= (selectedService?.max_attendees ?? 0)
+                        ? 'font-medium text-amber-600 dark:text-amber-400'
+                        : 'text-muted-foreground'
+                    )}
+                  >
+                    {(totalAttendeeCount >= (selectedService?.max_attendees ?? 0)
+                      ? t.reservation.attendeesCountFull
+                      : t.reservation.attendeesCountLabel
+                    )
+                      .replace('{count}', String(totalAttendeeCount))
+                      .replace('{max}', String(selectedService?.max_attendees ?? 0))}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {existingAttendees.map((a) => {
+                    const attendeeClient = clients.find((c) => c.id === a.client_id)
+                    return (
+                      <Badge key={a.id} variant="secondary" className="gap-1 py-1 pl-2 pr-1 font-normal">
+                        {attendeeClient?.name ?? '—'}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAttendee(a.id)}
+                          disabled={isUpdatingAttendees}
+                          className="rounded-full p-0.5 hover:bg-muted-foreground/20 disabled:opacity-50"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    )
+                  })}
+                  {additionalAttendeeIds.map((clientId) => {
+                    const attendeeClient = clients.find((c) => c.id === clientId)
+                    return (
+                      <Badge key={clientId} variant="secondary" className="gap-1 py-1 pl-2 pr-1 font-normal">
+                        {attendeeClient?.name ?? '—'}
+                        <button
+                          type="button"
+                          onClick={() => setAdditionalAttendeeIds((prev) => prev.filter((id) => id !== clientId))}
+                          className="rounded-full p-0.5 hover:bg-muted-foreground/20"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    )
+                  })}
+                  {totalAttendeeCount < (selectedService?.max_attendees ?? 0) && (
+                    <Popover
+                      open={attendeeComboOpen}
+                      onOpenChange={(open) => {
+                        setAttendeeComboOpen(open)
+                        if (!open) setAttendeeSearch('')
+                      }}
+                    >
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 gap-1 px-2 text-xs"
+                          disabled={isUpdatingAttendees}
+                        >
+                          <Plus className="h-3 w-3" />
+                          {t.reservation.addAttendeeBtn}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[280px] p-0" align="start">
+                        <Command shouldFilter={false}>
+                          <CommandInput
+                            placeholder={t.reservation.searchClientPlaceholder}
+                            value={attendeeSearch}
+                            onValueChange={setAttendeeSearch}
+                          />
+                          <CommandList>
+                            {attendeeSearchResults.length === 0 && (
+                              <p className="px-2 py-3 text-center text-sm text-muted-foreground">
+                                {t.reservation.noClientsFound}
+                              </p>
+                            )}
+                            <CommandGroup>
+                              {attendeeSearchResults.map((client) => (
+                                <CommandItem
+                                  key={client.id}
+                                  value={client.id}
+                                  onSelect={() => handleAddAttendee(client.id)}
+                                >
+                                  <div className="flex min-w-0 flex-col">
+                                    <span className="truncate font-medium">{client.name}</span>
+                                    {client.email && (
+                                      <span className="truncate text-xs text-muted-foreground">{client.email}</span>
+                                    )}
+                                  </div>
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">{t.reservation.attendeesHint}</p>
+              </div>
+            )}
+
             {hasPaidPlan && lastVisit && (
               <div className="rounded-lg border border-dashed bg-muted/30 p-3 text-sm">
                 <p className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
@@ -1777,194 +2248,6 @@ export function ReservationModal({
                   })()}
                 </p>
                 {lastVisit.notes && <p className="mt-1 text-xs text-muted-foreground">{lastVisit.notes}</p>}
-              </div>
-            )}
-
-            {/* Service - required for a booking, optional for a visit (a
-                prospective client may just want to see the place). */}
-            <div className="space-y-2">
-              <Label htmlFor="service">
-                {t.reservation.serviceSelect}
-                {formData.type === 'visit' && (
-                  <span className="ml-1 font-normal text-muted-foreground">{t.reservation.resourceOptional}</span>
-                )}
-              </Label>
-              <Select
-                value={formData.service_id}
-                onValueChange={(val) => {
-                  const service = services.find((s) => s.id === val)
-                  // A visit's service is just an interest hint (see the
-                  // label above) - never suggest a price for it, since the
-                  // price field itself doesn't even show for a visit.
-                  const suggestedPrice = formData.type !== 'visit' && service && service.pricing_mode === 'fixed'
-                    ? (isUSD ? service.price_usd : service.price) ?? ''
-                    : ''
-                  setFormData({
-                    ...formData,
-                    service_id: val,
-                    resource_id: '',
-                    worker_id: '',
-                    duration_option_id: '',
-                    hours: '',
-                    price: suggestedPrice,
-                    // Changing the service changes its duration, which can
-                    // invalidate whatever slot was already picked.
-                    start_time: '',
-                  })
-                }}
-              >
-                <SelectTrigger id="service">
-                  <SelectValue
-                    placeholder={formData.type === 'visit' ? t.reservation.selectServiceVisit : t.reservation.selectService}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {services.length === 0 ? (
-                    <SelectItem value="_empty" disabled>
-                      {t.reservation.noServices}
-                    </SelectItem>
-                  ) : (
-                    services.filter((s) => s.is_active && isServiceBookable(s)).map((service) => (
-                      <SelectItem key={service.id} value={service.id}>
-                        <span className="font-medium">{service.name}</span>
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          {service.pricing_mode === 'preset' && t.reservation.flexibleDurationTag}
-                          {service.pricing_mode === 'hourly' &&
-                            `${t.reservation.hourlyTag}${
-                              (isUSD ? service.hourly_rate_usd : service.hourly_rate)
-                                ? ` · ${isUSD ? '$' : 'S/'} ${isUSD ? service.hourly_rate_usd : service.hourly_rate}${t.services.perHour}`
-                                : ''
-                            }`}
-                          {service.pricing_mode === 'fixed' &&
-                            `${formatDuration(service.duration_minutes)}${
-                              (isUSD ? service.price_usd : service.price)
-                                ? ` · ${isUSD ? '$' : 'S/'} ${isUSD ? service.price_usd : service.price}`
-                                : ''
-                            }`}
-                        </span>
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-
-              {formData.type !== 'visit' && selectedService?.pricing_mode === 'preset' && (
-                <Select
-                  value={formData.duration_option_id}
-                  onValueChange={(val) => {
-                    const option = selectedServiceDurationOptions.find((o) => o.id === val)
-                    setFormData({
-                      ...formData,
-                      duration_option_id: val,
-                      price: option ? ((isUSD ? option.price_usd : option.price) ?? '') : '',
-                      start_time: '',
-                    })
-                  }}
-                >
-                  <SelectTrigger id="duration-option" className="mt-2">
-                    <SelectValue placeholder={t.reservation.selectDuration} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {selectedServiceDurationOptions.length === 0 ? (
-                      <SelectItem value="_empty" disabled>
-                        {t.reservation.noDurationOptions}
-                      </SelectItem>
-                    ) : (
-                      selectedServiceDurationOptions.map((option) => (
-                        <SelectItem key={option.id} value={option.id}>
-                          {formatDuration(option.duration_minutes)}
-                          {(isUSD ? option.price_usd : option.price)
-                            ? ` · ${isUSD ? '$' : 'S/'} ${isUSD ? option.price_usd : option.price}`
-                            : ''}
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
-              )}
-
-              {formData.type !== 'visit' && selectedService?.pricing_mode === 'hourly' && (
-                <div className="mt-2 space-y-1">
-                  <Input
-                    type="number"
-                    min={selectedService.min_hours ?? 1}
-                    max={selectedService.max_hours ?? undefined}
-                    step={1}
-                    placeholder={t.reservation.hoursLabel}
-                    value={formData.hours}
-                    onChange={(e) => {
-                      const hours = e.target.value !== '' ? parseInt(e.target.value) : ''
-                      const rate = isUSD ? selectedService.hourly_rate_usd : selectedService.hourly_rate
-                      setFormData({
-                        ...formData,
-                        hours,
-                        price: hours !== '' && rate ? hours * rate : '',
-                        start_time: '',
-                      })
-                    }}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {t.reservation.hoursRangeHint
-                      .replace('{min}', String(selectedService.min_hours ?? 1))
-                      .replace('{max}', String(selectedService.max_hours ?? '—'))}
-                  </p>
-                </div>
-              )}
-
-              {formData.type === 'visit' && (
-                <div className="mt-2 space-y-1">
-                  <Label htmlFor="visit-duration" className="text-xs font-normal text-muted-foreground">
-                    {t.reservation.visitDurationLabel}
-                  </Label>
-                  <DurationInput
-                    key={reservation?.id ?? mode}
-                    id="visit-duration"
-                    value={formData.visitDurationMinutes}
-                    onChange={(minutes) => setFormData({ ...formData, visitDurationMinutes: minutes, start_time: '' })}
-                  />
-                  <p className="text-xs text-muted-foreground">{t.reservation.visitDurationHint}</p>
-                </div>
-              )}
-
-              {effectiveDurationMinutes && (
-                <p className="text-xs text-muted-foreground">
-                  {t.reservation.durationInfo} {formatDuration(effectiveDurationMinutes)} — {t.reservation.durationEnd}{' '}
-                  {formData.start_time
-                    ? new Date(
-                        new Date(formData.start_time).getTime() +
-                          effectiveDurationMinutes * 60 * 1000
-                      ).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
-                    : '—'}
-                </p>
-              )}
-            </div>
-
-            {/* Price - pre-filled from the service/duration option but
-                editable for one-off quotes ("cotizaciones"); snapshotted
-                onto the reservation so later service price changes don't
-                retroactively rewrite past revenue (see lib/analytics.ts).
-                Hidden for a visit - it never generates revenue regardless
-                of what's saved here (excluded by type, not by price), so
-                showing an editable price would just look like it charges
-                for something the system silently ignores. */}
-            {formData.type !== 'visit' && (
-              <div className="space-y-2">
-                <Label htmlFor="reservation-price">
-                  {t.reservation.priceLabel} ({isUSD ? '$' : 'S/.'})
-                </Label>
-                <Input
-                  id="reservation-price"
-                  type="number"
-                  min={0}
-                  step="any"
-                  value={formData.price}
-                  onChange={(e) => setFormData({ ...formData, price: e.target.value !== '' ? parseFloat(e.target.value) : '' })}
-                  onBlur={(e) => {
-                    if (e.target.value === '') return
-                    const rounded = Math.round(parseFloat(e.target.value) * 100) / 100
-                    setFormData({ ...formData, price: isNaN(rounded) ? '' : rounded })
-                  }}
-                />
               </div>
             )}
 

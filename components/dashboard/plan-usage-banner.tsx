@@ -1,11 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { AlertTriangle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
-import { FREE_LIMITS, PRO_LIMITS, type PlanTier } from '@/lib/plan-limits'
+import { FREE_LIMITS, PRO_LIMITS, PREMIUM_LIMITS, type PlanTier } from '@/lib/plan-limits'
 import { Button } from '@/components/ui/button'
 import { UpgradeModal } from '@/components/upgrade-modal'
 
@@ -16,6 +17,7 @@ interface PlanUsage {
   services: number
   resources: number
   team_seats: number
+  extra_seats_purchased: number
 }
 
 interface OverLimitItem {
@@ -33,6 +35,7 @@ interface OverLimitItem {
 // (typically after a trial ends or a downgrade), and only to the owner,
 // since staff don't manage billing.
 export function PlanUsageBanner() {
+  const router = useRouter()
   const { currentBusiness, businesses } = useBusinesses()
   const { language } = useLanguage()
   const [usage, setUsage] = useState<PlanUsage | null>(null)
@@ -60,7 +63,7 @@ export function PlanUsageBanner() {
     }
   }, [currentBusiness?.id, currentBusiness?.role])
 
-  if (!currentBusiness || currentBusiness.role !== 'owner' || !usage || usage.plan === 'premium') {
+  if (!currentBusiness || currentBusiness.role !== 'owner' || !usage) {
     return null
   }
 
@@ -76,6 +79,7 @@ export function PlanUsageBanner() {
           title: 'Estas sobre el limite de tu plan actual',
           body: 'Tus datos existentes siguen intactos y accesibles - solo no podras crear mas de lo que tu plan permite hasta que actualices.',
           cta: 'Actualizar plan',
+          ctaSeats: 'Comprar cupos extra',
         }
       : {
           reservations: 'Reservations this month',
@@ -86,6 +90,7 @@ export function PlanUsageBanner() {
           sedes: 'Locations',
           title: "You're over your current plan's limits",
           body: "Your existing data is safe and still accessible - you just can't create more than your plan allows until you upgrade.",
+          ctaSeats: 'Buy extra seats',
           cta: 'Upgrade plan',
         }
 
@@ -112,10 +117,20 @@ export function PlanUsageBanner() {
     if (usage.team_seats > PRO_LIMITS.teamSeats) {
       items.push({ label: labels.teamSeats, used: usage.team_seats, limit: PRO_LIMITS.teamSeats })
     }
+  } else if (usage.plan === 'premium') {
+    // Premium is no longer unconditionally unlimited on seats (scripts/080-
+    // premium-extra-seats.sql) - 5 included, org-wide, plus whatever extra
+    // seats were purchased.
+    const includedSeats = PREMIUM_LIMITS.includedSeats + (usage.extra_seats_purchased ?? 0)
+    if (usage.team_seats > includedSeats) {
+      items.push({ label: labels.teamSeats, used: usage.team_seats, limit: includedSeats })
+    }
   }
 
-  // Sedes beyond #1 always require Premium, regardless of Free vs Pro.
-  if (sedeCount > 1) {
+  // Sedes beyond #1 always require Premium, regardless of Free vs Pro -
+  // Premium itself allows up to 5 and has no over-limit check here (out of
+  // this banner's scope; unrelated to the seat check above).
+  if (usage.plan !== 'premium' && sedeCount > 1) {
     items.push({ label: labels.sedes, used: sedeCount, limit: 1 })
   }
 
@@ -142,9 +157,11 @@ export function PlanUsageBanner() {
           <Button
             size="sm"
             className="shrink-0 bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600"
-            onClick={() => setShowUpgradeModal(true)}
+            onClick={() =>
+              usage.plan === 'premium' ? router.push('/dashboard/settings?tab=team') : setShowUpgradeModal(true)
+            }
           >
-            {labels.cta}
+            {usage.plan === 'premium' ? labels.ctaSeats : labels.cta}
           </Button>
         </div>
       </div>

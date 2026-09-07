@@ -45,6 +45,11 @@ export async function GET(request: Request) {
   let sent = 0
   let failed = 0
   let skipped = 0
+  // Group reservations (scripts/081) now return one row per attendee
+  // sharing the same reservation_id - reminder_sent_at is one column on
+  // the reservation, so it must only be written once per id, not once per
+  // recipient.
+  const remindedReservationIds = new Set<string>()
 
   for (const row of rows) {
     try {
@@ -60,7 +65,12 @@ export async function GET(request: Request) {
           startTime: row.start_time,
           timezone: row.business_timezone,
           language: row.business_country === 'US' ? 'en' : 'es',
-          manageUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'https://www.iplanit.io'}/reservar/cita/${row.reservation_id}`,
+          // Omitted for a group attendee (is_primary false) - that page
+          // cancels the WHOLE reservation, only the primary contact
+          // should hold that link.
+          manageUrl: row.is_primary
+            ? `${process.env.NEXT_PUBLIC_APP_URL || 'https://www.iplanit.io'}/reservar/cita/${row.reservation_id}`
+            : undefined,
         })
 
         await getResendClient().emails.send({
@@ -77,14 +87,18 @@ export async function GET(request: Request) {
         await sendWhatsappReminder(row.client_phone)
       }
 
-      // Marked right after a successful send, one row at a time, so a
+      // Marked right after a successful send, and only once per
+      // reservation_id even across multiple rows (see comment above), so a
       // mid-batch failure never leaves an earlier success unmarked (which
       // would resend it next run) or a later row incorrectly marked before
       // it was actually sent.
-      await supabase
-        .from('reservations')
-        .update({ reminder_sent_at: new Date().toISOString() })
-        .eq('id', row.reservation_id)
+      if (!remindedReservationIds.has(row.reservation_id)) {
+        remindedReservationIds.add(row.reservation_id)
+        await supabase
+          .from('reservations')
+          .update({ reminder_sent_at: new Date().toISOString() })
+          .eq('id', row.reservation_id)
+      }
 
       sent++
     } catch (err) {

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
-import { getStripeClient, getPriceIdForTier, getPlanItem } from '@/lib/stripe'
+import { getStripeClient, getPriceIdForTier, getPlanItem, getSeatItem } from '@/lib/stripe'
+import type { Database } from '@/lib/supabase/types'
 
 // Switches an EXISTING subscriber (already has an active subscription)
 // between Pro and Premium by updating the price on their current
@@ -65,10 +67,33 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'already_on_plan' }, { status: 400 })
     }
 
+    // Pro doesn't support extra seats at all (its 2-seat cap has no
+    // purchase path) - downgrading from Premium must drop the seat item
+    // too, in the SAME update call so its removal is prorated together
+    // with the plan change, not left behind as an invisible charge. The
+    // Settings UI only ever renders the seat stepper for plan === 'premium',
+    // so without this a downgraded customer would keep paying for seats
+    // with no way to even see, let alone cancel, that line item.
+    const items: { id: string; price?: string; deleted?: true }[] = [{ id: item.id, price: newPriceId }]
+    const seatItem = tier === 'pro' ? getSeatItem(subscription) : undefined
+    if (seatItem) {
+      items.push({ id: seatItem.id, deleted: true })
+    }
+
     await stripe.subscriptions.update(profile.stripe_subscription_id, {
-      items: [{ id: item.id, price: newPriceId }],
+      items,
       proration_behavior: 'create_prorations',
     })
+
+    if (seatItem) {
+      const serviceSupabase = createClient<Database>(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+      )
+      // Optimistic write, same pattern as extra-seats/activate - the
+      // webhook confirms it independently afterward.
+      await serviceSupabase.from('profiles').update({ extra_seats_purchased: 0 }).eq('id', user.id)
+    }
 
     return NextResponse.json({ success: true })
   } catch (err) {
