@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useCallback, useEffect, useMemo, useRef, Suspense } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -9,12 +9,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { LogoLoader } from '@/components/logo-loader'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { CalendarViewComponent, VISIT_BLOCK_COLOR } from '@/components/dashboard/calendar-view'
 import { ReservationModal } from '@/components/dashboard/reservation-modal'
 import { PageHeader } from '@/components/dashboard/page-header'
@@ -26,7 +20,7 @@ import { capitalizeFirst, cn } from '@/lib/utils'
 import { sedeAbbr, sedeTint } from '@/lib/sede-colors'
 import { createClient } from '@/lib/supabase/client'
 import type { CalendarView } from '@/lib/types'
-import { Plus, CalendarDays, CalendarRange, Calendar as CalendarIcon, Clock, ChevronDown, Building2, List, Eye, Loader2, History } from 'lucide-react'
+import { Plus, CalendarDays, Clock, Building2, Eye, Loader2, History } from 'lucide-react'
 
 interface Reservation {
   id: string
@@ -79,13 +73,6 @@ interface BusinessHour {
 }
 
 const supabase = createClient()
-
-const VIEW_CONFIG: { value: CalendarView; icon: React.ElementType }[] = [
-  { value: 'day', icon: CalendarDays },
-  { value: 'week', icon: CalendarRange },
-  { value: 'month', icon: CalendarIcon },
-  { value: 'list', icon: List },
-]
 
 // Split out from the default export so useSearchParams() (needed to read
 // ?date= from a notification click) has the Suspense boundary Next.js
@@ -258,13 +245,6 @@ function CalendarPageInner() {
   // from effectiveServices, once vista expandida's org-wide swap is in
   // scope, so switching to another sede's service still resolves correctly.
   const [previewServiceId, setPreviewServiceId] = useState<string>('none')
-
-  // Build view options with translated labels
-  const VIEW_OPTIONS = VIEW_CONFIG.map(({ value, icon }) => ({
-    value,
-    icon,
-    label: t.calendar[value as 'day' | 'week' | 'month' | 'list'],
-  }))
 
   const handleCreateReservation = () => {
     setSelectedReservation(null)
@@ -484,8 +464,6 @@ function CalendarPageInner() {
     return localDate === today && r.status !== 'cancelled'
   })
 
-  const currentViewOption = VIEW_OPTIONS.find((v) => v.value === view)
-
   return (
     <div className="space-y-4 pb-20 lg:pb-6">
       <PageHeader
@@ -493,27 +471,6 @@ function CalendarPageInner() {
         subtitle={t.calendar.subtitle}
         actions={
           <>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-2 bg-transparent">
-                  {currentViewOption && <currentViewOption.icon className="h-4 w-4" />}
-                  <span className="hidden xs:inline">{t.calendar.view}</span> {currentViewOption?.label}
-                  <ChevronDown className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {VIEW_OPTIONS.map((option) => (
-                  <DropdownMenuItem
-                    key={option.value}
-                    onClick={() => setView(option.value)}
-                    className="gap-2"
-                  >
-                    <option.icon className="h-4 w-4" />
-                    {option.label}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
             <Button onClick={handleCreateReservation} size="sm" className="gap-2">
               <Plus className="h-4 w-4" />
               <span className="hidden sm:inline">{t.calendar.newReservation}</span>

@@ -20,7 +20,13 @@ const MAX_ITEMS = 20
 interface NotificationsContextValue {
   notifications: NotificationItem[]
   unreadCount: number
-  markAllSeen: () => void
+  /** Whether a single notification id has already been marked read - drives
+   * the per-item unread dot in notification-bell.tsx. */
+  isRead: (id: string) => boolean
+  /** Marks one notification read (e.g. the one just clicked), leaving every
+   * other unread item alone - see markAllRead below for the bulk version. */
+  markRead: (id: string) => void
+  markAllRead: () => void
 }
 
 const NotificationsContext = createContext<NotificationsContextValue | undefined>(undefined)
@@ -119,7 +125,23 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     [notifications, seenIds]
   )
 
-  const markAllSeen = useCallback(() => {
+  const isRead = useCallback((id: string) => seenIds.has(id), [seenIds])
+
+  const markRead = useCallback(
+    (id: string) => {
+      if (!currentBusiness) return
+      setSeenIds((prev) => {
+        if (prev.has(id)) return prev
+        const next = new Set(prev)
+        next.add(id)
+        window.localStorage.setItem(seenStorageKey(currentBusiness.id), JSON.stringify([...next]))
+        return next
+      })
+    },
+    [currentBusiness]
+  )
+
+  const markAllRead = useCallback(() => {
     if (!currentBusiness) return
     const allIds = new Set(notifications.map((n) => n.id))
     setSeenIds(allIds)
@@ -127,7 +149,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
   }, [notifications, currentBusiness])
 
   return (
-    <NotificationsContext.Provider value={{ notifications, unreadCount, markAllSeen }}>
+    <NotificationsContext.Provider value={{ notifications, unreadCount, isRead, markRead, markAllRead }}>
       {children}
     </NotificationsContext.Provider>
   )

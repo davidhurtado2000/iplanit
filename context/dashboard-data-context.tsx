@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { CalendarPlus } from 'lucide-react'
@@ -391,8 +391,141 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
   // and an extra confirmation toast for your own action isn't harmful.
   // Requires reservations to be added to the supabase_realtime publication
   // (scripts/042-realtime-reservations.sql).
+  //
+  // A single user action can touch many rows at once (creating a recurring
+  // series inserts one row per session; cancelling one updates every future
+  // occurrence in one query) - postgres_changes still fires one event PER
+  // ROW, so without batching a 4-session series stacked 4 identical toasts
+  // for what felt like one click. Both INSERT and UPDATE events are instead
+  // buffered and flushed as a single toast after a short quiet period, with
+  // the exact original single-row toast (same description/Undo) preserved
+  // when a flush turns out to only contain one event.
+  const insertBufferRef = useRef<Reservation[]>([])
+  const insertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  type StatusUpdateEvent = { reservation: Reservation; previousStatus: Reservation['status'] | undefined }
+  const updateBufferRef = useRef<StatusUpdateEvent[]>([])
+  const updateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const BATCH_DEBOUNCE_MS = 600
+
   useEffect(() => {
     if (!currentBusiness) return
+
+    const flushInsertBuffer = () => {
+      const batch = insertBufferRef.current
+      insertBufferRef.current = []
+      insertTimerRef.current = null
+      if (batch.length === 0) return
+
+      playNotificationChime()
+
+      const toastStyle = {
+        background: 'var(--primary)',
+        color: 'var(--primary-foreground)',
+        border: 'none',
+      }
+      const action = {
+        label: t.dashboard.newReservationToastCta,
+        onClick: () => router.push('/dashboard/calendar'),
+      }
+
+      if (batch.length === 1) {
+        toast(t.dashboard.newReservationToast, {
+          description: new Date(batch[0].start_time).toLocaleString(locale, {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          }),
+          icon: <CalendarPlus className="h-4 w-4" />,
+          duration: 8000,
+          style: toastStyle,
+          action,
+        })
+        return
+      }
+
+      toast(`${batch.length} ${t.dashboard.newReservationsBatchToast}`, {
+        icon: <CalendarPlus className="h-4 w-4" />,
+        duration: 8000,
+        style: toastStyle,
+        action,
+      })
+    }
+
+    // Single source of truth for "a status changed, tell the user" - fires
+    // the same way whether the change came from this browser tab or a
+    // teammate's, so everyone with the dashboard open stays in sync.
+    // Offering Undo here (instead of duplicating this same toast+chime in
+    // reservation-modal.tsx's own status-change handler) avoids two toasts
+    // stacking for your own action.
+    const flushUpdateBuffer = () => {
+      const batch = updateBufferRef.current
+      updateBufferRef.current = []
+      updateTimerRef.current = null
+      if (batch.length === 0) return
+
+      playNotificationChime()
+
+      const statusMessages: Partial<Record<Reservation['status'], string>> = {
+        pending: t.dashboard.reservationPendingToast,
+        confirmed: t.dashboard.reservationConfirmedToast,
+        cancelled: t.dashboard.reservationCancelledToast,
+        completed: t.dashboard.reservationCompletedToast,
+        no_show: t.dashboard.reservationNoShowToast,
+      }
+      const statusMessagesPlural: Partial<Record<Reservation['status'], string>> = {
+        pending: t.dashboard.reservationPendingToastPlural,
+        confirmed: t.dashboard.reservationConfirmedToastPlural,
+        cancelled: t.dashboard.reservationCancelledToastPlural,
+        completed: t.dashboard.reservationCompletedToastPlural,
+        no_show: t.dashboard.reservationNoShowToastPlural,
+      }
+
+      // Group by the new status - one user action always lands every row
+      // it touches on the same status (e.g. cancelling a whole series), so
+      // grouping here really means "one toast per action", not per-row.
+      const groups = new Map<Reservation['status'], StatusUpdateEvent[]>()
+      for (const item of batch) {
+        const list = groups.get(item.reservation.status)
+        if (list) list.push(item)
+        else groups.set(item.reservation.status, [item])
+      }
+
+      for (const [status, items] of groups) {
+        const message = statusMessages[status]
+        if (!message) continue
+
+        const revertable = items.filter((i) => i.previousStatus)
+        const undoAction =
+          revertable.length > 0
+            ? {
+                label: t.reservation.undoBtn,
+                onClick: async () => {
+                  const results = await Promise.all(
+                    revertable.map(({ reservation, previousStatus }) =>
+                      supabase.from('reservations').update({ status: previousStatus }).eq('id', reservation.id)
+                    )
+                  )
+                  // Same "silent on failure" contract the single-row Undo
+                  // always had (`if (!error) toast(...)`) - only claim the
+                  // revert worked once every row in the batch actually did.
+                  if (results.every((r) => !r.error)) toast(t.reservation.statusRevertedToast)
+                },
+              }
+            : undefined
+
+        const toastFn = status === 'cancelled' ? toast.error : status === 'no_show' ? toast.warning : toast.success
+
+        if (items.length === 1) {
+          const when = new Date(items[0].reservation.start_time).toLocaleString(locale, {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          })
+          toastFn(message, { description: when, duration: 6500, action: undoAction })
+        } else {
+          const pluralMessage = statusMessagesPlural[status] ?? message
+          toastFn(`${items.length} ${pluralMessage}`, { duration: 6500, action: undoAction })
+        }
+      }
+    }
 
     const channel = supabase
       .channel(`reservations-inserts-${currentBusiness.id}`)
@@ -413,24 +546,9 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
               ? prev
               : [...prev, newReservation].sort((a, b) => a.start_time.localeCompare(b.start_time))
           )
-          playNotificationChime()
-          toast(t.dashboard.newReservationToast, {
-            description: new Date(newReservation.start_time).toLocaleString(locale, {
-              dateStyle: 'medium',
-              timeStyle: 'short',
-            }),
-            icon: <CalendarPlus className="h-4 w-4" />,
-            duration: 8000,
-            style: {
-              background: 'var(--primary)',
-              color: 'var(--primary-foreground)',
-              border: 'none',
-            },
-            action: {
-              label: t.dashboard.newReservationToastCta,
-              onClick: () => router.push('/dashboard/calendar'),
-            },
-          })
+          insertBufferRef.current.push(newReservation)
+          if (insertTimerRef.current) clearTimeout(insertTimerRef.current)
+          insertTimerRef.current = setTimeout(flushInsertBuffer, BATCH_DEBOUNCE_MS)
         }
       )
       .on(
@@ -439,50 +557,27 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         (payload) => {
           const updated = payload.new as Reservation
           const previousStatus = (payload.old as Partial<Reservation>).status
-          const reservationId = updated.id
           setReservations((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
 
           if (previousStatus === updated.status) return
 
-          // Single source of truth for "a status changed, tell the user" -
-          // fires the same way whether the change came from this browser
-          // tab or a teammate's, so everyone with the dashboard open stays
-          // in sync. Offering Undo here (instead of duplicating this same
-          // toast+chime in reservation-modal.tsx's own status-change
-          // handler) avoids two toasts stacking for your own action.
-          const statusMessages: Partial<Record<Reservation['status'], string>> = {
-            pending: t.dashboard.reservationPendingToast,
-            confirmed: t.dashboard.reservationConfirmedToast,
-            cancelled: t.dashboard.reservationCancelledToast,
-            completed: t.dashboard.reservationCompletedToast,
-            no_show: t.dashboard.reservationNoShowToast,
-          }
-          const message = statusMessages[updated.status]
-          if (!message) return
-
-          const when = new Date(updated.start_time).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })
-          const undoAction = previousStatus
-            ? {
-                label: t.reservation.undoBtn,
-                onClick: async () => {
-                  const { error } = await supabase
-                    .from('reservations')
-                    .update({ status: previousStatus })
-                    .eq('id', reservationId)
-                  if (!error) toast(t.reservation.statusRevertedToast)
-                },
-              }
-            : undefined
-
-          playNotificationChime()
-          const toastFn = updated.status === 'cancelled' ? toast.error : updated.status === 'no_show' ? toast.warning : toast.success
-          toastFn(message, { description: when, duration: 6500, action: undoAction })
+          updateBufferRef.current.push({ reservation: updated, previousStatus })
+          if (updateTimerRef.current) clearTimeout(updateTimerRef.current)
+          updateTimerRef.current = setTimeout(flushUpdateBuffer, BATCH_DEBOUNCE_MS)
         }
       )
       .subscribe()
 
     return () => {
       supabase.removeChannel(channel)
+      // Flush rather than discard - this effect re-runs on every business
+      // switch and language change, and a pending batch (e.g. a series
+      // insert loop still landing rows) would otherwise vanish with no
+      // toast/Undo ever shown even though the writes already succeeded.
+      if (insertTimerRef.current) clearTimeout(insertTimerRef.current)
+      if (updateTimerRef.current) clearTimeout(updateTimerRef.current)
+      flushInsertBuffer()
+      flushUpdateBuffer()
     }
   }, [currentBusiness?.id, t, locale, router])
 

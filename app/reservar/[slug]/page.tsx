@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { PhoneInput } from '@/components/ui/phone-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -45,6 +46,7 @@ interface PublicBusiness {
   logo_url: string | null
   offers_parking: boolean
   notify_confirmations: boolean
+  country: 'PE' | 'US'
 }
 
 interface PublicResource {
@@ -847,12 +849,11 @@ export default function PublicBookingPage() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="pb-phone">{tr.phoneLabel}</Label>
-                      <Input
+                      <PhoneInput
                         id="pb-phone"
-                        type="tel"
                         value={contactForm.phone}
-                        onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })}
-                        maxLength={30}
+                        onChange={(phone) => setContactForm({ ...contactForm, phone })}
+                        defaultCountry={business.country === 'US' ? 'US' : 'PE'}
                         disabled={submitting}
                       />
                     </div>

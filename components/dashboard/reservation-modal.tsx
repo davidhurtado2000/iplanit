@@ -23,8 +23,10 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { PhoneInput } from '@/components/ui/phone-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Select,
   SelectContent,
@@ -165,6 +167,21 @@ interface ReservationModalProps {
    * quiet behavior change to the normal flow - see feedback in
    * memory/feedback_obvious_ui_for_secondary_actions.md. */
   backdated?: boolean
+}
+
+// Splits a package total into `count` per-session amounts that sum back to
+// exactly that total (to the cent) - a plain total/count division leaves
+// rounding remainders that either don't add up (e.g. $100/3 -> $33.33 x3 =
+// $99.99) or, worse, compound into a real gap in a revenue report. Works in
+// integer cents and hands the leftover cents out one at a time across the
+// first few sessions, so at most a one-cent difference ever shows between
+// any two sessions in the same package.
+function splitPackagePrice(total: number, count: number): number[] {
+  if (count <= 0) return []
+  const totalCents = Math.round(total * 100)
+  const baseCents = Math.floor(totalCents / count)
+  const remainderCents = totalCents - baseCents * count
+  return Array.from({ length: count }, (_, i) => (baseCents + (i < remainderCents ? 1 : 0)) / 100)
 }
 
 export function ReservationModal({
@@ -340,6 +357,12 @@ export function ReservationModal({
   const [repeatEnabled, setRepeatEnabled] = useState(false)
   const [repeatDays, setRepeatDays] = useState<number[]>([])
   const [sessionCount, setSessionCount] = useState(4)
+  const [intervalWeeks, setIntervalWeeks] = useState(1)
+  // When on, the price field above (formData.price) is read as the total
+  // for the whole package rather than a per-session amount - e.g. a 4-
+  // session package sold for $250 becomes ~$62.50 on each occurrence
+  // instead of $250 on every single one.
+  const [isPackagePrice, setIsPackagePrice] = useState(false)
   const [seriesResult, setSeriesResult] = useState<{ created: number; total: number; skipped: string[] } | null>(null)
   const [seriesRemaining, setSeriesRemaining] = useState<number | null>(null)
 
@@ -479,6 +502,8 @@ export function ReservationModal({
     setRepeatEnabled(false)
     setRepeatDays([])
     setSessionCount(4)
+    setIntervalWeeks(1)
+    setIsPackagePrice(false)
     setSeriesResult(null)
     // Only meaningful in create mode (edit mode reads existingAttendees
     // from context instead) - cleared on every open so switching from one
@@ -943,12 +968,32 @@ export function ReservationModal({
   const createSeriesOccurrences = async (firstStart: Date, durationMinutes: number) => {
     const occurrences: Date[] = []
     const cursor = new Date(firstStart)
+    // Week index of `cursor`, counted from the Sunday of firstStart's own
+    // week (0 = Sunday..6 = Saturday, matching Date#getDay()) - only weeks
+    // that are a multiple of intervalWeeks away from week 0 qualify, so
+    // intervalWeeks=1 (the default) matches every week exactly like before
+    // this existed, and intervalWeeks=2 gives "every other week" etc. Plain
+    // day counting instead of timestamp subtraction so this stays correct
+    // across a DST transition mid-series.
+    const anchorOffset = firstStart.getDay()
+    let dayOffset = 0
     while (occurrences.length < sessionCount) {
-      if (repeatDays.includes(cursor.getDay())) {
+      const weekIndex = Math.floor((anchorOffset + dayOffset) / 7)
+      if (repeatDays.includes(cursor.getDay()) && weekIndex % intervalWeeks === 0) {
         occurrences.push(new Date(cursor))
       }
       cursor.setDate(cursor.getDate() + 1)
+      dayOffset++
     }
+
+    // formData.price is either a flat per-session amount (default) or, when
+    // isPackagePrice is on, the total for the whole package - split evenly
+    // (to the cent) across every occurrence so analytics keeps seeing real
+    // per-reservation amounts that add back up to what the client paid.
+    const occurrencePrices: (number | '')[] =
+      isPackagePrice && formData.price
+        ? splitPackagePrice(formData.price, occurrences.length)
+        : occurrences.map(() => formData.price)
 
     const { data: series, error: seriesError } = await supabase
       .from('reservation_series')
@@ -960,6 +1005,7 @@ export function ReservationModal({
         worker_id: formData.worker_id || null,
         sold_by: user?.id ?? null,
         days_of_week: repeatDays,
+        interval_weeks: intervalWeeks,
         session_count: sessionCount,
         notes: formData.notes || null,
       })
@@ -971,8 +1017,9 @@ export function ReservationModal({
     let created = 0
     const skipped: string[] = []
 
-    for (const occStart of occurrences) {
+    for (const [index, occStart] of occurrences.entries()) {
       const occEnd = new Date(occStart.getTime() + durationMinutes * 60 * 1000)
+      const occurrencePrice = occurrencePrices[index]
 
       if (formData.resource_id) {
         const { data: conflicts } = await supabase
@@ -1016,8 +1063,8 @@ export function ReservationModal({
         end_time: occEnd.toISOString(),
         status: 'pending',
         type: formData.type,
-        price: isUSD ? null : formData.price || null,
-        price_usd: isUSD ? formData.price || null : null,
+        price: isUSD ? null : occurrencePrice || null,
+        price_usd: isUSD ? occurrencePrice || null : null,
         notes: formData.notes || null,
       })
 
@@ -1971,12 +2018,11 @@ export function ReservationModal({
                         </div>
                         <div className="space-y-1.5">
                           <Label htmlFor="new-client-phone" className="text-xs">{t.clients.phoneLabel}</Label>
-                          <Input
+                          <PhoneInput
                             id="new-client-phone"
-                            type="tel"
-                            placeholder={t.clients.phonePlaceholder}
                             value={newClientForm.phone}
-                            onChange={(e) => setNewClientForm({ ...newClientForm, phone: e.target.value })}
+                            onChange={(phone) => setNewClientForm({ ...newClientForm, phone })}
+                            defaultCountry={currentBusiness?.country === 'US' ? 'US' : 'PE'}
                           />
                         </div>
                       </div>
@@ -2451,25 +2497,71 @@ export function ReservationModal({
                         ))}
                       </div>
                     </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="sessionCount" className="text-xs text-muted-foreground">
-                        {t.reservation.sessionCountLabel}
-                      </Label>
-                      <Input
-                        id="sessionCount"
-                        type="number"
-                        min={1}
-                        max={52}
-                        value={sessionCount}
-                        onChange={(e) =>
-                          setSessionCount(Math.max(1, Math.min(52, Number(e.target.value) || 1)))
-                        }
-                        className="w-24"
-                      />
+                    <div className="flex flex-wrap gap-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="intervalWeeks" className="text-xs text-muted-foreground">
+                          {t.reservation.repeatIntervalLabel}
+                        </Label>
+                        <Input
+                          id="intervalWeeks"
+                          type="number"
+                          min={1}
+                          max={8}
+                          step={1}
+                          value={intervalWeeks}
+                          onChange={(e) =>
+                            setIntervalWeeks(Math.max(1, Math.min(8, Math.round(Number(e.target.value)) || 1)))
+                          }
+                          className="w-24"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="sessionCount" className="text-xs text-muted-foreground">
+                          {t.reservation.sessionCountLabel}
+                        </Label>
+                        <Input
+                          id="sessionCount"
+                          type="number"
+                          min={1}
+                          max={52}
+                          step={1}
+                          value={sessionCount}
+                          onChange={(e) =>
+                            setSessionCount(Math.max(1, Math.min(52, Math.round(Number(e.target.value)) || 1)))
+                          }
+                          className="w-24"
+                        />
+                      </div>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {t.reservation.repeatHint.replace('{count}', String(sessionCount))}
+                      {intervalWeeks > 1
+                        ? t.reservation.repeatHintInterval
+                            .replace('{count}', String(sessionCount))
+                            .replace('{interval}', String(intervalWeeks))
+                        : t.reservation.repeatHint.replace('{count}', String(sessionCount))}
                     </p>
+                    <div className="flex items-start gap-2 pt-1">
+                      <Checkbox
+                        id="isPackagePrice"
+                        checked={isPackagePrice}
+                        onCheckedChange={(checked) => setIsPackagePrice(checked === true)}
+                      />
+                      <div className="space-y-1">
+                        <Label
+                          htmlFor="isPackagePrice"
+                          className="cursor-pointer text-xs font-normal text-muted-foreground"
+                        >
+                          {t.reservation.packagePriceLabel}
+                        </Label>
+                        {isPackagePrice && formData.price !== '' && sessionCount > 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            {t.reservation.packagePriceHint
+                              .replace('{amount}', `${isUSD ? '$' : 'S/.'}${(formData.price / sessionCount).toFixed(2)}`)
+                              .replace('{count}', String(sessionCount))}
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>

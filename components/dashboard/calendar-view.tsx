@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -12,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ChevronLeft, ChevronRight, CalendarOff, ParkingSquare, Search, Eye, HelpCircle, Clock, Check, CheckCheck, X, Minus, Ban } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CalendarOff, ParkingSquare, Search, Eye, HelpCircle, Clock, Check, CheckCheck, X, Minus, Ban, CalendarDays, CalendarRange, Calendar as CalendarIcon, List } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import type { CalendarView } from '@/lib/types'
@@ -72,6 +73,45 @@ function statusBorderClass(status: string): string {
     case 'no_show':   return 'border-l-4 border-orange-500'
     default:          return ''
   }
+}
+
+// Always-visible view switcher, replacing the "Ver ▾" dropdown that used to
+// live in calendar/page.tsx's own header - day/week/month/list were already
+// all built, they just weren't discoverable behind a hidden menu. Lives here
+// (not the page) so it sits next to the view it's actually switching, and so
+// list view - which used to return before any header rendered at all - gets
+// the same tab strip as everything else instead of looking like a dead end.
+const VIEW_TABS_CONFIG: { value: CalendarView; icon: typeof CalendarDays }[] = [
+  { value: 'day', icon: CalendarDays },
+  { value: 'week', icon: CalendarRange },
+  { value: 'month', icon: CalendarIcon },
+  { value: 'list', icon: List },
+]
+
+function ViewTabs({ value, onChange, t }: { value: CalendarView; onChange: (view: CalendarView) => void; t: any }) {
+  return (
+    <div role="tablist" className="inline-flex shrink-0 gap-0.5 rounded-lg bg-muted p-0.5">
+      {VIEW_TABS_CONFIG.map((tab) => {
+        const active = tab.value === value
+        return (
+          <button
+            key={tab.value}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(tab.value)}
+            className={cn(
+              'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
+              active ? 'bg-background text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            <tab.icon className="h-3.5 w-3.5 shrink-0" />
+            <span className="hidden sm:inline">{t.calendar[tab.value]}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 // ─── Timezone-aware date helpers ───────────────────────────────────────────
@@ -212,6 +252,13 @@ export function CalendarViewComponent({
   const { t, locale } = useLanguage()
   const [currentDate, setCurrentDate] = useState(() => initialDate ?? new Date())
   const [selectedResourceId, setSelectedResourceId] = useState<string>('all')
+  // Which way the content should animate on the next render: 1 = moved
+  // forward in time (slides in from the right), -1 = moved back (slides in
+  // from the left), 0 = not a time move at all - switching views, jumping
+  // to today, or drilling into a day from month/week - so it just crossfades
+  // instead of implying a "before/after" relationship that isn't there.
+  const [direction, setDirection] = useState<1 | -1 | 0>(0)
+  const reduceMotion = useReducedMotion()
 
   // A notification click updates the URL's ?date= while this component may
   // already be mounted showing a different day - the useState initializer
@@ -274,12 +321,22 @@ export function CalendarViewComponent({
     if (view === 'day')   d.setDate(d.getDate() + dir)
     else if (view === 'week') d.setDate(d.getDate() + dir * 7)
     else d.setMonth(d.getMonth() + dir)
+    setDirection(dir)
     setCurrentDate(d)
   }
 
-  const goToToday = () => setCurrentDate(new Date())
+  const goToToday = () => {
+    setDirection(0)
+    setCurrentDate(new Date())
+  }
+
+  const handleViewChange = (nextView: CalendarView) => {
+    setDirection(0)
+    onViewChange?.(nextView)
+  }
 
   const handleDayClick = (date: Date) => {
+    setDirection(0)
     setCurrentDate(date)
     onViewChange?.('day')
   }
@@ -298,60 +355,71 @@ export function CalendarViewComponent({
     return currentDate.toLocaleDateString(locale, { timeZone: timezone, month: 'long', year: 'numeric' })
   }
 
-  if (view === 'list') {
-    return (
-      <div className="flex flex-col gap-4">
-        <ListView
-          reservations={reservations}
-          clientsMap={clientsMap}
-          servicesMap={servicesMap}
-          attendeesCountMap={attendeesCountMap}
-          onSelectReservation={onSelectReservation}
-          timezone={timezone}
-          t={t}
-          locale={locale}
-          businessNameById={businessNameById}
-          businessColorIndexById={businessColorIndexById}
-        />
-      </div>
-    )
+  // Identifies "what's currently on screen" so AnimatePresence below only
+  // plays a transition when this actually changes (a new day/week/month, or
+  // a different view) - not on every unrelated re-render (e.g. reservations
+  // refreshing in the background, or picking a resource filter in Day view).
+  let contentKey: string
+  if (view === 'week') {
+    const start = new Date(currentDate)
+    const diff = start.getDate() - start.getDay() + (start.getDay() === 0 ? -6 : 1)
+    start.setDate(diff)
+    contentKey = `week:${start.toDateString()}`
+  } else if (view === 'month') {
+    contentKey = `month:${currentDate.getFullYear()}-${currentDate.getMonth()}`
+  } else if (view === 'day') {
+    contentKey = `day:${currentDate.toDateString()}`
+  } else {
+    contentKey = 'list'
   }
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Header controls */}
+      {/* Header controls - the view tabs on the right are always shown
+          (including for list, which used to return above before any header
+          rendered); the date nav on the left and the title only make sense
+          for day/week/month, list has no "current date" to page through. */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={() => navigate(-1)} className="h-8 w-8 bg-transparent">
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Button variant="outline" size="icon" onClick={() => navigate(1)} className="h-8 w-8 bg-transparent">
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="sm" onClick={goToToday}>{t.calendar.today}</Button>
+          {view !== 'list' && (
+            <>
+              <Button variant="outline" size="icon" onClick={() => navigate(-1)} className="h-8 w-8 bg-transparent">
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button variant="outline" size="icon" onClick={() => navigate(1)} className="h-8 w-8 bg-transparent">
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="sm" onClick={goToToday}>{t.calendar.today}</Button>
+            </>
+          )}
         </div>
-        <h2 className="text-base font-semibold sm:text-lg">{capitalizeFirst(formatHeader())}</h2>
-        {view === 'day' && resources.length > 0 && (
-          <Select value={selectedResourceId} onValueChange={setSelectedResourceId}>
-            <SelectTrigger className="w-full bg-transparent sm:w-[200px]">
-              <SelectValue placeholder={t.calendar.filterByResourcePlaceholder} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t.calendar.allResources}</SelectItem>
-              {resources.map(r => (
-                <SelectItem key={r.id} value={r.id}>
-                  <span className="flex items-center gap-2">
-                    <span
-                      className="h-2 w-2 shrink-0 rounded-full"
-                      style={{ backgroundColor: r.color || '#3B82F6' }}
-                    />
-                    {r.name}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+        <h2 className="text-base font-semibold sm:text-lg">
+          {view === 'list' ? t.calendar.listViewHeading : capitalizeFirst(formatHeader())}
+        </h2>
+        <div className="flex items-center gap-2">
+          {view === 'day' && resources.length > 0 && (
+            <Select value={selectedResourceId} onValueChange={setSelectedResourceId}>
+              <SelectTrigger className="w-full bg-transparent sm:w-[200px]">
+                <SelectValue placeholder={t.calendar.filterByResourcePlaceholder} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t.calendar.allResources}</SelectItem>
+                {resources.map(r => (
+                  <SelectItem key={r.id} value={r.id}>
+                    <span className="flex items-center gap-2">
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{ backgroundColor: r.color || '#3B82F6' }}
+                      />
+                      {r.name}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {onViewChange && <ViewTabs value={view} onChange={handleViewChange} t={t} />}
+        </div>
       </div>
 
       {/* The gray+eye visit convention stays always-visible here (it's the
@@ -360,7 +428,9 @@ export function CalendarViewComponent({
           are already learnable elsewhere (status filter, list view text),
           so they only need to be one click away, not permanently on
           screen - hence the "?" popover instead of more inline rows. Only
-          reached for day/week/month - list view returns early above. */}
+          shown for day/week/month - list view's own rows already spell out
+          each status as text, so the legend would be redundant there. */}
+      {view !== 'list' && (
       <div className="flex items-center gap-3 text-xs text-muted-foreground">
         <div className="flex items-center gap-1.5">
           <span
@@ -437,10 +507,58 @@ export function CalendarViewComponent({
           </PopoverContent>
         </Popover>
       </div>
+      )}
 
-      {view === 'day'   && <DayView   date={currentDate} reservations={reservations} resources={resources} selectedResourceId={selectedResourceId} clientsMap={clientsMap} servicesMap={servicesMap} resourcesMap={resourcesMap} attendeesCountMap={attendeesCountMap} onSelectReservation={onSelectReservation} startHour={startHour} endHour={endHour} timezone={timezone} t={t} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} businessHours={businessHours} onCreateAtSlot={onCreateAtSlot} previewService={previewService} previewAllowedResourceIds={previewAllowedResourceIds} />}
-      {view === 'week'  && <WeekView  date={currentDate} reservations={reservations} clientsMap={clientsMap} servicesMap={servicesMap} attendeesCountMap={attendeesCountMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
-      {view === 'month' && <MonthView date={currentDate} reservations={reservations} servicesMap={servicesMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
+      {/* AnimatePresence plays contentKey's exit before mounting the next
+          key's enter (mode="wait") - the four views differ too much in
+          shape/height to cross-fade overlapping, so a clean sequential swap
+          reads better than a simultaneous one. direction picks which way
+          things slide: forward/back in time slides horizontally like paging
+          a book, anything else (switching views, jumping to today, drilling
+          into a day) crossfades in place since there's no "before/after"
+          relationship to imply. reduceMotion drops the offsets entirely
+          (opacity-only) for prefers-reduced-motion. */}
+      <AnimatePresence mode="wait" initial={false} custom={direction}>
+        <motion.div
+          key={contentKey}
+          custom={direction}
+          initial="enter"
+          animate="center"
+          exit="exit"
+          variants={{
+            enter: (dir: 1 | -1 | 0) => ({
+              opacity: 0,
+              x: reduceMotion ? 0 : dir === 1 ? 28 : dir === -1 ? -28 : 0,
+              y: reduceMotion || dir !== 0 ? 0 : -6,
+            }),
+            center: { opacity: 1, x: 0, y: 0 },
+            exit: (dir: 1 | -1 | 0) => ({
+              opacity: 0,
+              x: reduceMotion ? 0 : dir === 1 ? -28 : dir === -1 ? 28 : 0,
+              y: reduceMotion || dir !== 0 ? 0 : 6,
+            }),
+          }}
+          transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.2, 0.7, 0.3, 1] }}
+        >
+          {view === 'day'   && <DayView   date={currentDate} reservations={reservations} resources={resources} selectedResourceId={selectedResourceId} clientsMap={clientsMap} servicesMap={servicesMap} resourcesMap={resourcesMap} attendeesCountMap={attendeesCountMap} onSelectReservation={onSelectReservation} startHour={startHour} endHour={endHour} timezone={timezone} t={t} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} businessHours={businessHours} onCreateAtSlot={onCreateAtSlot} previewService={previewService} previewAllowedResourceIds={previewAllowedResourceIds} />}
+          {view === 'week'  && <WeekView  date={currentDate} reservations={reservations} clientsMap={clientsMap} servicesMap={servicesMap} attendeesCountMap={attendeesCountMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
+          {view === 'month' && <MonthView date={currentDate} reservations={reservations} servicesMap={servicesMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
+          {view === 'list'  && (
+            <ListView
+              reservations={reservations}
+              clientsMap={clientsMap}
+              servicesMap={servicesMap}
+              attendeesCountMap={attendeesCountMap}
+              onSelectReservation={onSelectReservation}
+              timezone={timezone}
+              t={t}
+              locale={locale}
+              businessNameById={businessNameById}
+              businessColorIndexById={businessColorIndexById}
+            />
+          )}
+        </motion.div>
+      </AnimatePresence>
     </div>
   )
 }

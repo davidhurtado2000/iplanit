@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { PhoneInput } from '@/components/ui/phone-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
@@ -1199,12 +1200,11 @@ export default function ClientsPage() {
 
             <div className="space-y-2">
               <Label htmlFor="phone">{t.clients.phoneLabel}</Label>
-              <Input
+              <PhoneInput
                 id="phone"
-                type="tel"
                 value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                placeholder={t.clients.phonePlaceholder}
+                onChange={(phone) => setFormData({ ...formData, phone })}
+                defaultCountry={currentBusiness?.country === 'US' ? 'US' : 'PE'}
               />
             </div>
 

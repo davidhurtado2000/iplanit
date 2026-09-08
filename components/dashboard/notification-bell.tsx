@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bell, CalendarPlus, XCircle, Clock, Check } from 'lucide-react'
+import { Bell, CalendarPlus, XCircle, Clock, Check, CheckCheck } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Select,
@@ -32,7 +32,7 @@ export function NotificationBell({ className }: { className?: string }) {
   const router = useRouter()
   const { currentBusiness } = useBusinesses()
   const { clients, services } = useDashboardData()
-  const { notifications, unreadCount, markAllSeen } = useNotifications()
+  const { notifications, unreadCount, isRead, markRead, markAllRead } = useNotifications()
   const [open, setOpen] = useState(false)
   const [filter, setFilter] = useState<BellFilter>('all')
 
@@ -48,12 +48,14 @@ export function NotificationBell({ className }: { className?: string }) {
 
   const filteredNotifications = filter === 'all' ? notifications : notifications.filter((n) => n.type === filter)
 
+  // Closing the popover no longer implicitly marks everything read - with a
+  // per-item unread dot now shown, that would erase the very state the dot
+  // is meant to reflect the instant you glance at it. Read state now only
+  // changes from an explicit action: opening one notification (marks just
+  // that one) or the "Marcar todo como leido" button below.
   const handleOpenChange = (next: boolean) => {
     setOpen(next)
-    if (!next) {
-      markAllSeen()
-      setFilter('all')
-    }
+    if (!next) setFilter('all')
   }
 
   // Jumps straight to the day the reservation is actually on, in the
@@ -61,14 +63,13 @@ export function NotificationBell({ className }: { className?: string }) {
   // which for anything not happening today meant an extra manual search.
   const goToReservationDay = (item: NotificationItem) => {
     setOpen(false)
-    markAllSeen()
+    markRead(item.id)
     const dateStr = toDateStr(item.reservation.start_time, currentBusiness?.timezone || 'America/Lima')
     router.push(`/dashboard/calendar?date=${dateStr}`)
   }
 
   const goToHistory = () => {
     setOpen(false)
-    markAllSeen()
     router.push('/dashboard/notifications')
   }
 
@@ -101,18 +102,31 @@ export function NotificationBell({ className }: { className?: string }) {
       <PopoverContent align="end" className="w-80 p-0">
         <div className="flex items-center justify-between gap-2 border-b px-4 py-2.5">
           <p className="text-sm font-semibold text-foreground">{t.notifications.title}</p>
-          <Select value={filter} onValueChange={(v) => setFilter(v as BellFilter)}>
-            <SelectTrigger size="sm" className="h-7 w-auto gap-1 border-none bg-muted px-2 text-xs shadow-none">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="end">
-              <SelectItem value="all">{t.notifications.filterAll}</SelectItem>
-              <SelectItem value="new_reservation">{typeLabel.new_reservation}</SelectItem>
-              <SelectItem value="confirmed">{typeLabel.confirmed}</SelectItem>
-              <SelectItem value="client_cancelled">{typeLabel.client_cancelled}</SelectItem>
-              <SelectItem value="starting_soon">{typeLabel.starting_soon}</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-1">
+            {unreadCount > 0 && (
+              <button
+                type="button"
+                onClick={markAllRead}
+                title={t.notifications.markAllRead}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <CheckCheck className="h-3.5 w-3.5" />
+                <span className="sr-only">{t.notifications.markAllRead}</span>
+              </button>
+            )}
+            <Select value={filter} onValueChange={(v) => setFilter(v as BellFilter)}>
+              <SelectTrigger size="sm" className="h-7 w-auto gap-1 border-none bg-muted px-2 text-xs shadow-none">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="end">
+                <SelectItem value="all">{t.notifications.filterAll}</SelectItem>
+                <SelectItem value="new_reservation">{typeLabel.new_reservation}</SelectItem>
+                <SelectItem value="confirmed">{typeLabel.confirmed}</SelectItem>
+                <SelectItem value="client_cancelled">{typeLabel.client_cancelled}</SelectItem>
+                <SelectItem value="starting_soon">{typeLabel.starting_soon}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
         {filteredNotifications.length === 0 ? (
           <p className="px-4 py-6 text-center text-sm text-muted-foreground">{t.notifications.empty}</p>
@@ -120,13 +134,20 @@ export function NotificationBell({ className }: { className?: string }) {
           <div className="max-h-96 overflow-y-auto">
             {filteredNotifications.map((item) => {
               const Icon = TYPE_ICON[item.type]
+              const unread = !isRead(item.id)
               return (
                 <button
                   key={item.id}
                   type="button"
                   onClick={() => goToReservationDay(item)}
-                  className="flex w-full items-start gap-3 border-b px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-muted/50"
+                  className={cn(
+                    'flex w-full items-start gap-3 border-b px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-muted/50',
+                    unread && 'bg-primary/5'
+                  )}
                 >
+                  <span className="mt-2 flex h-1.5 w-1.5 shrink-0 items-center justify-center">
+                    {unread && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
+                  </span>
                   <Icon
                     className={cn(
                       'mt-0.5 h-4 w-4 shrink-0',
@@ -135,7 +156,9 @@ export function NotificationBell({ className }: { className?: string }) {
                   />
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-medium text-muted-foreground">{typeLabel[item.type]}</p>
-                    <p className="truncate text-sm text-foreground">{describe(item)}</p>
+                    <p className={cn('truncate text-sm', unread ? 'font-medium text-foreground' : 'text-foreground')}>
+                      {describe(item)}
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       {new Date(item.reservation.start_time).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })}
                     </p>

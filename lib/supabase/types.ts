@@ -719,6 +719,7 @@ export interface Database {
           worker_id: string | null
           sold_by: string | null
           days_of_week: number[]
+          interval_weeks: number
           session_count: number
           notes: string | null
           status: 'active' | 'cancelled'
@@ -733,6 +734,7 @@ export interface Database {
           worker_id?: string | null
           sold_by?: string | null
           days_of_week: number[]
+          interval_weeks?: number
           session_count: number
           notes?: string | null
           status?: 'active' | 'cancelled'
@@ -747,6 +749,7 @@ export interface Database {
           worker_id?: string | null
           sold_by?: string | null
           days_of_week?: number[]
+          interval_weeks?: number
           session_count?: number
           notes?: string | null
           status?: 'active' | 'cancelled'
