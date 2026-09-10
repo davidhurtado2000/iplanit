@@ -80,7 +80,7 @@ export async function POST(request: Request) {
         .from('reservations')
         .update({
           status: 'cancelled',
-          cancelled_by: 'business',
+          cancelled_by: 'kommo',
           cancelled_at: new Date().toISOString(),
           notes: reservation.notes ? `${reservation.notes}\n${note}` : note,
         })

@@ -27,6 +27,34 @@ export function playNotificationChime() {
 }
 
 /**
+ * A descending two-note tone (opposite direction of playNotificationChime's
+ * rising one) for a cancellation that wasn't a routine "client/staff
+ * cancelled in iPlanit" action - specifically a Kommo lead marked Lost.
+ * Lower-pitched and falling reads as "something fell through" without
+ * being harsh/alarming, distinct enough at a glance (well, an ear) from
+ * both the routine chime and playSuccessChime below.
+ */
+export function playLostDealChime() {
+  try {
+    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+    const ctx = new AudioContextClass()
+    const oscillator = ctx.createOscillator()
+    const gain = ctx.createGain()
+    oscillator.type = 'sine'
+    oscillator.frequency.setValueAtTime(659.25, ctx.currentTime)
+    oscillator.frequency.setValueAtTime(440, ctx.currentTime + 0.15)
+    gain.gain.setValueAtTime(0.15, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45)
+    oscillator.connect(gain)
+    gain.connect(ctx.destination)
+    oscillator.start()
+    oscillator.stop(ctx.currentTime + 0.45)
+  } catch {
+    // Ignored - see playNotificationChime's own comment above.
+  }
+}
+
+/**
  * A brighter, three-note ascending chime (C5-E5-G5, a major triad) for the
  * "welcome to Pro/Premium" moment after a successful subscription - reuses
  * the same no-asset Web Audio approach as playNotificationChime, but longer

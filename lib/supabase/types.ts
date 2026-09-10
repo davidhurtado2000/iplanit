@@ -598,7 +598,7 @@ export interface Database {
           type: 'booking' | 'visit'
           price: number | null
           price_usd: number | null
-          cancelled_by: 'client' | 'business' | null
+          cancelled_by: 'client' | 'business' | 'kommo' | null
           cancelled_at: string | null
           reminder_sent_at: string | null
           notes: string | null
@@ -624,7 +624,7 @@ export interface Database {
           type?: 'booking' | 'visit'
           price?: number | null
           price_usd?: number | null
-          cancelled_by?: 'client' | 'business' | null
+          cancelled_by?: 'client' | 'business' | 'kommo' | null
           cancelled_at?: string | null
           reminder_sent_at?: string | null
           notes?: string | null
@@ -650,7 +650,7 @@ export interface Database {
           type?: 'booking' | 'visit'
           price?: number | null
           price_usd?: number | null
-          cancelled_by?: 'client' | 'business' | null
+          cancelled_by?: 'client' | 'business' | 'kommo' | null
           cancelled_at?: string | null
           reminder_sent_at?: string | null
           notes?: string | null

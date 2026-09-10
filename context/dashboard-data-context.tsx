@@ -7,7 +7,7 @@ import { CalendarPlus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useBusinessContext } from './business-context'
 import { useLanguage } from './language-context'
-import { playNotificationChime } from '@/lib/notification-sound'
+import { playNotificationChime, playLostDealChime } from '@/lib/notification-sound'
 
 // ---- Shared types used across all dashboard pages ----
 
@@ -50,7 +50,11 @@ export interface Reservation {
    * services.price live. Null for visits. */
   price: number | null
   price_usd: number | null
-  cancelled_by: 'client' | 'business' | null
+  /** 'kommo' = the Kommo integration's webhook cancelled this after its
+   * matching lead was marked Lost (see app/api/integrations/kommo/webhook) -
+   * distinct from 'business' (staff cancelled it themselves in iPlanit) so
+   * the live toast below can tell a lost sale apart from a routine cancel. */
+  cancelled_by: 'client' | 'business' | 'kommo' | null
   cancelled_at: string | null
   notes: string | null
   created_at: string
@@ -462,19 +466,33 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
       updateTimerRef.current = null
       if (batch.length === 0) return
 
-      playNotificationChime()
+      // A lost-in-Kommo cancellation gets its own descending tone instead
+      // of the routine rising chime, so it reads as "something fell
+      // through" rather than a normal status change - but only when the
+      // WHOLE batch is that (a mixed batch, unlikely in practice, falls
+      // back to the routine chime rather than picking one arbitrarily).
+      const isAllKommoLost = batch.every((i) => i.reservation.status === 'cancelled' && i.reservation.cancelled_by === 'kommo')
+      if (isAllKommoLost) playLostDealChime()
+      else playNotificationChime()
 
-      const statusMessages: Partial<Record<Reservation['status'], string>> = {
+      // 'cancelled_kommo' is a synthetic key, not a real reservation.status
+      // value - splits a Kommo-triggered cancellation (lead marked Lost)
+      // into its own toast/message, distinct from a routine cancellation
+      // (staff or client cancelling directly in iPlanit).
+      type GroupKey = Reservation['status'] | 'cancelled_kommo'
+      const statusMessages: Partial<Record<GroupKey, string>> = {
         pending: t.dashboard.reservationPendingToast,
         confirmed: t.dashboard.reservationConfirmedToast,
         cancelled: t.dashboard.reservationCancelledToast,
+        cancelled_kommo: t.dashboard.reservationLostKommoToast,
         completed: t.dashboard.reservationCompletedToast,
         no_show: t.dashboard.reservationNoShowToast,
       }
-      const statusMessagesPlural: Partial<Record<Reservation['status'], string>> = {
+      const statusMessagesPlural: Partial<Record<GroupKey, string>> = {
         pending: t.dashboard.reservationPendingToastPlural,
         confirmed: t.dashboard.reservationConfirmedToastPlural,
         cancelled: t.dashboard.reservationCancelledToastPlural,
+        cancelled_kommo: t.dashboard.reservationLostKommoToastPlural,
         completed: t.dashboard.reservationCompletedToastPlural,
         no_show: t.dashboard.reservationNoShowToastPlural,
       }
@@ -482,11 +500,15 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
       // Group by the new status - one user action always lands every row
       // it touches on the same status (e.g. cancelling a whole series), so
       // grouping here really means "one toast per action", not per-row.
-      const groups = new Map<Reservation['status'], StatusUpdateEvent[]>()
+      const groups = new Map<GroupKey, StatusUpdateEvent[]>()
       for (const item of batch) {
-        const list = groups.get(item.reservation.status)
+        const key: GroupKey =
+          item.reservation.status === 'cancelled' && item.reservation.cancelled_by === 'kommo'
+            ? 'cancelled_kommo'
+            : item.reservation.status
+        const list = groups.get(key)
         if (list) list.push(item)
-        else groups.set(item.reservation.status, [item])
+        else groups.set(key, [item])
       }
 
       for (const [status, items] of groups) {
@@ -512,7 +534,12 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
               }
             : undefined
 
-        const toastFn = status === 'cancelled' ? toast.error : status === 'no_show' ? toast.warning : toast.success
+        const toastFn =
+          status === 'cancelled' || status === 'cancelled_kommo'
+            ? toast.error
+            : status === 'no_show'
+              ? toast.warning
+              : toast.success
 
         if (items.length === 1) {
           const when = new Date(items[0].reservation.start_time).toLocaleString(locale, {

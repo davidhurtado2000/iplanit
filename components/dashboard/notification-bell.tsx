@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bell, CalendarPlus, XCircle, Clock, Check, CheckCheck } from 'lucide-react'
+import { Bell, CalendarPlus, XCircle, Clock, Check, CheckCheck, TrendingDown } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Select,
@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils'
 const TYPE_ICON: Record<NotificationType, typeof Bell> = {
   new_reservation: CalendarPlus,
   client_cancelled: XCircle,
+  kommo_lost: TrendingDown,
   starting_soon: Clock,
   confirmed: Check,
 }
@@ -42,6 +43,7 @@ export function NotificationBell({ className }: { className?: string }) {
   const typeLabel: Record<NotificationType, string> = {
     new_reservation: t.notifications.newReservation,
     client_cancelled: t.notifications.clientCancelled,
+    kommo_lost: t.notifications.kommoLost,
     starting_soon: t.notifications.startingSoon,
     confirmed: t.notifications.confirmed,
   }
@@ -123,6 +125,7 @@ export function NotificationBell({ className }: { className?: string }) {
                 <SelectItem value="new_reservation">{typeLabel.new_reservation}</SelectItem>
                 <SelectItem value="confirmed">{typeLabel.confirmed}</SelectItem>
                 <SelectItem value="client_cancelled">{typeLabel.client_cancelled}</SelectItem>
+                <SelectItem value="kommo_lost">{typeLabel.kommo_lost}</SelectItem>
                 <SelectItem value="starting_soon">{typeLabel.starting_soon}</SelectItem>
               </SelectContent>
             </Select>
@@ -151,7 +154,7 @@ export function NotificationBell({ className }: { className?: string }) {
                   <Icon
                     className={cn(
                       'mt-0.5 h-4 w-4 shrink-0',
-                      item.type === 'client_cancelled' ? 'text-destructive' : 'text-primary'
+                      item.type === 'client_cancelled' || item.type === 'kommo_lost' ? 'text-destructive' : 'text-primary'
                     )}
                   />
                   <div className="min-w-0 flex-1">

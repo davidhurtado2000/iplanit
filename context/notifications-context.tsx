@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useMemo, useState, useCallback } 
 import { useBusinessContext } from './business-context'
 import { useDashboardData, type Reservation } from './dashboard-data-context'
 
-export type NotificationType = 'new_reservation' | 'client_cancelled' | 'starting_soon' | 'confirmed'
+export type NotificationType = 'new_reservation' | 'client_cancelled' | 'kommo_lost' | 'starting_soon' | 'confirmed'
 
 export interface NotificationItem {
   id: string
@@ -79,6 +79,16 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
         const cancelledAt = new Date(r.cancelled_at).getTime()
         if (now - cancelledAt <= RECENT_WINDOW_MS) {
           items.push({ id: `client_cancelled:${r.id}`, type: 'client_cancelled', reservation: r, timestamp: r.cancelled_at })
+        }
+      }
+
+      // A lead marked Lost in Kommo (app/api/integrations/kommo/webhook) -
+      // kept separate from client_cancelled above since it wasn't the
+      // client cancelling their own booking.
+      if (r.status === 'cancelled' && r.cancelled_by === 'kommo' && r.cancelled_at) {
+        const cancelledAt = new Date(r.cancelled_at).getTime()
+        if (now - cancelledAt <= RECENT_WINDOW_MS) {
+          items.push({ id: `kommo_lost:${r.id}`, type: 'kommo_lost', reservation: r, timestamp: r.cancelled_at })
         }
       }
 
