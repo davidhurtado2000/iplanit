@@ -4,6 +4,7 @@ import { HowItWorks } from '@/components/landing/how-it-works'
 import { Features } from '@/components/landing/features'
 import { Showcase } from '@/components/landing/showcase'
 import { Industries } from '@/components/landing/industries'
+import { AiHighlight } from '@/components/landing/ai-highlight'
 import { Pricing } from '@/components/landing/pricing'
 import { Faq } from '@/components/landing/faq'
 import { FinalCta } from '@/components/landing/final-cta'
@@ -124,6 +125,7 @@ export default function HomePage() {
         <Features />
         <Showcase />
         <Industries />
+        <AiHighlight />
         <Pricing />
         <Faq />
         <FinalCta />

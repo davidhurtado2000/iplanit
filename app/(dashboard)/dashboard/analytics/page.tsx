@@ -1,6 +1,8 @@
 'use client'
 
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Fragment, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -217,7 +219,14 @@ function DemandHeatmap({
   )
 }
 
-export default function AnalyticsPage() {
+// Split out from the default export so useSearchParams() (needed to read
+// ?tab=ai-chat for deep-linking straight to the AI chat tab, e.g. from the
+// sidebar's "back into the chat" link) has the Suspense boundary Next.js
+// requires around it - same pattern already used in dashboard/calendar and
+// dashboard/settings for the same reason.
+function AnalyticsPageInner() {
+  const searchParams = useSearchParams()
+  const initialTab = searchParams.get('tab') === 'ai-chat' ? 'ai-chat' : 'overview'
   const { currentBusiness, businesses, loading: businessLoading, aiAddonStatus } = useBusinesses()
   const { profile } = useAuth()
   const aiAddonActive = isAiAddonActive(aiAddonStatus)
@@ -730,7 +739,7 @@ export default function AnalyticsPage() {
       />
 
       <PremiumFeature featureName={tr.premiumTitle} requiredPlan="pro">
-        <Tabs defaultValue="overview" className="space-y-4">
+        <Tabs defaultValue={initialTab} className="space-y-4">
           <TabsList className="flex-wrap">
             <TabsTrigger value="overview">{tr.tabOverview}</TabsTrigger>
             <TabsTrigger value="demand">{tr.tabDemand}</TabsTrigger>
@@ -1308,5 +1317,20 @@ export default function AnalyticsPage() {
         </Tabs>
       </PremiumFeature>
     </div>
+  )
+}
+
+export default function AnalyticsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="space-y-6">
+          <Skeleton className="h-12 w-64" />
+          <Skeleton className="h-96 w-full" />
+        </div>
+      }
+    >
+      <AnalyticsPageInner />
+    </Suspense>
   )
 }

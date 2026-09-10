@@ -72,7 +72,7 @@ export function FeedbackWidget() {
           <MessageSquarePlus className="h-5 w-5" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent side="left" align="center" sideOffset={8} className="w-80">
+      <PopoverContent side="left" align="center" sideOffset={8} className="w-[calc(100vw-2rem)] max-w-80">
         {sent ? (
           <div className="flex flex-col items-center gap-2 py-4 text-center">
             <Check className="h-6 w-6 text-green-600" />

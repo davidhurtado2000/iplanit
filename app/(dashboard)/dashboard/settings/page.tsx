@@ -1773,9 +1773,9 @@ function SettingsPageInner() {
                   <div className="mb-4 flex flex-col gap-2 rounded-lg border bg-muted/30 p-3 sm:flex-row sm:items-center">
                     <span className="shrink-0 text-sm font-medium">{t.settings.applyToAllLabel}</span>
                     <div className="flex flex-1 flex-wrap items-center gap-2">
-                      <TimeSelect value={bulkStartTime} onChange={setBulkStartTime} className="h-9 w-[140px]" />
+                      <TimeSelect value={bulkStartTime} onChange={setBulkStartTime} className="h-9 w-full sm:w-[140px]" />
                       <span className="text-sm text-muted-foreground">{t.settings.to}</span>
-                      <TimeSelect value={bulkEndTime} onChange={setBulkEndTime} className="h-9 w-[140px]" />
+                      <TimeSelect value={bulkEndTime} onChange={setBulkEndTime} className="h-9 w-full sm:w-[140px]" />
                       <Button type="button" variant="outline" size="sm" onClick={applyHoursToAllDays}>
                         {t.settings.applyToAllBtn}
                       </Button>
@@ -2185,19 +2185,19 @@ function SettingsPageInner() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center justify-between rounded-lg border p-4">
-                <div className="flex items-center gap-3">
+              <div className="flex flex-col gap-4 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-center gap-3">
                   {/* Crown is reserved for Premium specifically everywhere
                       else in the app (PremiumBadge/PremiumFeature, the
                       sidebar's Premium badge) - showing it here for Pro too
                       read as "you're on Premium" even though the label text
                       below correctly said "Plan Pro". */}
                   {plan === 'premium' ? (
-                    <Crown className="h-8 w-8 text-amber-500" />
+                    <Crown className="h-8 w-8 shrink-0 text-amber-500" />
                   ) : (
-                    <Sparkles className="h-8 w-8 text-muted-foreground" />
+                    <Sparkles className="h-8 w-8 shrink-0 text-muted-foreground" />
                   )}
-                  <div>
+                  <div className="min-w-0">
                     <p className="font-semibold">
                       {plan === 'premium'
                         ? t.settings.premiumPlanName
@@ -2215,7 +2215,7 @@ function SettingsPageInner() {
                   </div>
                 </div>
                 {plan !== 'free' ? (
-                  <div className="flex flex-col items-end gap-2">
+                  <div className="flex flex-col items-start gap-2 sm:items-end">
                     {subscriptionStatus?.status === 'trialing' ? (
                       <Badge variant="outline" className="border-primary/40 text-primary">
                         {t.settings.trialStatus}
@@ -2231,6 +2231,7 @@ function SettingsPageInner() {
                       size="sm"
                       onClick={handleManageSubscription}
                       disabled={isPortalLoading}
+                      className="w-full sm:w-auto"
                     >
                       {isPortalLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       {t.settings.manageSubscription}
@@ -2238,7 +2239,7 @@ function SettingsPageInner() {
                     {plan === 'pro' && (
                       <Button
                         size="sm"
-                        className="gap-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600"
+                        className="w-full gap-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 sm:w-auto"
                         disabled={isChangingPlan}
                         onClick={() => setPendingPlanChange('premium')}
                       >
@@ -2253,6 +2254,7 @@ function SettingsPageInner() {
                   </div>
                 ) : (
                   <Button
+                    className="w-full sm:w-auto"
                     onClick={() => {
                       setUpgradeModalPlan(undefined)
                       setShowUpgradeModal(true)

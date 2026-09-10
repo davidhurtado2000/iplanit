@@ -27,6 +27,7 @@ import { PhoneInput } from '@/components/ui/phone-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
+import { getWhatsappLink } from '@/lib/whatsapp'
 import {
   Select,
   SelectContent,
@@ -37,7 +38,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Loader2 } from 'lucide-react'
-import { Calendar, Clock, User, Briefcase, Trash2, MapPin, Repeat, DollarSign, ParkingSquare, ChevronDown, ChevronsUpDown, Check, Eye, UserPlus, Bold, List, UserCog, History, Plus, X, Users } from 'lucide-react'
+import { Calendar, Clock, User, Briefcase, Trash2, MapPin, Repeat, DollarSign, ParkingSquare, ChevronDown, ChevronsUpDown, Check, Eye, UserPlus, Bold, List, UserCog, History, Plus, X, Users, MessageCircle } from 'lucide-react'
 import { renderSimpleMarkdown } from '@/lib/simple-markdown'
 import {
   DropdownMenu,
@@ -66,6 +67,7 @@ import { capitalizeFirst, cn } from '@/lib/utils'
 import { toTzLocalInput, parseInTimezone, toDateStr } from '@/lib/timezone'
 import { generateAvailableSlots, isDayClosed, intersectSlots } from '@/lib/availability'
 import { sendReservationNotification } from '@/lib/email/notify'
+import { syncReservationToKommo } from '@/lib/kommo/sync'
 import { isPlanLimitReached, meetsPlan } from '@/lib/plan-limits'
 import { formatDuration } from '@/lib/duration'
 import { UpgradeModal } from '@/components/upgrade-modal'
@@ -1267,6 +1269,13 @@ export function ReservationModal({
         if (!backdated && created && currentBusiness.notify_confirmations && selectedClient?.email) {
           sendReservationNotification('confirmation', created.id, clientEmailLanguage)
         }
+        // Kommo sync (proof of concept, single shared account) - fires
+        // regardless of email notification prefs/backdated, since those are
+        // unrelated to whether this booking belongs in the CRM. The route
+        // itself re-checks type === 'booking' and skips visits.
+        if (created) {
+          syncReservationToKommo(created.id)
+        }
       } else if (effectiveMode === 'edit' && reservation?.id) {
         const { error } = await supabase
           .from('reservations')
@@ -1465,6 +1474,41 @@ export function ReservationModal({
   // allResources, not the parking-filtered `resources` above - a parking
   // spot is deliberately excluded from that list (see its own filter).
   const viewParkingSpot = allResources.find((r) => r.id === reservation?.parking_resource_id)
+
+  // Manual stand-in for the automated WhatsApp reminders Twilio would send
+  // (not turned on yet - unpaid) - opens WhatsApp with a reminder message
+  // already typed in, staff still has to hit send themselves. Message
+  // language matches clientEmailLanguage (the client's likely language by
+  // business country), not the staff member's own dashboard language.
+  const whatsappReminderHref =
+    reservation && viewClient?.phone
+      ? getWhatsappLink(
+          viewClient.phone,
+          (viewService ? t.reservation.whatsappReminderMessage : t.reservation.whatsappReminderMessageNoService)
+            .replace('{client}', viewClient.name)
+            .replace('{service}', viewService?.name ?? '')
+            .replace(
+              '{date}',
+              capitalizeFirst(
+                new Date(reservation.start_time).toLocaleDateString(clientEmailLanguage === 'en' ? 'en-US' : 'es-PE', {
+                  timeZone: tz,
+                  weekday: 'long',
+                  day: 'numeric',
+                  month: 'long',
+                })
+              )
+            )
+            .replace(
+              '{time}',
+              new Date(reservation.start_time).toLocaleTimeString(clientEmailLanguage === 'en' ? 'en-US' : 'es-PE', {
+                timeZone: tz,
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+            )
+            .replace('{business}', currentBusiness?.name ?? '')
+        )
+      : null
 
   return (
     <>
@@ -1676,6 +1720,14 @@ export function ReservationModal({
                 </DropdownMenuContent>
               </DropdownMenu>
               <div className="flex flex-wrap gap-2">
+                {whatsappReminderHref && (
+                  <Button variant="outline" disabled={isLoading} className="gap-2" asChild>
+                    <a href={whatsappReminderHref} target="_blank" rel="noopener noreferrer">
+                      <MessageCircle className="h-4 w-4" />
+                      {t.reservation.sendWhatsappReminder}
+                    </a>
+                  </Button>
+                )}
                 {reservation.type === 'visit' && onCreateFollowUp && (
                   <Button
                     variant="outline"

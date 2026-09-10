@@ -826,7 +826,7 @@ export default function ServicesPage() {
             <FormSection title={t.services.sectionPricing}>
             <div className="space-y-2">
               <Label>{t.services.pricingModeLabel}</Label>
-              <div className="grid grid-cols-3 gap-2 rounded-lg border p-1">
+              <div className="grid grid-cols-1 gap-2 rounded-lg border p-1 sm:grid-cols-3">
                 {(['fixed', 'preset', 'hourly'] as const).map((mode) => (
                   <button
                     key={mode}
@@ -916,39 +916,41 @@ export default function ServicesPage() {
                 <Label>{t.services.durationOptionsLabel}</Label>
                 <div className="space-y-2">
                   {durationOptions.map((option, index) => (
-                    <div key={index} className="flex items-center gap-2">
+                    <div key={index} className="flex flex-col gap-2 sm:flex-row sm:items-center">
                       <DurationInput
                         key={`${editingService?.id ?? duplicateSourceId ?? 'new'}-${index}`}
                         value={option.duration}
                         onChange={(minutes) => updateDurationOption(index, 'duration', minutes)}
-                        className="flex-1"
+                        className="w-full sm:flex-1"
                         initialUnit={!editingService && !duplicateSourceId ? 'hours' : undefined}
                       />
-                      <Input
-                        type="number"
-                        min={0}
-                        step="any"
-                        placeholder={`${t.services.priceLabel} (${isUSD ? '$' : 'S/.'})`}
-                        value={option.price}
-                        onChange={(e) =>
-                          updateDurationOption(index, 'price', e.target.value !== '' ? parseFloat(e.target.value) : '')
-                        }
-                        onBlur={(e) => {
-                          if (e.target.value === '') return
-                          const rounded = Math.round(parseFloat(e.target.value) * 100) / 100
-                          updateDurationOption(index, 'price', isNaN(rounded) ? '' : rounded)
-                        }}
-                        className="flex-1"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removeDurationOption(index)}
-                        className="shrink-0 text-muted-foreground hover:text-destructive"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center gap-2 sm:flex-1">
+                        <Input
+                          type="number"
+                          min={0}
+                          step="any"
+                          placeholder={`${t.services.priceLabel} (${isUSD ? '$' : 'S/.'})`}
+                          value={option.price}
+                          onChange={(e) =>
+                            updateDurationOption(index, 'price', e.target.value !== '' ? parseFloat(e.target.value) : '')
+                          }
+                          onBlur={(e) => {
+                            if (e.target.value === '') return
+                            const rounded = Math.round(parseFloat(e.target.value) * 100) / 100
+                            updateDurationOption(index, 'price', isNaN(rounded) ? '' : rounded)
+                          }}
+                          className="flex-1"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeDurationOption(index)}
+                          className="shrink-0 text-muted-foreground hover:text-destructive"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>

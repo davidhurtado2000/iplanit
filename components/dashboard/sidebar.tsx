@@ -348,7 +348,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
             upsell. */}
         {!isCollapsed && (userPlan === 'pro' || userPlan === 'premium') && (
           <Link
-            href={aiAddonActive ? '/dashboard/analytics' : '/dashboard/settings?tab=plan'}
+            href={aiAddonActive ? '/dashboard/analytics?tab=ai-chat' : '/dashboard/settings?tab=plan'}
             className={cn(
               'mx-2 mb-2 flex items-center gap-2 rounded-lg border p-3 text-xs font-medium text-sidebar-foreground transition-colors',
               aiAddonActive

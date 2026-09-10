@@ -147,12 +147,12 @@ export default function ActivityPage() {
       <PageHeader title={t.activity.title} subtitle={t.activity.pageSubtitle} />
 
       <div className="space-y-3">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <Label htmlFor="activity-filter" className="text-sm text-muted-foreground">
             {t.activity.filterLabel}
           </Label>
           <Select value={filter} onValueChange={(v) => setFilter(v as EntityFilter)}>
-            <SelectTrigger id="activity-filter" className="w-[220px]">
+            <SelectTrigger id="activity-filter" className="w-full sm:w-[220px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

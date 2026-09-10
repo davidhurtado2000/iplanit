@@ -533,6 +533,7 @@ export interface Database {
           birthday_month: number | null
           birthday_day: number | null
           last_birthday_email_sent_year: number | null
+          kommo_contact_id: string | null
           created_at: string
           updated_at: string
         }
@@ -555,6 +556,7 @@ export interface Database {
           birthday_month?: number | null
           birthday_day?: number | null
           last_birthday_email_sent_year?: number | null
+          kommo_contact_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -572,6 +574,7 @@ export interface Database {
           birthday_month?: number | null
           birthday_day?: number | null
           last_birthday_email_sent_year?: number | null
+          kommo_contact_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -599,6 +602,8 @@ export interface Database {
           cancelled_at: string | null
           reminder_sent_at: string | null
           notes: string | null
+          kommo_contact_id: string | null
+          kommo_lead_id: string | null
           created_at: string
           updated_at: string
         }
@@ -623,6 +628,8 @@ export interface Database {
           cancelled_at?: string | null
           reminder_sent_at?: string | null
           notes?: string | null
+          kommo_contact_id?: string | null
+          kommo_lead_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -647,6 +654,8 @@ export interface Database {
           cancelled_at?: string | null
           reminder_sent_at?: string | null
           notes?: string | null
+          kommo_contact_id?: string | null
+          kommo_lead_id?: string | null
           created_at?: string
           updated_at?: string
         }

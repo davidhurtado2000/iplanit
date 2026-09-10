@@ -184,12 +184,12 @@ export default function NotificationsPage() {
       })}
 
       <div className="space-y-3">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <Label htmlFor="notif-filter" className="text-sm text-muted-foreground">
             {t.notifications.filterLabel}
           </Label>
           <Select value={filter} onValueChange={(v) => setFilter(v as HistoryFilter)}>
-            <SelectTrigger id="notif-filter" className="w-[220px]">
+            <SelectTrigger id="notif-filter" className="w-full sm:w-[220px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

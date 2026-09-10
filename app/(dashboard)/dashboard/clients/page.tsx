@@ -83,6 +83,7 @@ import { PageHeader } from '@/components/dashboard/page-header'
 import { UpgradeModal } from '@/components/upgrade-modal'
 import { isPlanLimitReached } from '@/lib/plan-limits'
 import { toCsv, downloadCsv, parseCsv } from '@/lib/csv'
+import { getWhatsappLink } from '@/lib/whatsapp'
 
 const AVATAR_COLORS = [
   '#3B82F6',
@@ -99,12 +100,6 @@ function getAvatarColor(id: string) {
   let hash = 0
   for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0
   return AVATAR_COLORS[hash % AVATAR_COLORS.length]
-}
-
-function getWhatsappLink(phone: string) {
-  const digits = phone.replace(/\D/g, '')
-  const withCountry = digits.length <= 9 ? `51${digits}` : digits
-  return `https://wa.me/${withCountry}`
 }
 
 const INACTIVE_DAYS_THRESHOLD = 60
@@ -1137,7 +1132,7 @@ export default function ClientsPage() {
 
           {/* Pagination */}
           {filteredClients.length > PAGE_SIZE && (
-            <div className="flex items-center justify-between border-t px-4 py-3">
+            <div className="flex flex-col gap-2 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-muted-foreground">
                 {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredClients.length)} de {filteredClients.length} clientes
               </p>

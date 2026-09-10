@@ -33,6 +33,7 @@ import { capitalizeFirst, cn } from '@/lib/utils'
 import { parseInTimezone } from '@/lib/timezone'
 import { generateAvailableSlots, isDayClosed } from '@/lib/availability'
 import { sendReservationNotification } from '@/lib/email/notify'
+import { syncReservationToKommo } from '@/lib/kommo/sync'
 import { TurnstileWidget, type TurnstileWidgetHandle } from '@/components/turnstile-widget'
 import { LogoLoader } from '@/components/logo-loader'
 
@@ -360,6 +361,12 @@ export default function PublicBookingPage() {
       setManageReservationId(result.reservation_id || null)
       if (result.reservation_id && business.notify_confirmations && contactForm.email) {
         sendReservationNotification('confirmation', result.reservation_id, language)
+      }
+      // Kommo sync (proof of concept, single shared account) - see
+      // components/dashboard/reservation-modal.tsx's own call for why this
+      // fires independently of the email-notification condition above.
+      if (result.reservation_id) {
+        syncReservationToKommo(result.reservation_id)
       }
       setStep('success')
     } catch (err) {

@@ -241,7 +241,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
               {(userPlan === 'pro' || userPlan === 'premium') && (
                 <div className="px-4 pb-4">
                   <Link
-                    href={aiAddonActive ? '/dashboard/analytics' : '/dashboard/settings?tab=plan'}
+                    href={aiAddonActive ? '/dashboard/analytics?tab=ai-chat' : '/dashboard/settings?tab=plan'}
                     onClick={onToggle}
                     className={cn(
                       'flex items-center gap-2 rounded-lg border p-3 text-sm font-medium transition-colors',

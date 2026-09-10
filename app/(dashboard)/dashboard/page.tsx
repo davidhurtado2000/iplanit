@@ -317,7 +317,7 @@ export default function DashboardPage() {
                 </div>
               </div>
               <Button size="sm" className="gap-2" asChild>
-                <Link href={aiAddonActive ? '/dashboard/analytics' : '/dashboard/settings?tab=plan'}>
+                <Link href={aiAddonActive ? '/dashboard/analytics?tab=ai-chat' : '/dashboard/settings?tab=plan'}>
                   {aiAddonActive ? t.dashboard.aiCtaActiveBtn : t.dashboard.aiCtaUpsellBtn}
                   <ArrowRight className="h-4 w-4" />
                 </Link>
