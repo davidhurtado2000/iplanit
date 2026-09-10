@@ -1,27 +1,23 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { findOrCreateContact, createLead } from '@/lib/kommo/client'
+import { findOrCreateContact, createLead, getEnvKommoConfig, getBusinessKommoConfig, type KommoConfig } from '@/lib/kommo/client'
 import type { Database } from '@/lib/supabase/types'
 
-// Phase 1 (proof of concept) - only { reservationId } comes from the
-// caller, same "re-fetch everything server-side, never trust the body"
-// shape as app/api/notifications/reservation/route.ts, for the same
-// reason: a reservation id is effectively a bearer token (leaked link,
-// browser history), so nothing about WHO the client/service/business is
-// should come from the request itself.
+// Only { reservationId } comes from the caller, same "re-fetch everything
+// server-side, never trust the body" shape as
+// app/api/notifications/reservation/route.ts, for the same reason: a
+// reservation id is effectively a bearer token (leaked link, browser
+// history), so nothing about WHO the client/service/business is should
+// come from the request itself.
 //
-// Single shared Kommo account for now (lib/kommo/client.ts reads
-// KOMMO_SUBDOMAIN/KOMMO_ACCESS_TOKEN from env) - no per-business "is Kommo
-// connected" check yet, since there's only one account, David's own test
-// one. That check is the first thing phase 2 (per-business OAuth) adds.
-//
-// Until then, KOMMO_TEST_BUSINESS_ID gates this to ONLY that one test
-// business - this route is wired into every reservation-creation flow
-// (dashboard + public booking) for every business on iPlanit, and without
-// this check, deploying it would push every real business's real client
-// data into David's own personal Kommo account the moment their customers
-// book. Not optional - remove only once phase 2's per-business connection
-// exists.
+// This route is wired into every reservation-creation flow (dashboard +
+// public booking) for EVERY business on iPlanit, so it has to resolve a
+// per-business KommoConfig before doing anything - phase 2's real
+// per-business OAuth connection (kommo_integrations) takes priority; only
+// David's own KOMMO_TEST_BUSINESS_ID falls back to phase 1's single shared
+// env-based account, for the one business that was validated against that
+// path before phase 2 existed. Any OTHER business with no active
+// integration is skipped entirely - never falls back to David's account.
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => null)
@@ -51,7 +47,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'reservation_not_found' }, { status: 404 })
     }
 
-    if (reservation.business_id !== process.env.KOMMO_TEST_BUSINESS_ID) {
+    let kommoConfig: KommoConfig | null = await getBusinessKommoConfig(supabase, reservation.business_id)
+    if (!kommoConfig && reservation.business_id === process.env.KOMMO_TEST_BUSINESS_ID) {
+      kommoConfig = getEnvKommoConfig()
+    }
+    if (!kommoConfig) {
       return NextResponse.json({ skipped: 'business_not_connected' })
     }
 
@@ -91,7 +91,7 @@ export async function POST(request: Request) {
     if (client.kommo_contact_id) {
       contactId = Number(client.kommo_contact_id)
     } else {
-      contactId = await findOrCreateContact({
+      contactId = await findOrCreateContact(kommoConfig, {
         name: client.name,
         phone: client.phone,
         email: client.email,
@@ -110,7 +110,7 @@ export async function POST(request: Request) {
     const leadName = service ? `${service.name} - ${dateLabel}` : `Reserva - ${dateLabel}`
     const price = business?.currency === 'USD' ? reservation.price_usd : reservation.price
 
-    const leadId = await createLead({
+    const leadId = await createLead(kommoConfig, {
       name: leadName,
       price,
       contactId,

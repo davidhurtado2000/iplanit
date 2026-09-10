@@ -72,6 +72,7 @@ import {
   ExternalLink,
   Link2,
   Gift,
+  Plug,
 } from 'lucide-react'
 
 type DayOfWeek = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday'
@@ -182,7 +183,8 @@ function SettingsPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const tabParam = searchParams.get('tab')
-  const initialTab = tabParam === 'plan' || tabParam === 'team' ? tabParam : 'profile'
+  const initialTab =
+    tabParam === 'plan' || tabParam === 'team' || tabParam === 'integrations' ? tabParam : 'profile'
   const [isPortalLoading, setIsPortalLoading] = useState(false)
   const [isChangingPlan, setIsChangingPlan] = useState(false)
   // Non-null opens the confirmation dialog below - set by the 3 upgrade
@@ -272,6 +274,73 @@ function SettingsPageInner() {
       cancelled = true
     }
   }, [currentBusiness?.id, authProfile?.plan, supabase])
+
+  // Kommo CRM integration (phase 2) - one row per business, fetched with
+  // the regular client (RLS lets the owner read their own row; the OAuth
+  // flow and every actual sync/webhook call run server-side with the
+  // service-role client, never this one).
+  interface KommoIntegrationRow {
+    status: 'active' | 'error' | 'disconnected'
+    subdomain: string
+    last_synced_at: string | null
+    last_error: string | null
+  }
+  const [kommoIntegration, setKommoIntegration] = useState<KommoIntegrationRow | null>(null)
+  const [isDisconnectingKommo, setIsDisconnectingKommo] = useState(false)
+
+  const fetchKommoIntegration = async () => {
+    if (!currentBusiness?.id) {
+      setKommoIntegration(null)
+      return
+    }
+    const { data } = await supabase
+      .from('kommo_integrations')
+      .select('status, subdomain, last_synced_at, last_error')
+      .eq('business_id', currentBusiness.id)
+      .maybeSingle()
+    setKommoIntegration(data)
+  }
+
+  useEffect(() => {
+    fetchKommoIntegration()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentBusiness?.id])
+
+  // The OAuth callback (app/api/integrations/kommo/callback) redirects
+  // back here with ?kommo=connected|error after a real connect attempt -
+  // surfaced once as a toast rather than silently landing on the tab, since
+  // that redirect is the only feedback a "went to Kommo's site and back"
+  // flow gets.
+  useEffect(() => {
+    const kommoResult = searchParams.get('kommo')
+    if (kommoResult === 'connected') {
+      toast.success(t.settings.kommoConnectedToast)
+      fetchKommoIntegration()
+    } else if (kommoResult === 'error') {
+      toast.error(t.settings.kommoConnectErrorToast)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+
+  const handleDisconnectKommo = async () => {
+    if (!currentBusiness?.id) return
+    setIsDisconnectingKommo(true)
+    try {
+      const res = await fetch('/api/integrations/kommo/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ businessId: currentBusiness.id }),
+      })
+      if (!res.ok) throw new Error('disconnect_failed')
+      await fetchKommoIntegration()
+      toast.success(t.settings.kommoDisconnectedToast)
+    } catch (err) {
+      console.error('[iplanit] Error disconnecting Kommo:', err)
+      toast.error(t.settings.kommoDisconnectErrorToast)
+    } finally {
+      setIsDisconnectingKommo(false)
+    }
+  }
 
   // Keeps the staged seat stepper in sync with the last COMMITTED value -
   // runs on every business switch and right after a confirmed change
@@ -1264,7 +1333,7 @@ function SettingsPageInner() {
         <TabsList
           className={cn(
             'grid h-auto w-full grid-cols-2 gap-2 bg-muted/50 p-2 lg:w-auto',
-            isOwner ? 'sm:grid-cols-5' : 'sm:grid-cols-3'
+            isOwner ? 'sm:grid-cols-6' : 'sm:grid-cols-3'
           )}
         >
           <TabsTrigger
@@ -1307,6 +1376,15 @@ function SettingsPageInner() {
                 {t.settings.teamTab}
                 <PremiumBadge requiredPlan="pro" />
               </span>
+            </TabsTrigger>
+          )}
+          {isOwner && (
+            <TabsTrigger
+              value="integrations"
+              className="flex-col gap-1 py-3 data-[state=active]:bg-card data-[state=active]:shadow-sm sm:flex-row sm:gap-2 sm:py-2"
+            >
+              <Plug className="h-5 w-5 sm:h-4 sm:w-4" />
+              <span className="text-xs sm:text-sm">{t.settings.integrationsTab}</span>
             </TabsTrigger>
           )}
         </TabsList>
@@ -2801,6 +2879,66 @@ function SettingsPageInner() {
               </CardContent>
             </Card>
           </PremiumFeature>
+        </TabsContent>
+        )}
+
+        {isOwner && (
+        <TabsContent value="integrations" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Plug className="h-5 w-5 text-primary" />
+                {t.settings.kommoTitle}
+              </CardTitle>
+              <CardDescription>{t.settings.kommoDesc}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {kommoIntegration && kommoIntegration.status !== 'disconnected' ? (
+                <div className="flex flex-col gap-4 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      {kommoIntegration.status === 'active' ? (
+                        <Badge>
+                          <Check className="mr-1 h-3 w-3" />
+                          {t.settings.kommoStatusActive}
+                        </Badge>
+                      ) : (
+                        <Badge variant="destructive">{t.settings.kommoStatusError}</Badge>
+                      )}
+                      <span className="truncate text-sm font-medium">{kommoIntegration.subdomain}</span>
+                    </div>
+                    {kommoIntegration.status === 'error' && (
+                      <p className="mt-1 text-xs text-destructive">{t.settings.kommoErrorHint}</p>
+                    )}
+                    {kommoIntegration.last_synced_at && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {t.settings.kommoLastSynced} {new Date(kommoIntegration.last_synced_at).toLocaleString(language === 'en' ? 'en-US' : 'es-PE')}
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="w-full sm:w-auto"
+                    disabled={isDisconnectingKommo}
+                    onClick={handleDisconnectKommo}
+                  >
+                    {isDisconnectingKommo && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {t.settings.kommoDisconnectBtn}
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-4 rounded-lg border border-dashed p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-muted-foreground">{t.settings.kommoNotConnected}</p>
+                  <Button className="w-full gap-2 sm:w-auto" asChild>
+                    <a href={`/api/integrations/kommo/connect?business_id=${currentBusiness?.id ?? ''}`}>
+                      <Plug className="h-4 w-4" />
+                      {t.settings.kommoConnectBtn}
+                    </a>
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
         )}
       </Tabs>

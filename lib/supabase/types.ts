@@ -766,6 +766,63 @@ export interface Database {
         }
         Relationships: []
       }
+      kommo_integrations: {
+        Row: {
+          id: string
+          business_id: string
+          subdomain: string
+          kommo_account_id: string
+          access_token_encrypted: string
+          refresh_token_encrypted: string
+          token_expires_at: string
+          phone_field_id: string | null
+          phone_enum_id: string | null
+          email_field_id: string | null
+          email_enum_id: string | null
+          status: 'active' | 'error' | 'disconnected'
+          last_error: string | null
+          last_synced_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          business_id: string
+          subdomain: string
+          kommo_account_id: string
+          access_token_encrypted: string
+          refresh_token_encrypted: string
+          token_expires_at: string
+          phone_field_id?: string | null
+          phone_enum_id?: string | null
+          email_field_id?: string | null
+          email_enum_id?: string | null
+          status?: 'active' | 'error' | 'disconnected'
+          last_error?: string | null
+          last_synced_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          business_id?: string
+          subdomain?: string
+          kommo_account_id?: string
+          access_token_encrypted?: string
+          refresh_token_encrypted?: string
+          token_expires_at?: string
+          phone_field_id?: string | null
+          phone_enum_id?: string | null
+          email_field_id?: string | null
+          email_enum_id?: string | null
+          status?: 'active' | 'error' | 'disconnected'
+          last_error?: string | null
+          last_synced_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       business_members: {
         Row: {
           id: string

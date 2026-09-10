@@ -35,18 +35,23 @@ export async function POST(request: Request) {
 
     // Kommo can batch multiple lead-status changes in one call
     // (leads[status][0][...], leads[status][1][...], ...) - walk indexes
-    // until one is missing instead of only ever looking at [0].
-    const lostLeadIds: string[] = []
+    // until one is missing instead of only ever looking at [0]. account_id
+    // rides along on every entry - each Kommo account has its own separate
+    // id-space for leads, so a bare kommo_lead_id match alone could collide
+    // across two different businesses' accounts (both assign small
+    // sequential-ish ids); account_id is what makes the match safe.
+    const lostLeads: { leadId: string; accountId: string }[] = []
     for (let i = 0; ; i++) {
       const leadId = formData.get(`leads[status][${i}][id]`)
       if (leadId === null) break
       const statusId = formData.get(`leads[status][${i}][status_id]`)
-      if (String(statusId) === String(KOMMO_STATUS_LOST)) {
-        lostLeadIds.push(String(leadId))
+      const accountId = formData.get(`leads[status][${i}][account_id]`)
+      if (String(statusId) === String(KOMMO_STATUS_LOST) && accountId !== null) {
+        lostLeads.push({ leadId: String(leadId), accountId: String(accountId) })
       }
     }
 
-    if (lostLeadIds.length === 0) {
+    if (lostLeads.length === 0) {
       return NextResponse.json({ ok: true, processed: 0 })
     }
 
@@ -56,7 +61,25 @@ export async function POST(request: Request) {
     )
 
     let cancelled = 0
-    for (const leadId of lostLeadIds) {
+    for (const { leadId, accountId } of lostLeads) {
+      // Which business this Kommo account belongs to - phase 2's real
+      // per-business connections first, falling back to David's own phase 1
+      // test account (KOMMO_TEST_ACCOUNT_ID/KOMMO_TEST_BUSINESS_ID, no
+      // kommo_integrations row since it was set up with a manually
+      // generated token, not OAuth).
+      const { data: integration } = await supabase
+        .from('kommo_integrations')
+        .select('business_id')
+        .eq('kommo_account_id', accountId)
+        .eq('status', 'active')
+        .single()
+
+      const businessId =
+        integration?.business_id ??
+        (accountId === process.env.KOMMO_TEST_ACCOUNT_ID ? process.env.KOMMO_TEST_BUSINESS_ID : null)
+
+      if (!businessId) continue // unrecognized account - not one of ours
+
       const { data: reservation } = await supabase
         .from('reservations')
         .select(
@@ -65,6 +88,7 @@ export async function POST(request: Request) {
            businesses ( country, notify_cancellations )`
         )
         .eq('kommo_lead_id', leadId)
+        .eq('business_id', businessId)
         .single()
 
       // No matching reservation (a lead unrelated to iPlanit, or one from
