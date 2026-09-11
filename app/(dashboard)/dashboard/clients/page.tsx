@@ -22,6 +22,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
   Table,
   TableBody,
   TableCell,
@@ -220,6 +230,8 @@ export default function ClientsPage() {
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [editingClient, setEditingClient] = useState<Client | null>(null)
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
+  const [deletingClient, setDeletingClient] = useState<Client | null>(null)
+  const [isDeletingClient, setIsDeletingClient] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const supabase = createClient()
@@ -646,17 +658,22 @@ export default function ClientsPage() {
     }
   }
 
-  const handleDelete = async (id: string) => {
+  const handleConfirmDeleteClient = async () => {
+    if (!deletingClient) return
+    setIsDeletingClient(true)
     try {
       const { error } = await supabase
         .from('clients')
         .delete()
-        .eq('id', id)
+        .eq('id', deletingClient.id)
 
       if (error) throw error
       await refetchClients()
     } catch (err) {
       console.error('[v0] Error deleting client:', err)
+    } finally {
+      setIsDeletingClient(false)
+      setDeletingClient(null)
     }
   }
 
@@ -1003,7 +1020,7 @@ export default function ClientsPage() {
                             {t.clients.editBtn}
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            onClick={() => handleDelete(client.id)}
+                            onClick={() => setDeletingClient(client)}
                             className="text-destructive"
                           >
                             <Trash2 className="mr-2 h-4 w-4" />
@@ -1113,7 +1130,7 @@ export default function ClientsPage() {
                         <Pencil className="mr-2 h-4 w-4" />
                         {t.clients.editBtn}
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleDelete(client.id)} className="text-destructive">
+                      <DropdownMenuItem onClick={() => setDeletingClient(client)} className="text-destructive">
                         <Trash2 className="mr-2 h-4 w-4" />
                         {t.clients.deleteBtn}
                       </DropdownMenuItem>
@@ -1565,6 +1582,29 @@ export default function ClientsPage() {
         onClose={() => setShowUpgradeModal(false)}
         feature={t.upgradeModal.featureUnlimitedRecordsTitle}
       />
+
+      <AlertDialog open={!!deletingClient} onOpenChange={(open) => !open && setDeletingClient(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t.clients.deleteClientTitle}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deletingClient && `"${deletingClient.name}" — `}
+              {t.clients.deleteClientDesc}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingClient}>{t.clients.cancelBtn}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDeleteClient}
+              disabled={isDeletingClient}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeletingClient && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {isDeletingClient ? t.clients.deleting : t.clients.confirmDelete}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
