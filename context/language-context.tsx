@@ -71,6 +71,8 @@ const TRANSLATIONS = {
       featureReportsDesc: 'Horas pico, servicios mas pedidos e ingresos, de un vistazo.',
       featureNotificationsTitle: 'Recordatorios automaticos',
       featureNotificationsDesc: 'Confirmaciones y recordatorios por correo, para reducir las ausencias.',
+      featureCrmTitle: 'Conecta tu CRM (Kommo)',
+      featureCrmDesc: 'Cada reserva crea un contacto y una oportunidad en Kommo automaticamente - y si marcas un lead como perdido, la reserva se cancela sola.',
 
       industriesTitle: 'Para negocios de todo tipo',
       industriesSubtitle: 'iPlanit se adapta a tu rubro, no al reves.',
@@ -1599,6 +1601,8 @@ const TRANSLATIONS = {
       featureReportsDesc: 'Peak hours, most-requested services, and revenue, at a glance.',
       featureNotificationsTitle: 'Automatic reminders',
       featureNotificationsDesc: 'Confirmations and reminders by email, to cut down on no-shows.',
+      featureCrmTitle: 'Connect your CRM (Kommo)',
+      featureCrmDesc: "Every booking automatically creates a contact and a deal in Kommo - mark a lead as lost and the booking cancels itself.",
 
       industriesTitle: 'For businesses of every kind',
       industriesSubtitle: 'iPlanit adapts to your business, not the other way around.',
