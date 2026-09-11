@@ -286,19 +286,28 @@ function SettingsPageInner() {
     last_error: string | null
   }
   const [kommoIntegration, setKommoIntegration] = useState<KommoIntegrationRow | null>(null)
+  // Starts true (not false) specifically so the very first render after
+  // landing here - especially right after the OAuth redirect back from
+  // Kommo - shows a neutral "checking" state instead of flashing the
+  // "not connected" button for a moment before this resolves and flips it
+  // to "Connected". That flash read as "it didn't work" even though it had.
+  const [loadingKommoIntegration, setLoadingKommoIntegration] = useState(true)
   const [isDisconnectingKommo, setIsDisconnectingKommo] = useState(false)
 
   const fetchKommoIntegration = async () => {
     if (!currentBusiness?.id) {
       setKommoIntegration(null)
+      setLoadingKommoIntegration(false)
       return
     }
+    setLoadingKommoIntegration(true)
     const { data } = await supabase
       .from('kommo_integrations')
       .select('status, subdomain, last_synced_at, last_error')
       .eq('business_id', currentBusiness.id)
       .maybeSingle()
     setKommoIntegration(data)
+    setLoadingKommoIntegration(false)
   }
 
   useEffect(() => {
@@ -2893,7 +2902,12 @@ function SettingsPageInner() {
               <CardDescription>{t.settings.kommoDesc}</CardDescription>
             </CardHeader>
             <CardContent>
-              {kommoIntegration && kommoIntegration.status !== 'disconnected' ? (
+              {loadingKommoIntegration ? (
+                <div className="flex items-center gap-2 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {t.settings.kommoChecking}
+                </div>
+              ) : kommoIntegration && kommoIntegration.status !== 'disconnected' ? (
                 <div className="flex flex-col gap-4 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">

@@ -24,10 +24,40 @@ const KOMMO_STATUS_LOST = 143
 // to "completed" would corrupt iPlanit's own no-show/completion tracking
 // for something that hasn't happened yet. There's no safe automatic
 // mapping for Won in this phase, so it's left alone on purpose.
+//
+// Also handles "contact added" -> creates a matching iPlanit client, with
+// a loop guard: iPlanit creating a contact in Kommo (findOrCreateContact)
+// fires this SAME event right back at us, so without the kommo_contact_id
+// check below, every reservation synced FROM iPlanit would immediately
+// create a duplicate client right back in iPlanit.
 export async function POST(request: Request) {
   const url = new URL(request.url)
   if (url.searchParams.get('secret') !== process.env.KOMMO_WEBHOOK_SECRET) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  }
+
+  const supabase = createClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+
+  // Which iPlanit business a Kommo account belongs to - phase 2's real
+  // per-business connections first, falling back to David's own phase 1
+  // test account (KOMMO_TEST_ACCOUNT_ID/KOMMO_TEST_BUSINESS_ID, no
+  // kommo_integrations row since it was set up with a manually generated
+  // token, not OAuth). Returns null for an account that isn't ours.
+  async function resolveBusinessId(accountId: string): Promise<string | null> {
+    const { data: integration } = await supabase
+      .from('kommo_integrations')
+      .select('business_id')
+      .eq('kommo_account_id', accountId)
+      .eq('status', 'active')
+      .single()
+
+    return (
+      integration?.business_id ??
+      (accountId === process.env.KOMMO_TEST_ACCOUNT_ID ? process.env.KOMMO_TEST_BUSINESS_ID ?? null : null)
+    )
   }
 
   try {
@@ -51,33 +81,96 @@ export async function POST(request: Request) {
       }
     }
 
-    if (lostLeads.length === 0) {
-      return NextResponse.json({ ok: true, processed: 0 })
+    // contacts[add][0][...], contacts[add][1][...], ... - same batching
+    // shape as leads[status] above. Phone/email live in a nested
+    // custom_fields array whose own indices aren't predictable (only
+    // fields with a value set are included, in no guaranteed order), so
+    // that's its own inner walk-until-missing loop, matched by `code`
+    // rather than position.
+    const newContacts: { contactId: string; accountId: string; name: string; phone: string | null; email: string | null }[] = []
+    for (let i = 0; ; i++) {
+      const contactId = formData.get(`contacts[add][${i}][id]`)
+      if (contactId === null) break
+      const accountId = formData.get(`contacts[add][${i}][account_id]`)
+      const name = formData.get(`contacts[add][${i}][name]`)
+      if (accountId === null || name === null) continue
+
+      let phone: string | null = null
+      let email: string | null = null
+      for (let j = 0; ; j++) {
+        const fieldCode = formData.get(`contacts[add][${i}][custom_fields][${j}][code]`)
+        if (fieldCode === null) break
+        const value = formData.get(`contacts[add][${i}][custom_fields][${j}][values][0][value]`)
+        if (fieldCode === 'PHONE') phone = value !== null ? String(value) : null
+        if (fieldCode === 'EMAIL') email = value !== null ? String(value) : null
+      }
+
+      newContacts.push({ contactId: String(contactId), accountId: String(accountId), name: String(name), phone, email })
     }
 
-    const supabase = createClient<Database>(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
+    let contactsCreated = 0
+    for (const contact of newContacts) {
+      const businessId = await resolveBusinessId(contact.accountId)
+      if (!businessId) continue
+
+      // Echo of iPlanit's own findOrCreateContact push, OR a contact we
+      // already linked previously - either way, not a new person to add.
+      const { data: alreadyLinked } = await supabase
+        .from('clients')
+        .select('id')
+        .eq('business_id', businessId)
+        .eq('kommo_contact_id', contact.contactId)
+        .maybeSingle()
+      if (alreadyLinked) continue
+
+      // A genuinely new Kommo contact might still be someone iPlanit
+      // already has as a client (existed before this integration, or
+      // added by staff directly) - link instead of duplicating, matched
+      // the same way create_public_reservation already dedupes (scripts/044).
+      let existingClientId: string | null = null
+      if (contact.email) {
+        const { data } = await supabase
+          .from('clients')
+          .select('id')
+          .eq('business_id', businessId)
+          .ilike('email', contact.email)
+          .maybeSingle()
+        existingClientId = data?.id ?? null
+      }
+      if (!existingClientId && contact.phone) {
+        const { data } = await supabase
+          .from('clients')
+          .select('id')
+          .eq('business_id', businessId)
+          .eq('phone', contact.phone)
+          .maybeSingle()
+        existingClientId = data?.id ?? null
+      }
+
+      if (existingClientId) {
+        await supabase.from('clients').update({ kommo_contact_id: contact.contactId }).eq('id', existingClientId)
+      } else {
+        // organization_id intentionally omitted - check_client_limit()
+        // (scripts/053) derives it from business_id automatically, same as
+        // the dashboard's own "new client" form and CSV import already rely on.
+        await supabase.from('clients').insert({
+          business_id: businessId,
+          name: contact.name,
+          phone: contact.phone,
+          email: contact.email,
+          kommo_contact_id: contact.contactId,
+        })
+      }
+      contactsCreated++
+    }
+
+    if (lostLeads.length === 0) {
+      return NextResponse.json({ ok: true, cancelled: 0, contactsCreated })
+    }
 
     let cancelled = 0
     for (const { leadId, accountId } of lostLeads) {
-      // Which business this Kommo account belongs to - phase 2's real
-      // per-business connections first, falling back to David's own phase 1
-      // test account (KOMMO_TEST_ACCOUNT_ID/KOMMO_TEST_BUSINESS_ID, no
-      // kommo_integrations row since it was set up with a manually
-      // generated token, not OAuth).
-      const { data: integration } = await supabase
-        .from('kommo_integrations')
-        .select('business_id')
-        .eq('kommo_account_id', accountId)
-        .eq('status', 'active')
-        .single()
-
-      const businessId =
-        integration?.business_id ??
-        (accountId === process.env.KOMMO_TEST_ACCOUNT_ID ? process.env.KOMMO_TEST_BUSINESS_ID : null)
-
+      const businessId = await resolveBusinessId(accountId)
       if (!businessId) continue // unrecognized account - not one of ours
 
       const { data: reservation } = await supabase
@@ -138,7 +231,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ ok: true, processed: cancelled })
+    return NextResponse.json({ ok: true, cancelled, contactsCreated })
   } catch (err) {
     console.error('[iplanit] Error handling Kommo webhook:', err)
     // Still 2xx - a malformed/unexpected payload from Kommo shouldn't make
