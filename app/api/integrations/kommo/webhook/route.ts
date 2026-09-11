@@ -8,6 +8,32 @@ import type { Database } from '@/lib/supabase/types'
 // see the design note below for why WON deliberately does nothing.
 const KOMMO_STATUS_LOST = 143
 
+// A number typed directly into Kommo's own UI commonly has no country code
+// ("984455555"), unlike anything iPlanit itself wrote there via
+// findOrCreateContact (always full E.164, "+51984455555") - confirmed by
+// inspecting real contacts in the account. Mirrors the exact same
+// business-country heuristic as normalize_phone_for_matching
+// (scripts/044-country-aware-phone-matching.sql), just kept as "+..." here
+// since this feeds STORAGE (clients.phone, which the rest of iPlanit
+// treats as E.164 - the WhatsApp button, PhoneInput display), not only
+// comparison. Same one-sided failure mode as 044: only a bare number of
+// exactly the business's own country's expected length gets a code
+// assumed; anything else (already has a "+", or some other length) is left
+// untouched rather than risking a wrong guess.
+const LOCAL_PHONE_LENGTH: Record<string, number> = { PE: 9, US: 10 }
+const DIAL_CODE: Record<string, string> = { PE: '51', US: '1' }
+
+function toStoredPhone(rawPhone: string | null, businessCountry: string | null): string | null {
+  if (!rawPhone) return null
+  const trimmed = rawPhone.trim()
+  if (!trimmed || trimmed.startsWith('+')) return trimmed || null
+  const digits = trimmed.replace(/\D/g, '')
+  if (businessCountry && digits.length === LOCAL_PHONE_LENGTH[businessCountry]) {
+    return `+${DIAL_CODE[businessCountry]}${digits}`
+  }
+  return trimmed
+}
+
 // Phase 1, Kommo -> iPlanit direction. Registered manually in Kommo's UI
 // (Settings > Integrations > Web hooks - Kommo has no API for registering
 // webhooks), pointing here with ?secret=KOMMO_WEBHOOK_SECRET appended,
@@ -63,6 +89,11 @@ export async function POST(request: Request) {
       integration?.business_id ??
       (accountId === process.env.KOMMO_TEST_ACCOUNT_ID ? process.env.KOMMO_TEST_BUSINESS_ID ?? null : null)
     )
+  }
+
+  async function getBusinessCountry(businessId: string): Promise<string | null> {
+    const { data } = await supabase.from('businesses').select('country').eq('id', businessId).maybeSingle()
+    return data?.country ?? null
   }
 
   try {
@@ -128,10 +159,15 @@ export async function POST(request: Request) {
         .maybeSingle()
       if (alreadyLinked) continue
 
+      const normalizedPhone = toStoredPhone(contact.phone, await getBusinessCountry(businessId))
+
       // A genuinely new Kommo contact might still be someone iPlanit
       // already has as a client (existed before this integration, or
       // added by staff directly) - link instead of duplicating, matched
       // the same way create_public_reservation already dedupes (scripts/044).
+      // Matched against the NORMALIZED phone, not Kommo's raw value -
+      // otherwise an existing client stored as "+51984455555" would never
+      // match Kommo's bare "984455555" for the same person.
       let existingClientId: string | null = null
       if (contact.email) {
         const { data } = await supabase
@@ -142,12 +178,12 @@ export async function POST(request: Request) {
           .maybeSingle()
         existingClientId = data?.id ?? null
       }
-      if (!existingClientId && contact.phone) {
+      if (!existingClientId && normalizedPhone) {
         const { data } = await supabase
           .from('clients')
           .select('id')
           .eq('business_id', businessId)
-          .eq('phone', contact.phone)
+          .eq('phone', normalizedPhone)
           .maybeSingle()
         existingClientId = data?.id ?? null
       }
@@ -161,7 +197,7 @@ export async function POST(request: Request) {
         await supabase.from('clients').insert({
           business_id: businessId,
           name: contact.name,
-          phone: contact.phone,
+          phone: normalizedPhone,
           email: contact.email,
           kommo_contact_id: contact.contactId,
         })
@@ -211,8 +247,10 @@ export async function POST(request: Request) {
         .maybeSingle()
       if (!linkedClient) continue // not a contact iPlanit is tracking - "add" handles new ones, this doesn't
 
+      const normalizedPhone = toStoredPhone(contact.phone, await getBusinessCountry(businessId))
+
       const patch: { phone?: string; email?: string } = {}
-      if (contact.phone) patch.phone = contact.phone
+      if (normalizedPhone) patch.phone = normalizedPhone
       if (contact.email) patch.email = contact.email
 
       await supabase.from('clients').update(patch).eq('id', linkedClient.id)
