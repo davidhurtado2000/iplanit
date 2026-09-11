@@ -608,6 +608,43 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
     }
   }, [currentBusiness?.id, t, locale, router])
 
+  // Live-patches the clients list for changes made OUTSIDE this dashboard
+  // session - today that's exclusively the Kommo webhook (contacts[add]/
+  // contacts[update], see app/api/integrations/kommo/webhook), which writes
+  // straight to the DB with no client in this tab to update local state
+  // itself. Scoped by organization_id, not business_id: clients are shared
+  // across every sede of an org (scripts/053), same key the initial fetch
+  // and refetchClients() already use. No toast here on purpose - unlike a
+  // new reservation, a synced client isn't something staff need to react to
+  // right now, so this stays a quiet background patch.
+  useEffect(() => {
+    if (!currentBusiness) return
+
+    const channel = supabase
+      .channel(`clients-sync-${currentBusiness.organization_id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'clients', filter: `organization_id=eq.${currentBusiness.organization_id}` },
+        (payload) => {
+          const newClient = payload.new as Client
+          setClients((prev) => (prev.some((c) => c.id === newClient.id) ? prev : [...prev, newClient].sort((a, b) => a.name.localeCompare(b.name))))
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'clients', filter: `organization_id=eq.${currentBusiness.organization_id}` },
+        (payload) => {
+          const updated = payload.new as Client
+          setClients((prev) => prev.map((c) => (c.id === updated.id ? updated : c)))
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [currentBusiness?.organization_id])
+
   const refetchReservations = useCallback(async () => {
     if (!currentBusiness) return
     // Re-fetch whatever window is currently loaded (default ±90 days, or
