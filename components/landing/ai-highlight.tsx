@@ -1,6 +1,5 @@
 'use client'
 
-import { Check, Sparkles } from 'lucide-react'
 import { useLanguage } from '@/context/language-context'
 import { Reveal } from '@/components/landing/reveal'
 
@@ -16,9 +15,11 @@ function AiChatMock() {
   return (
     <div className="w-full max-w-md rounded-2xl border bg-card p-5 shadow-2xl shadow-primary/10 sm:p-6">
       <div className="flex items-center gap-2 border-b pb-3">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-          <Sparkles className="h-3.5 w-3.5" />
-        </span>
+        {/* Same treatment as the real AI chat's AssistantAvatar
+            (components/dashboard/analytics-ai-chat.tsx) - the icon is
+            already a filled circular badge edge-to-edge, so it's rendered
+            directly rather than shrunk inside another padded circle. */}
+        <img src="/favicon-96x96.png" alt="" className="h-7 w-7 shrink-0 rounded-full" />
         <span className="text-sm font-semibold text-foreground">{l.aiBadge}</span>
       </div>
       <div className="mt-4 flex justify-end">
@@ -39,8 +40,6 @@ export function AiHighlight() {
   const { t } = useLanguage()
   const l = t.landing
 
-  const bullets = [l.aiBullet1, l.aiBullet2, l.aiBullet3]
-
   return (
     <section className="py-20 sm:py-28">
       <div className="mx-auto grid max-w-6xl items-center gap-12 px-4 sm:px-6 lg:grid-cols-2">
@@ -48,22 +47,10 @@ export function AiHighlight() {
           <AiChatMock />
         </Reveal>
         <Reveal>
-          <span className="inline-flex items-center gap-1.5 rounded-full border bg-muted/50 px-3 py-1 text-xs font-medium text-muted-foreground">
-            <Sparkles className="h-3 w-3 text-primary" />
-            {l.aiBadge}
-          </span>
-          <h2 className="mt-5 text-3xl font-bold tracking-tight text-foreground text-balance sm:text-4xl">
+          <h2 className="text-3xl font-bold tracking-tight text-foreground text-balance sm:text-4xl">
             {l.aiTitle}
           </h2>
           <p className="mt-4 max-w-xl text-lg text-muted-foreground text-pretty">{l.aiSubtitle}</p>
-          <ul className="mt-6 space-y-3">
-            {bullets.map((bullet) => (
-              <li key={bullet} className="flex items-start gap-2.5 text-sm text-foreground">
-                <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                {bullet}
-              </li>
-            ))}
-          </ul>
         </Reveal>
       </div>
     </section>

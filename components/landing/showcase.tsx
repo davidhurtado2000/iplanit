@@ -79,8 +79,6 @@ export function Showcase() {
   const { t } = useLanguage()
   const l = t.landing
 
-  const bullets = [l.showcaseBullet1, l.showcaseBullet2, l.showcaseBullet3]
-
   return (
     <section className="py-20 sm:py-28">
       <div className="mx-auto grid max-w-6xl items-center gap-12 px-4 sm:px-6 lg:grid-cols-2">
@@ -88,21 +86,10 @@ export function Showcase() {
           <BookingWidgetMock />
         </Reveal>
         <Reveal className="lg:order-1">
-          <span className="inline-flex items-center gap-1.5 rounded-full border bg-muted/50 px-3 py-1 text-xs font-medium text-muted-foreground">
-            {l.showcaseBadge}
-          </span>
-          <h2 className="mt-5 text-3xl font-bold tracking-tight text-foreground text-balance sm:text-4xl">
+          <h2 className="text-3xl font-bold tracking-tight text-foreground text-balance sm:text-4xl">
             {l.showcaseTitle}
           </h2>
           <p className="mt-4 max-w-xl text-lg text-muted-foreground text-pretty">{l.showcaseSubtitle}</p>
-          <ul className="mt-6 space-y-3">
-            {bullets.map((bullet) => (
-              <li key={bullet} className="flex items-start gap-2.5 text-sm text-foreground">
-                <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                {bullet}
-              </li>
-            ))}
-          </ul>
         </Reveal>
       </div>
     </section>

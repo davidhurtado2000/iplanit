@@ -44,8 +44,12 @@ export function Reveal({
     <div
       ref={ref}
       className={cn(
-        'transition-all duration-700 ease-out',
-        visible ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0',
+        // Fade only, no slide - a translate-y entrance on every single
+        // section is the single most recognizable generic-template motion
+        // tell (see the landing design review). The page's one deliberate
+        // motion moment lives in Hero's CalendarMock instead.
+        'transition-opacity duration-700 ease-out',
+        visible ? 'opacity-100' : 'opacity-0',
         className
       )}
       style={{ transitionDelay: visible ? `${delayMs}ms` : '0ms' }}

@@ -90,7 +90,7 @@ export function Pricing() {
                 className={cn(
                   'relative flex h-full flex-col rounded-2xl border p-7 transition-transform duration-300 hover:-translate-y-1',
                   plan.highlight
-                    ? 'plan-glow-pulse border-primary bg-card'
+                    ? 'plan-highlight-glow border-primary bg-card'
                     : 'bg-card hover:border-primary/30 hover:shadow-lg'
                 )}
               >
@@ -102,10 +102,10 @@ export function Pricing() {
                 <h3 className="text-lg font-semibold text-foreground">{plan.name}</h3>
                 <p className="mt-1 text-sm text-muted-foreground">{plan.desc}</p>
                 <div className="mt-5 flex items-baseline gap-1">
-                  <span className="text-4xl font-bold tracking-tight text-foreground">${plan.price}</span>
+                  <span className="font-mono text-4xl font-bold tracking-tight tabular-nums text-foreground">${plan.price}</span>
                   <span className="text-sm text-muted-foreground">{l.pricingPerMonth}</span>
                 </div>
-                <Button asChild className="mt-6 w-full" variant={plan.highlight ? 'default' : 'outline'}>
+                <Button asChild className="mt-6 w-full active:scale-[0.97]" variant={plan.highlight ? 'default' : 'outline'}>
                   <Link href={plan.href}>{plan.cta}</Link>
                 </Button>
                 <ul className="mt-7 space-y-4 text-sm">

@@ -17,7 +17,7 @@ export function FinalCta() {
           {l.finalCtaTitle}
         </h2>
         <p className="mt-4 text-lg text-muted-foreground">{l.finalCtaSubtitle}</p>
-        <Button asChild size="lg" className="mt-8 gap-2">
+        <Button asChild size="lg" className="mt-8 gap-2 active:scale-[0.97]">
           <Link href="/register">
             {l.finalCtaButton}
             <ArrowRight className="h-4 w-4" />

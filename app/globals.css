@@ -222,19 +222,31 @@
   animation: logo-bob 1.4s ease-in-out infinite;
 }
 
-@keyframes plan-glow-pulse {
+/* Static, not animated - an infinite pulsing glow never turns off, which
+   competes with the page's one deliberate motion moment (Hero's calendar
+   filling in). The "most popular" plan still stands out on its own via
+   this fixed glow plus the border/badge already next to it. */
+.plan-highlight-glow {
+  box-shadow: 0 0 0 1px var(--primary) inset, 0 20px 30px -5px oklch(from var(--primary) l c h / 18%);
+}
+
+/* Fires exactly twice (~1.6s) then stops for good - a ripple nudging the
+   eye toward the real "get started" button right as Hero's calendar mock
+   finishes filling up. Never infinite, on purpose - see plan-highlight-glow
+   above for why a permanent pulse was removed rather than added elsewhere. */
+@keyframes cta-pulse-once {
   0%, 100% {
-    box-shadow: 0 0 0 1px var(--primary) inset, 0 20px 25px -5px oklch(from var(--primary) l c h / 10%);
+    box-shadow: 0 0 0 0 oklch(from var(--primary) l c h / 40%);
   }
   50% {
-    box-shadow: 0 0 0 1px var(--primary) inset, 0 20px 35px -5px oklch(from var(--primary) l c h / 25%);
+    box-shadow: 0 0 0 8px oklch(from var(--primary) l c h / 0%);
   }
 }
-.plan-glow-pulse {
-  animation: plan-glow-pulse 3s ease-in-out infinite;
+.cta-pulse-once {
+  animation: cta-pulse-once 0.8s ease-out 2;
 }
 @media (prefers-reduced-motion: reduce) {
-  .plan-glow-pulse {
+  .cta-pulse-once {
     animation: none;
   }
 }
