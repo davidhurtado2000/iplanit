@@ -30,6 +30,11 @@ const KOMMO_STATUS_LOST = 143
 // fires this SAME event right back at us, so without the kommo_contact_id
 // check below, every reservation synced FROM iPlanit would immediately
 // create a duplicate client right back in iPlanit.
+//
+// And "contact edited" -> updates the phone/email on the iPlanit client
+// ALREADY linked to that Kommo contact (never creates one - that's add's
+// job), covering the common case of a contact first created with just a
+// name (e.g. from inside a lead-creation flow) and filled in later.
 export async function POST(request: Request) {
   const url = new URL(request.url)
   if (url.searchParams.get('secret') !== process.env.KOMMO_WEBHOOK_SECRET) {
@@ -164,8 +169,58 @@ export async function POST(request: Request) {
       contactsCreated++
     }
 
+    // contacts[update][0][...] - fires when an existing contact is edited
+    // in Kommo (e.g. phone/email added after the contact was first created
+    // with just a name). Unlike contacts[add] above, this only ever
+    // touches a client iPlanit already linked via kommo_contact_id - it
+    // never creates a new client (that's "add"'s job alone), and only
+    // overwrites the fields this particular event actually carried a value
+    // for, so an edit that only changed the email doesn't null out an
+    // already-known phone.
+    const updatedContacts: { contactId: string; accountId: string; phone: string | null; email: string | null }[] = []
+    for (let i = 0; ; i++) {
+      const contactId = formData.get(`contacts[update][${i}][id]`)
+      if (contactId === null) break
+      const accountId = formData.get(`contacts[update][${i}][account_id]`)
+      if (accountId === null) continue
+
+      let phone: string | null = null
+      let email: string | null = null
+      for (let j = 0; ; j++) {
+        const fieldCode = formData.get(`contacts[update][${i}][custom_fields][${j}][code]`)
+        if (fieldCode === null) break
+        const value = formData.get(`contacts[update][${i}][custom_fields][${j}][values][0][value]`)
+        if (fieldCode === 'PHONE') phone = value !== null ? String(value) : null
+        if (fieldCode === 'EMAIL') email = value !== null ? String(value) : null
+      }
+
+      updatedContacts.push({ contactId: String(contactId), accountId: String(accountId), phone, email })
+    }
+
+    let contactsUpdated = 0
+    for (const contact of updatedContacts) {
+      const businessId = await resolveBusinessId(contact.accountId)
+      if (!businessId) continue
+      if (!contact.phone && !contact.email) continue // nothing this route tracks changed
+
+      const { data: linkedClient } = await supabase
+        .from('clients')
+        .select('id')
+        .eq('business_id', businessId)
+        .eq('kommo_contact_id', contact.contactId)
+        .maybeSingle()
+      if (!linkedClient) continue // not a contact iPlanit is tracking - "add" handles new ones, this doesn't
+
+      const patch: { phone?: string; email?: string } = {}
+      if (contact.phone) patch.phone = contact.phone
+      if (contact.email) patch.email = contact.email
+
+      await supabase.from('clients').update(patch).eq('id', linkedClient.id)
+      contactsUpdated++
+    }
+
     if (lostLeads.length === 0) {
-      return NextResponse.json({ ok: true, cancelled: 0, contactsCreated })
+      return NextResponse.json({ ok: true, cancelled: 0, contactsCreated, contactsUpdated })
     }
 
     let cancelled = 0
@@ -231,7 +286,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ ok: true, cancelled, contactsCreated })
+    return NextResponse.json({ ok: true, cancelled, contactsCreated, contactsUpdated })
   } catch (err) {
     console.error('[iplanit] Error handling Kommo webhook:', err)
     // Still 2xx - a malformed/unexpected payload from Kommo shouldn't make
