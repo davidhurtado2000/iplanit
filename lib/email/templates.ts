@@ -251,9 +251,15 @@ export function buildReminderEmail(
      * scripts/089) - replaces the default sentence below, placeholder tokens
      * already substituted with real values. Null/undefined uses the default. */
     customMessage?: string | null
+    /** True for the second, Pro/Premium-only reminder sent a few hours
+     * before the appointment (scripts/091-day-of-reminder.sql) - only
+     * changes the subject/heading to "today" framing so it doesn't read as
+     * a duplicate of the earlier reminder; the body (custom or default)
+     * stays the same either way. */
+    isDayOf?: boolean
   }
 ): { subject: string; html: string } {
-  const { clientName, businessName, serviceName, startTime, timezone, language, manageUrl, reservationType, customMessage } = data
+  const { clientName, businessName, serviceName, startTime, timezone, language, manageUrl, reservationType, customMessage, isDayOf } = data
   const when = formatDateTime(startTime, timezone, language)
   const isVisit = reservationType === 'visit'
   const safeClientName = escapeHtml(clientName)
@@ -277,10 +283,16 @@ export function buildReminderEmail(
 
   if (language === 'es') {
     return {
-      subject: isVisit ? `Recordatorio: tu visita a ${businessName}` : `Recordatorio: tu reserva en ${businessName}`,
+      subject: isDayOf
+        ? isVisit
+          ? `¡Hoy es tu visita a ${businessName}!`
+          : `¡Hoy es tu reserva en ${businessName}!`
+        : isVisit
+          ? `Recordatorio: tu visita a ${businessName}`
+          : `Recordatorio: tu reserva en ${businessName}`,
       html: emailLayout(
         'es',
-        isVisit ? 'Recordatorio de tu visita' : 'Recordatorio de tu reserva',
+        isDayOf ? '¡Es hoy!' : isVisit ? 'Recordatorio de tu visita' : 'Recordatorio de tu reserva',
         `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hola ${safeClientName},</p>
          <p style="font-size: 14px; color: #374151; margin: 0;">${
            customBody ??
@@ -294,10 +306,16 @@ export function buildReminderEmail(
     }
   }
   return {
-    subject: isVisit ? `Reminder: your visit to ${businessName}` : `Reminder: your booking at ${businessName}`,
+    subject: isDayOf
+      ? isVisit
+        ? `Today's the day: your visit to ${businessName}`
+        : `Today's the day: your booking at ${businessName}`
+      : isVisit
+        ? `Reminder: your visit to ${businessName}`
+        : `Reminder: your booking at ${businessName}`,
     html: emailLayout(
       'en',
-      isVisit ? 'Your visit is coming up' : 'Your booking is coming up',
+      isDayOf ? "It's today!" : isVisit ? 'Your visit is coming up' : 'Your booking is coming up',
       `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hi ${safeClientName},</p>
        <p style="font-size: 14px; color: #374151; margin: 0;">${
          customBody ??

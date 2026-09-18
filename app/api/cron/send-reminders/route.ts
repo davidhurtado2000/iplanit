@@ -46,13 +46,19 @@ export async function GET(request: Request) {
   let failed = 0
   let skipped = 0
   // Group reservations (scripts/081) now return one row per attendee
-  // sharing the same reservation_id - reminder_sent_at is one column on
-  // the reservation, so it must only be written once per id, not once per
-  // recipient.
+  // sharing the same reservation_id - reminder_sent_at/day_of_reminder_sent_at
+  // are each one column on the reservation, so each must only be written
+  // once per id, not once per recipient. Kept as two separate sets since a
+  // reservation can legitimately need both kinds marked independently in
+  // the same run (scripts/091-day-of-reminder.sql).
   const remindedReservationIds = new Set<string>()
+  const dayOfRemindedReservationIds = new Set<string>()
 
   for (const row of rows) {
     try {
+      const isDayOf = row.reminder_kind === 'day_of'
+      const remindedSet = isDayOf ? dayOfRemindedReservationIds : remindedReservationIds
+
       // Email stays the default channel when a client has one - WhatsApp
       // only covers the clients who'd otherwise get no reminder at all
       // (see scripts/076-whatsapp-reminders.sql).
@@ -72,6 +78,7 @@ export async function GET(request: Request) {
             ? `${process.env.NEXT_PUBLIC_APP_URL || 'https://www.iplanit.io'}/reservar/cita/${row.reservation_id}`
             : undefined,
           customMessage: row.reminder_email_message,
+          isDayOf,
         })
 
         await getResendClient().emails.send({
@@ -93,11 +100,12 @@ export async function GET(request: Request) {
       // mid-batch failure never leaves an earlier success unmarked (which
       // would resend it next run) or a later row incorrectly marked before
       // it was actually sent.
-      if (!remindedReservationIds.has(row.reservation_id)) {
-        remindedReservationIds.add(row.reservation_id)
+      if (!remindedSet.has(row.reservation_id)) {
+        remindedSet.add(row.reservation_id)
+        const now = new Date().toISOString()
         await supabase
           .from('reservations')
-          .update({ reminder_sent_at: new Date().toISOString() })
+          .update(isDayOf ? { day_of_reminder_sent_at: now } : { reminder_sent_at: now })
           .eq('id', row.reservation_id)
       }
 

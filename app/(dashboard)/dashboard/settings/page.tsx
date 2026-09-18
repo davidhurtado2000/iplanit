@@ -2127,6 +2127,13 @@ function SettingsPageInner() {
                     </SelectContent>
                   </Select>
 
+                  {/* Second automatic reminder for Pro/Premium - no toggle,
+                      it's automatic based on plan (scripts/091-day-of-
+                      reminder.sql), same as any other tier-based limit. */}
+                  <p className="text-xs text-muted-foreground">
+                    {meetsPlan(plan, 'pro') ? t.settings.dayOfReminderActiveNote : t.settings.dayOfReminderUpsellNote}
+                  </p>
+
                   <div className="space-y-4 pt-2">
                     <div>
                       <Label className="text-sm font-medium">{t.settings.reminderMessagesTitle}</Label>

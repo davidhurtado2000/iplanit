@@ -607,6 +607,7 @@ export interface Database {
           cancelled_by: 'client' | 'business' | 'kommo' | null
           cancelled_at: string | null
           reminder_sent_at: string | null
+          day_of_reminder_sent_at: string | null
           notes: string | null
           kommo_contact_id: string | null
           kommo_lead_id: string | null
@@ -633,6 +634,7 @@ export interface Database {
           cancelled_by?: 'client' | 'business' | 'kommo' | null
           cancelled_at?: string | null
           reminder_sent_at?: string | null
+          day_of_reminder_sent_at?: string | null
           notes?: string | null
           kommo_contact_id?: string | null
           kommo_lead_id?: string | null
@@ -659,6 +661,7 @@ export interface Database {
           cancelled_by?: 'client' | 'business' | 'kommo' | null
           cancelled_at?: string | null
           reminder_sent_at?: string | null
+          day_of_reminder_sent_at?: string | null
           notes?: string | null
           kommo_contact_id?: string | null
           kommo_lead_id?: string | null
@@ -1215,6 +1218,7 @@ export interface Database {
           start_time: string
           is_primary: boolean
           reminder_email_message: string | null
+          reminder_kind: 'main' | 'day_of'
         }[]
       }
       get_clients_needing_birthday_email: {
