@@ -134,6 +134,7 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan }: Upgrade
     { icon: Layers, title: m.featureProCapTitle, description: m.featureProCapDesc },
     { icon: UserPlus, title: m.featureProSeatsTitle, description: m.featureProSeatsDesc },
     { icon: Repeat, title: m.featureProRecurringTitle, description: m.featureProRecurringDesc },
+    { icon: FileSpreadsheet, title: m.featureImportCsvTitle, description: m.featureImportCsvDesc },
   ]
 
   const PREMIUM_FEATURES = [

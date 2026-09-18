@@ -735,10 +735,15 @@ export default function ClientsPage() {
         subtitle={t.clients.subtitle}
         actions={
           <>
+            {/* Import is Pro+ now (was Premium-only) - export stays
+                Premium-only, per David's tier spec (scripts/090-basic-
+                tier-rename.sql: Pro="Importar clientes", Premium adds
+                "Exportar clientes" on top). */}
             <PremiumButton
               variant="outline"
               className="w-full gap-2 sm:w-auto"
               featureName={t.clients.importCsv}
+              requiredPlan="pro"
               onClick={() => setIsImportOpen(true)}
             >
               <Upload className="h-4 w-4" />
@@ -748,6 +753,7 @@ export default function ClientsPage() {
               variant="outline"
               className="w-full gap-2 sm:w-auto"
               featureName={t.clients.exportCsv}
+              requiredPlan="premium"
               onClick={handleExportCsv}
             >
               <Download className="h-4 w-4" />
