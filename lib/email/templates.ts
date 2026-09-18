@@ -1,3 +1,5 @@
+import { applyReminderPlaceholders, formatReminderDate, formatReminderTime } from '@/lib/reminder-template'
+
 export type EmailLanguage = 'es' | 'en'
 
 export interface ReservationEmailData {
@@ -243,12 +245,35 @@ export function buildCancellationEmail(data: ReservationEmailData): { subject: s
   }
 }
 
-export function buildReminderEmail(data: ReservationEmailData): { subject: string; html: string } {
-  const { clientName, businessName, startTime, timezone, language, manageUrl, reservationType } = data
+export function buildReminderEmail(
+  data: ReservationEmailData & {
+    /** Business's own free-text override (businesses.reminder_email_message,
+     * scripts/089) - replaces the default sentence below, placeholder tokens
+     * already substituted with real values. Null/undefined uses the default. */
+    customMessage?: string | null
+  }
+): { subject: string; html: string } {
+  const { clientName, businessName, serviceName, startTime, timezone, language, manageUrl, reservationType, customMessage } = data
   const when = formatDateTime(startTime, timezone, language)
   const isVisit = reservationType === 'visit'
   const safeClientName = escapeHtml(clientName)
   const safeBusinessName = escapeHtml(businessName)
+
+  // Substituted BEFORE escaping (raw clientName/serviceName/businessName go
+  // straight into the template), then the whole result is escaped once -
+  // escaping first and substituting after would double-escape any "&" a
+  // name already contains.
+  const customBody = customMessage
+    ? escapeHtml(
+        applyReminderPlaceholders(customMessage, {
+          client: clientName,
+          service: serviceName ?? '',
+          date: formatReminderDate(startTime, timezone, language),
+          time: formatReminderTime(startTime, timezone, language),
+          business: businessName,
+        })
+      )
+    : null
 
   if (language === 'es') {
     return {
@@ -258,9 +283,10 @@ export function buildReminderEmail(data: ReservationEmailData): { subject: strin
         isVisit ? 'Recordatorio de tu visita' : 'Recordatorio de tu reserva',
         `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hola ${safeClientName},</p>
          <p style="font-size: 14px; color: #374151; margin: 0;">${
-           isVisit
+           customBody ??
+           (isVisit
              ? `Este es un recordatorio de tu próxima visita a <strong>${safeBusinessName}</strong>. ¡Te esperamos!`
-             : `Este es un recordatorio de tu próxima reserva en <strong>${safeBusinessName}</strong>.`
+             : `Este es un recordatorio de tu próxima reserva en <strong>${safeBusinessName}</strong>.`)
          }</p>
          ${detailsCard([serviceRow(data), ['Fecha y hora', when]])}
          ${manageButton(manageUrl, 'es', reservationType)}`
@@ -274,9 +300,10 @@ export function buildReminderEmail(data: ReservationEmailData): { subject: strin
       isVisit ? 'Your visit is coming up' : 'Your booking is coming up',
       `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hi ${safeClientName},</p>
        <p style="font-size: 14px; color: #374151; margin: 0;">${
-         isVisit
+         customBody ??
+         (isVisit
            ? `This is a reminder about your upcoming visit to <strong>${safeBusinessName}</strong>. We look forward to seeing you!`
-           : `This is a reminder about your upcoming booking with <strong>${safeBusinessName}</strong>.`
+           : `This is a reminder about your upcoming booking with <strong>${safeBusinessName}</strong>.`)
        }</p>
        ${detailsCard([serviceRow(data), ['Date and time', when]])}
        ${manageButton(manageUrl, 'en', reservationType)}`

@@ -71,6 +71,7 @@ export async function GET(request: Request) {
           manageUrl: row.is_primary
             ? `${process.env.NEXT_PUBLIC_APP_URL || 'https://www.iplanit.io'}/reservar/cita/${row.reservation_id}`
             : undefined,
+          customMessage: row.reminder_email_message,
         })
 
         await getResendClient().emails.send({

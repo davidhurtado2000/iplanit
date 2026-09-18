@@ -26,8 +26,8 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json().catch(() => null)
-  const tier: 'pro' | 'premium' | undefined = body?.tier
-  if (tier !== 'pro' && tier !== 'premium') {
+  const tier: 'basic' | 'pro' | 'premium' | undefined = body?.tier
+  if (tier !== 'basic' && tier !== 'pro' && tier !== 'premium') {
     return NextResponse.json({ error: 'invalid_tier' }, { status: 400 })
   }
 
@@ -67,15 +67,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'already_on_plan' }, { status: 400 })
     }
 
-    // Pro doesn't support extra seats at all (its 2-seat cap has no
-    // purchase path) - downgrading from Premium must drop the seat item
-    // too, in the SAME update call so its removal is prorated together
-    // with the plan change, not left behind as an invisible charge. The
-    // Settings UI only ever renders the seat stepper for plan === 'premium',
-    // so without this a downgraded customer would keep paying for seats
-    // with no way to even see, let alone cancel, that line item.
+    // Neither Pro nor Basic supports extra seats (no purchase path, and
+    // Basic can't even have team members at all) - downgrading away from
+    // Premium must drop the seat item too, in the SAME update call so its
+    // removal is prorated together with the plan change, not left behind
+    // as an invisible charge. The Settings UI only ever renders the seat
+    // stepper for plan === 'premium', so without this a downgraded
+    // customer would keep paying for seats with no way to even see, let
+    // alone cancel, that line item.
     const items: { id: string; price?: string; deleted?: true }[] = [{ id: item.id, price: newPriceId }]
-    const seatItem = tier === 'pro' ? getSeatItem(subscription) : undefined
+    const seatItem = tier !== 'premium' ? getSeatItem(subscription) : undefined
     if (seatItem) {
       items.push({ id: seatItem.id, deleted: true })
     }

@@ -179,7 +179,7 @@ export interface Database {
           email: string
           full_name: string | null
           avatar_url: string | null
-          plan: 'free' | 'pro' | 'premium'
+          plan: 'free' | 'basic' | 'pro' | 'premium'
           timezone: string
           language: string
           stripe_customer_id: string | null
@@ -196,7 +196,7 @@ export interface Database {
           email: string
           full_name?: string | null
           avatar_url?: string | null
-          plan?: 'free' | 'pro' | 'premium'
+          plan?: 'free' | 'basic' | 'pro' | 'premium'
           timezone?: string
           language?: string
           stripe_customer_id?: string | null
@@ -213,7 +213,7 @@ export interface Database {
           email?: string
           full_name?: string | null
           avatar_url?: string | null
-          plan?: 'free' | 'pro' | 'premium'
+          plan?: 'free' | 'basic' | 'pro' | 'premium'
           timezone?: string
           language?: string
           stripe_customer_id?: string | null
@@ -306,6 +306,8 @@ export interface Database {
           notify_cancellations: boolean
           notify_reminders: boolean
           reminder_hours: number
+          reminder_email_message: string | null
+          reminder_whatsapp_message: string | null
           birthday_emails_enabled: boolean
           birthday_discount_percent: number | null
           birthday_window: 'day' | 'week' | 'month'
@@ -339,6 +341,8 @@ export interface Database {
           notify_cancellations?: boolean
           notify_reminders?: boolean
           reminder_hours?: number
+          reminder_email_message?: string | null
+          reminder_whatsapp_message?: string | null
           birthday_emails_enabled?: boolean
           birthday_discount_percent?: number | null
           birthday_window?: 'day' | 'week' | 'month'
@@ -372,6 +376,8 @@ export interface Database {
           notify_cancellations?: boolean
           notify_reminders?: boolean
           reminder_hours?: number
+          reminder_email_message?: string | null
+          reminder_whatsapp_message?: string | null
           birthday_emails_enabled?: boolean
           birthday_discount_percent?: number | null
           birthday_window?: 'day' | 'week' | 'month'
@@ -1208,6 +1214,7 @@ export interface Database {
           business_country: 'PE' | 'US'
           start_time: string
           is_primary: boolean
+          reminder_email_message: string | null
         }[]
       }
       get_clients_needing_birthday_email: {

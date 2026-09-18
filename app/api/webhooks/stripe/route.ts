@@ -17,12 +17,12 @@ const supabase = createClient<Database>(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-async function setPlanByUserId(userId: string, plan: 'free' | 'pro' | 'premium', extra: Record<string, string | boolean | number | null> = {}) {
+async function setPlanByUserId(userId: string, plan: 'free' | 'basic' | 'pro' | 'premium', extra: Record<string, string | boolean | number | null> = {}) {
   const { error } = await supabase.from('profiles').update({ plan, ...extra }).eq('id', userId)
   if (error) console.error('[iplanit] Error updating profile plan:', error)
 }
 
-async function setPlanByCustomerId(customerId: string, plan: 'free' | 'pro' | 'premium', extra: Record<string, string | boolean | number | null> = {}) {
+async function setPlanByCustomerId(customerId: string, plan: 'free' | 'basic' | 'pro' | 'premium', extra: Record<string, string | boolean | number | null> = {}) {
   const { error } = await supabase.from('profiles').update({ plan, ...extra }).eq('stripe_customer_id', customerId)
   if (error) console.error('[iplanit] Error updating profile plan by customer id:', error)
 }
@@ -159,7 +159,7 @@ export async function POST(request: Request) {
         if (!profile) break
 
         const tier = tierFromPriceId(getPlanItem(subscription)?.price.id)
-        const priceUsd = tier === 'premium' ? 40 : 25
+        const priceUsd = tier === 'premium' ? 40 : tier === 'pro' ? 25 : 15
         const trialEndDate = new Date((subscription.trial_end ?? 0) * 1000)
         const language = profile.language === 'en' ? 'en' : 'es'
 

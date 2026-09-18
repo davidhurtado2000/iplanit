@@ -17,7 +17,8 @@ export function getStripeClient(): Stripe {
 // Shared between app/api/stripe/subscribe (new subscriptions) and
 // app/api/stripe/change-plan (existing subscribers switching tiers) - one
 // place for the tier -> Price ID lookup so both stay in sync.
-export function getPriceIdForTier(tier: 'pro' | 'premium'): string | undefined {
+export function getPriceIdForTier(tier: 'basic' | 'pro' | 'premium'): string | undefined {
+  if (tier === 'basic') return process.env.STRIPE_PRICE_ID_BASIC
   return tier === 'pro' ? process.env.STRIPE_PRICE_ID_PRO : process.env.STRIPE_PRICE_ID_PREMIUM
 }
 
@@ -32,12 +33,13 @@ export function getAiAddonPriceId(): string | undefined {
 // module load. STRIPE_PRICE_ID_PREMIUM_LEGACY is the original $35 Price
 // (pre-3-tier); kept here purely so existing subscribers on it still
 // resolve to 'premium' - it's never used to create new checkouts.
-const PRICE_TIER_MAP: Record<string, 'pro' | 'premium'> = {}
+const PRICE_TIER_MAP: Record<string, 'basic' | 'pro' | 'premium'> = {}
+if (process.env.STRIPE_PRICE_ID_BASIC) PRICE_TIER_MAP[process.env.STRIPE_PRICE_ID_BASIC] = 'basic'
 if (process.env.STRIPE_PRICE_ID_PRO) PRICE_TIER_MAP[process.env.STRIPE_PRICE_ID_PRO] = 'pro'
 if (process.env.STRIPE_PRICE_ID_PREMIUM) PRICE_TIER_MAP[process.env.STRIPE_PRICE_ID_PREMIUM] = 'premium'
 if (process.env.STRIPE_PRICE_ID_PREMIUM_LEGACY) PRICE_TIER_MAP[process.env.STRIPE_PRICE_ID_PREMIUM_LEGACY] = 'premium'
 
-export function tierFromPriceId(priceId: string | undefined | null): 'pro' | 'premium' | null {
+export function tierFromPriceId(priceId: string | undefined | null): 'basic' | 'pro' | 'premium' | null {
   if (!priceId) return null
   return PRICE_TIER_MAP[priceId] ?? null
 }

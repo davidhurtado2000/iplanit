@@ -21,11 +21,11 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json().catch(() => null)
-  const tier: 'pro' | 'premium' | undefined = body?.tier
+  const tier: 'basic' | 'pro' | 'premium' | undefined = body?.tier
   const paymentMethodId: string | undefined = body?.payment_method_id
   const confirmed: boolean = body?.confirmed === true
 
-  if (tier !== 'pro' && tier !== 'premium') {
+  if (tier !== 'basic' && tier !== 'pro' && tier !== 'premium') {
     return NextResponse.json({ error: 'invalid_tier' }, { status: 400 })
   }
   if (!paymentMethodId) {
@@ -77,7 +77,7 @@ export async function POST(request: Request) {
     ])
 
     const alreadyUsedTrial = emailUsed === true || !!fingerprintMatch.data
-    const priceUsd = tier === 'premium' ? 40 : 25
+    const priceUsd = tier === 'premium' ? 40 : tier === 'pro' ? 25 : 15
 
     if (alreadyUsedTrial && !confirmed) {
       // Nothing created yet, nothing charged - the client shows an explicit

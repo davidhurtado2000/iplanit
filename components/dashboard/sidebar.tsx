@@ -326,7 +326,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         </nav>
 
         {/* Plan Badge */}
-        {!isCollapsed && userPlan === 'free' && (
+        {!isCollapsed && (userPlan === 'free' || userPlan === 'basic') && (
           <div className="mx-2 mb-2">
             <Button
               className="w-full gap-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600"

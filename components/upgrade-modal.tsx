@@ -33,7 +33,6 @@ import {
 import { useLanguage } from '@/context/language-context'
 import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
-import { FREE_LIMITS } from '@/lib/plan-limits'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { CheckoutForm, stripePromise } from '@/components/checkout-form'
@@ -43,6 +42,7 @@ import { playSuccessChime } from '@/lib/notification-sound'
 // wants to discuss country-based pricing with his co-founder before
 // finalizing that, so this intentionally isn't split by business.country
 // yet (unlike SALES_WHATSAPP below, which was already confirmed).
+const BASIC_PRICE_USD = 15
 const PRO_PRICE_USD = 25
 const PREMIUM_PRICE_USD = 40
 
@@ -50,10 +50,11 @@ interface UpgradeModalProps {
   isOpen: boolean
   onClose: () => void
   feature?: string
-  // Unset = generic "you hit a Free-tier limit" framing, both cards shown
-  // equally. 'premium' = opened from a Premium-only gate (e.g. Analytics) -
-  // Premium card is emphasized and the Pro card notes the feature isn't
-  // included there. 'pro' = opened from a Pro-or-above gate (e.g. Team).
+  // Unset = generic "you hit your Basic-tier limit" framing, all three
+  // cards shown equally. 'premium' = opened from a Premium-only gate (e.g.
+  // Analytics, Cochera) - Basic/Pro both note the feature isn't included
+  // there. 'pro' = opened from a Pro-or-above gate (e.g. Team) - only Basic
+  // notes it's missing.
   requiredPlan?: 'pro' | 'premium'
 }
 
@@ -82,12 +83,12 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan }: Upgrade
   const { user, refreshProfile } = useAuth()
   const { currentBusiness } = useBusinesses()
   const m = t.upgradeModal
-  const [loadingTier, setLoadingTier] = useState<'pro' | 'premium' | null>(null)
+  const [loadingTier, setLoadingTier] = useState<'basic' | 'pro' | 'premium' | null>(null)
   const [checkoutError, setCheckoutError] = useState('')
   const [trialEligible, setTrialEligible] = useState(false)
 
   const [step, setStep] = useState<Step>('plans')
-  const [selectedTier, setSelectedTier] = useState<'pro' | 'premium' | null>(null)
+  const [selectedTier, setSelectedTier] = useState<'basic' | 'pro' | 'premium' | null>(null)
   const [clientSecret, setClientSecret] = useState('')
   const [cardError, setCardError] = useState('')
   const [subscribing, setSubscribing] = useState(false)
@@ -121,6 +122,11 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan }: Upgrade
     }
   }, [isOpen, user?.email])
 
+  const BASIC_FEATURES = [
+    { icon: Clock, title: m.featureBasicReservationsTitle },
+    { icon: Layers, title: m.featureBasicResourcesTitle },
+  ]
+
   const PRO_FEATURES = [
     { icon: Clock, title: m.featureUnlimitedTitle, description: m.featureUnlimitedDesc },
     { icon: BarChart3, title: m.featureAnalyticsTitle, description: m.featureAnalyticsDesc },
@@ -137,7 +143,13 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan }: Upgrade
     { icon: Headphones, title: m.featurePrioritySupportTitle, description: m.featurePrioritySupportDesc },
   ]
 
-  const handleSubscribe = async (tier: 'pro' | 'premium') => {
+  const priceForTier = (tier: 'basic' | 'pro' | 'premium') =>
+    tier === 'premium' ? PREMIUM_PRICE_USD : tier === 'pro' ? PRO_PRICE_USD : BASIC_PRICE_USD
+
+  const titleForTier = (tier: 'basic' | 'pro' | 'premium') =>
+    tier === 'premium' ? m.premiumTitle : tier === 'pro' ? m.proTitle : m.basicTitle
+
+  const handleSubscribe = async (tier: 'basic' | 'pro' | 'premium') => {
     setCheckoutError('')
     setLoadingTier(tier)
     try {
@@ -272,7 +284,51 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan }: Upgrade
                 </div>
               )}
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-3">
+                {/* Basic card - never satisfies a requiredPlan gate (both
+                    'pro' and 'premium' mean Basic is missing the feature),
+                    so it always renders in the plain/unemphasized style. */}
+                <div className="flex flex-col gap-4 rounded-xl border-2 border-border p-4 sm:p-5">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{m.basicTitle}</p>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-2xl font-bold text-foreground sm:text-3xl">${BASIC_PRICE_USD}</span>
+                      <span className="text-xs text-muted-foreground sm:text-sm">{m.perMonth}</span>
+                    </div>
+                    {trialEligible && (
+                      <p className="text-xs font-medium text-amber-600 dark:text-amber-400">{m.trialBadge}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2.5">
+                    {BASIC_FEATURES.map((f) => (
+                      <div key={f.title} className="flex items-start gap-2.5">
+                        <div className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
+                          <Check className="h-2.5 w-2.5 text-green-600 dark:text-green-400" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-foreground">{f.title}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {requiredPlan && feature && (
+                    <p className="text-xs italic text-muted-foreground">
+                      {m.proFeatureNotIncluded.replace('{feature}', feature)}
+                    </p>
+                  )}
+                  <div className="mt-auto border-t pt-4">
+                    <Button
+                      className="w-full gap-2 px-6 has-[>svg]:px-6"
+                      variant="outline"
+                      onClick={() => handleSubscribe('basic')}
+                      disabled={loadingTier !== null}
+                    >
+                      {loadingTier === 'basic' && <Loader2 className="h-4 w-4 animate-spin" />}
+                      {m.subscribeBasicBtn}
+                    </Button>
+                  </div>
+                </div>
+
                 {/* Pro card */}
                 <div
                   className={cn(
@@ -369,31 +425,6 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan }: Upgrade
 
               {checkoutError && <p className="text-center text-xs text-destructive">{checkoutError}</p>}
 
-              {/* Free Plan Limits Info */}
-              <div className="rounded-lg bg-muted/50 p-3 sm:p-4">
-                <p className="mb-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide sm:text-xs">
-                  {m.freeLimitsTitle}
-                </p>
-                <div className="grid grid-cols-2 gap-2 text-xs sm:text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{m.reservationsPerMonthLabel}</span>
-                    <span className="font-medium">{FREE_LIMITS.reservationsPerMonth}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{m.clientsLabel}</span>
-                    <span className="font-medium">{FREE_LIMITS.clients}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{m.servicesLabel}</span>
-                    <span className="font-medium">{FREE_LIMITS.services}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{m.resourcesLabel}</span>
-                    <span className="font-medium">{FREE_LIMITS.resources}</span>
-                  </div>
-                </div>
-              </div>
-
               {trialEligible && (
                 <p className="text-center text-[10px] text-muted-foreground sm:text-xs">{m.trialNote}</p>
               )}
@@ -451,8 +482,8 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan }: Upgrade
                 <p className="text-sm font-medium text-foreground">
                   {trialEligible
                     ? m.cardStepTrialNote
-                        .replace('{plan}', selectedTier === 'premium' ? m.premiumTitle : m.proTitle)
-                        .replace('{price}', `$${selectedTier === 'premium' ? PREMIUM_PRICE_USD : PRO_PRICE_USD} USD`)
+                        .replace('{plan}', selectedTier ? titleForTier(selectedTier) : '')
+                        .replace('{price}', `$${selectedTier ? priceForTier(selectedTier) : ''} USD`)
                         .replace(
                           '{date}',
                           new Intl.DateTimeFormat(language === 'es' ? 'es-PE' : 'en-US', { dateStyle: 'long' }).format(
@@ -460,8 +491,8 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan }: Upgrade
                           )
                         )
                     : m.cardStepChargeTodayNote
-                        .replace('{plan}', selectedTier === 'premium' ? m.premiumTitle : m.proTitle)
-                        .replace('{price}', `$${selectedTier === 'premium' ? PREMIUM_PRICE_USD : PRO_PRICE_USD} USD`)}
+                        .replace('{plan}', selectedTier ? titleForTier(selectedTier) : '')
+                        .replace('{price}', `$${selectedTier ? priceForTier(selectedTier) : ''} USD`)}
                 </p>
                 <p className="mt-1.5 text-xs text-muted-foreground">{m.cardStepCurrencyNote}</p>
               </div>
@@ -526,7 +557,7 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan }: Upgrade
             </div>
             <div className="space-y-2">
               <DialogTitle className="text-2xl">
-                {m.successTitle.replace('{plan}', selectedTier === 'premium' ? m.premiumTitle : m.proTitle)}
+                {m.successTitle.replace('{plan}', selectedTier ? titleForTier(selectedTier) : '')}
               </DialogTitle>
               <DialogDescription className="text-sm">{m.successBody}</DialogDescription>
             </div>

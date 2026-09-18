@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { meetsPlan } from '@/lib/plan-limits'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { Card, CardContent } from '@/components/ui/card'
@@ -44,7 +45,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Plus, MoreHorizontal, Pencil, Trash2, Loader2, ParkingSquare, Building2 } from 'lucide-react'
 
 export default function ParkingPage() {
-  const { currentBusiness } = useBusinesses()
+  const { currentBusiness, aiAddonStatus } = useBusinesses()
   const { t } = useLanguage()
   const { resources, reservations, loading, refetchServicesAndResources } = useDashboardData()
   const [saving, setSaving] = useState(false)
@@ -120,7 +121,11 @@ export default function ParkingPage() {
       await refetchServicesAndResources()
       setIsModalOpen(false)
     } catch (err) {
+      // PLN05 (Premium-required trigger, scripts/090) or anything else -
+      // PLN05 itself should be unreachable in normal use since the page
+      // already gates on Premium above; this is just the generic backstop.
       console.error('[v0] Error saving parking spot:', err)
+      toast.error(t.saveError)
     } finally {
       setSaving(false)
     }
@@ -168,7 +173,12 @@ export default function ParkingPage() {
     )
   }
 
-  if (!currentBusiness.offers_parking) {
+  {/* Cochera is Premium-only now (scripts/090-basic-tier-rename.sql) - the
+      Settings toggle already can't be turned on below Premium, but this
+      covers a business that had it on from before a downgrade (the DB
+      trigger already blocks creating new spots either way - see
+      check_resource_limit's PLN05 branch - this is just the matching UI). */}
+  if (!currentBusiness.offers_parking || !meetsPlan(aiAddonStatus?.plan, 'premium')) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
         <ParkingSquare className="mb-4 h-12 w-12 text-muted-foreground/50" />

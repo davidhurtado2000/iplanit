@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Progress } from '@/components/ui/progress'
@@ -47,7 +48,8 @@ import { createClient } from '@/lib/supabase/client'
 import { translateAuthError, withAuthLockRetry, withTimeout, AuthTimeoutError } from '@/lib/supabase/auth-errors'
 import { getPasswordChecks, isPasswordStrongEnough } from '@/lib/password'
 import { cn } from '@/lib/utils'
-import { FREE_LIMITS, PRO_LIMITS, PREMIUM_LIMITS } from '@/lib/plan-limits'
+import { applyReminderPlaceholders, formatReminderDate, formatReminderTime } from '@/lib/reminder-template'
+import { BASIC_LIMITS, PRO_LIMITS, PREMIUM_LIMITS, meetsPlan } from '@/lib/plan-limits'
 import { sedeAbbr, sedeTint, buildBusinessColorIndex } from '@/lib/sede-colors'
 import {
   User,
@@ -97,7 +99,7 @@ const DEFAULT_BUSINESS_HOURS: { dayOfWeek: DayOfWeek; startTime: string; endTime
 ]
 
 interface PlanUsage {
-  plan: 'free' | 'pro' | 'premium'
+  plan: 'free' | 'basic' | 'pro' | 'premium'
   reservations_this_month: number
   clients: number
   services: number
@@ -474,7 +476,7 @@ function SettingsPageInner() {
   }
 
   useEffect(() => {
-    if (plan !== 'free' && aiAddonActive) fetchAiUsage()
+    if (meetsPlan(plan, 'pro') && aiAddonActive) fetchAiUsage()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentBusiness?.id, aiAddonActive])
 
@@ -547,7 +549,7 @@ function SettingsPageInner() {
   // typically 'free' (their own separate signup). Falls back to
   // authProfile while planUsage hasn't loaded yet, and to 'free' with no
   // business at all (the "create your business" flow).
-  const plan = (planUsage?.plan ?? authProfile?.plan ?? 'free') as 'free' | 'pro' | 'premium'
+  const plan = (planUsage?.plan ?? authProfile?.plan ?? 'free') as 'free' | 'basic' | 'pro' | 'premium'
   const sedes = businesses.filter((b) => b.organization_id === currentBusiness?.organization_id)
   const orgBusinessIds = sedes.map((s) => s.id)
   const hasMultipleSedes = sedes.length > 1
@@ -645,6 +647,8 @@ function SettingsPageInner() {
     emailReminders: true,
     emailCancellations: true,
     reminderHours: 24,
+    emailTemplate: '',
+    whatsappTemplate: '',
   })
   const [isSavingNotifications, setIsSavingNotifications] = useState(false)
   const [notifSaveStatus, setNotifSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
@@ -704,6 +708,8 @@ function SettingsPageInner() {
         emailReminders: currentBusiness.notify_reminders ?? true,
         emailCancellations: currentBusiness.notify_cancellations ?? true,
         reminderHours: currentBusiness.reminder_hours ?? 24,
+        emailTemplate: currentBusiness.reminder_email_message || '',
+        whatsappTemplate: currentBusiness.reminder_whatsapp_message || '',
       })
       setBirthday({
         enabled: currentBusiness.birthday_emails_enabled ?? false,
@@ -1086,6 +1092,73 @@ function SettingsPageInner() {
     }
   }
 
+  // Clicking a chip beats typing "{client}" by hand - no syntax to
+  // remember or mistype, and it drops in wherever the cursor already is
+  // instead of always at the end.
+  const emailTemplateRef = useRef<HTMLTextAreaElement>(null)
+  const whatsappTemplateRef = useRef<HTMLTextAreaElement>(null)
+
+  const REMINDER_PLACEHOLDER_TOKENS = [
+    { token: '{client}', label: t.settings.reminderPlaceholderClient },
+    { token: '{service}', label: t.settings.reminderPlaceholderService },
+    { token: '{date}', label: t.settings.reminderPlaceholderDate },
+    { token: '{time}', label: t.settings.reminderPlaceholderTime },
+    { token: '{business}', label: t.settings.reminderPlaceholderBusiness },
+  ] as const
+
+  const RECOGNIZED_TOKENS = new Set<string>(REMINDER_PLACEHOLDER_TOKENS.map((p) => p.token))
+
+  // Catches the most likely real mistake - typing {cliente}/{negocio} (the
+  // Spanish word) instead of the actual token - before it ships silently
+  // unfilled in a real message to a real client.
+  function findUnknownPlaceholders(text: string): string[] {
+    const found = text.match(/\{[^{}]*\}/g) ?? []
+    return [...new Set(found.filter((token) => !RECOGNIZED_TOKENS.has(token)))]
+  }
+
+  function insertReminderPlaceholder(
+    ref: React.RefObject<HTMLTextAreaElement | null>,
+    field: 'emailTemplate' | 'whatsappTemplate',
+    token: string
+  ) {
+    const el = ref.current
+    const current = notifications[field]
+    if (!el) {
+      setNotifications((prev) => ({ ...prev, [field]: current + token }))
+      return
+    }
+    const start = el.selectionStart ?? current.length
+    const end = el.selectionEnd ?? current.length
+    const next = current.slice(0, start) + token + current.slice(end)
+    setNotifications((prev) => ({ ...prev, [field]: next }))
+    // The textarea's value only updates after this re-render, so the
+    // cursor restore has to wait a tick too - otherwise setSelectionRange
+    // runs against the OLD value and lands in the wrong spot.
+    requestAnimationFrame(() => {
+      el.focus()
+      const pos = start + token.length
+      el.setSelectionRange(pos, pos)
+    })
+  }
+
+  // Fixed sample values (tomorrow 3pm, a generic client/service name) so
+  // the preview under each template field always renders the same thing
+  // regardless of when Settings happens to be opened - purely illustrative,
+  // never sent anywhere.
+  const reminderPreview = (template: string) => {
+    const sample = new Date()
+    sample.setDate(sample.getDate() + 1)
+    sample.setHours(15, 0, 0, 0)
+    const timezone = currentBusiness?.timezone || 'America/Lima'
+    return applyReminderPlaceholders(template, {
+      client: language === 'en' ? 'Alex' : 'Ana',
+      service: language === 'en' ? 'Haircut' : 'Corte de cabello',
+      date: formatReminderDate(sample.toISOString(), timezone, language),
+      time: formatReminderTime(sample.toISOString(), timezone, language),
+      business: currentBusiness?.name || (language === 'en' ? 'Your Business' : 'Tu Negocio'),
+    })
+  }
+
   const handleSaveNotifications = async () => {
     if (!currentBusiness) return
     setIsSavingNotifications(true)
@@ -1096,6 +1169,8 @@ function SettingsPageInner() {
         notify_cancellations: notifications.emailCancellations,
         notify_reminders: notifications.emailReminders,
         reminder_hours: notifications.reminderHours,
+        reminder_email_message: notifications.emailTemplate.trim() || null,
+        reminder_whatsapp_message: notifications.whatsappTemplate.trim() || null,
       })
       setNotifSaveStatus('success')
       setTimeout(() => setNotifSaveStatus('idle'), 3000)
@@ -1736,15 +1811,27 @@ function SettingsPageInner() {
 
                     <div className="flex items-center justify-between rounded-lg border p-3">
                       <div>
-                        <Label htmlFor="business-offers-parking" className="cursor-pointer">
+                        <Label htmlFor="business-offers-parking" className="flex cursor-pointer items-center gap-2">
                           {t.settings.offersParkingLabel}
+                          <PremiumBadge requiredPlan="premium" />
                         </Label>
                         <p className="text-xs text-muted-foreground">{t.settings.offersParkingDesc}</p>
                       </div>
                       <Switch
                         id="business-offers-parking"
                         checked={business.offers_parking}
-                        onCheckedChange={(checked) => setBusiness({ ...business, offers_parking: checked })}
+                        onCheckedChange={(checked) => {
+                          // Cochera is Premium-only now (scripts/090-basic-
+                          // tier-rename.sql) - small Basic/Pro businesses are
+                          // unlikely to have a parking lot, and Premium's
+                          // multi-sede scale makes it more likely they do.
+                          if (checked && !meetsPlan(plan, 'premium')) {
+                            setUpgradeModalPlan('premium')
+                            setShowUpgradeModal(true)
+                            return
+                          }
+                          setBusiness({ ...business, offers_parking: checked })
+                        }}
                       />
                     </div>
                   </FormSection>
@@ -2039,6 +2126,109 @@ function SettingsPageInner() {
                       <SelectItem value="48">{t.settings.reminderH48}</SelectItem>
                     </SelectContent>
                   </Select>
+
+                  <div className="space-y-4 pt-2">
+                    <div>
+                      <Label className="text-sm font-medium">{t.settings.reminderMessagesTitle}</Label>
+                      <p className="mt-1 text-xs text-muted-foreground">{t.settings.reminderMessageHint}</p>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="reminder-email-message">{t.settings.reminderEmailMessageLabel}</Label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {REMINDER_PLACEHOLDER_TOKENS.map(({ token, label }) => (
+                          <button
+                            key={token}
+                            type="button"
+                            onClick={() => insertReminderPlaceholder(emailTemplateRef, 'emailTemplate', token)}
+                            className="rounded-full border bg-muted/50 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      <Textarea
+                        id="reminder-email-message"
+                        ref={emailTemplateRef}
+                        rows={3}
+                        value={notifications.emailTemplate}
+                        onChange={(e) => setNotifications({ ...notifications, emailTemplate: e.target.value })}
+                        placeholder={
+                          language === 'en'
+                            ? `This is a reminder about your upcoming booking with ${currentBusiness?.name || 'your business'}.`
+                            : `Este es un recordatorio de tu próxima reserva en ${currentBusiness?.name || 'tu negocio'}.`
+                        }
+                      />
+                      {findUnknownPlaceholders(notifications.emailTemplate).length > 0 && (
+                        <p className="text-xs text-amber-600 dark:text-amber-500">
+                          {t.settings.reminderUnknownPlaceholderWarning.replace(
+                            '{tokens}',
+                            findUnknownPlaceholders(notifications.emailTemplate).join(', ')
+                          )}
+                        </p>
+                      )}
+                      {notifications.emailTemplate.trim() && (
+                        <p className="text-xs text-muted-foreground">
+                          {t.settings.reminderMessagePreview}: <span className="italic">{reminderPreview(notifications.emailTemplate)}</span>
+                        </p>
+                      )}
+                      {notifications.emailTemplate.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => setNotifications({ ...notifications, emailTemplate: '' })}
+                          className="text-xs font-medium text-primary hover:underline"
+                        >
+                          {t.settings.reminderMessageResetBtn}
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="reminder-whatsapp-message">{t.settings.reminderWhatsappMessageLabel}</Label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {REMINDER_PLACEHOLDER_TOKENS.map(({ token, label }) => (
+                          <button
+                            key={token}
+                            type="button"
+                            onClick={() => insertReminderPlaceholder(whatsappTemplateRef, 'whatsappTemplate', token)}
+                            className="rounded-full border bg-muted/50 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      <Textarea
+                        id="reminder-whatsapp-message"
+                        ref={whatsappTemplateRef}
+                        rows={3}
+                        value={notifications.whatsappTemplate}
+                        onChange={(e) => setNotifications({ ...notifications, whatsappTemplate: e.target.value })}
+                        placeholder={t.reservation.whatsappReminderMessage}
+                      />
+                      {findUnknownPlaceholders(notifications.whatsappTemplate).length > 0 && (
+                        <p className="text-xs text-amber-600 dark:text-amber-500">
+                          {t.settings.reminderUnknownPlaceholderWarning.replace(
+                            '{tokens}',
+                            findUnknownPlaceholders(notifications.whatsappTemplate).join(', ')
+                          )}
+                        </p>
+                      )}
+                      {notifications.whatsappTemplate.trim() && (
+                        <p className="text-xs text-muted-foreground">
+                          {t.settings.reminderMessagePreview}: <span className="italic">{reminderPreview(notifications.whatsappTemplate)}</span>
+                        </p>
+                      )}
+                      {notifications.whatsappTemplate.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => setNotifications({ ...notifications, whatsappTemplate: '' })}
+                          className="text-xs font-medium text-primary hover:underline"
+                        >
+                          {t.settings.reminderMessageResetBtn}
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -2175,7 +2365,7 @@ function SettingsPageInner() {
               below (locked, no price action) instead of seeing nothing at
               all - otherwise a Free user never learns this exists until
               after upgrading. */}
-          {plan !== 'free' && (
+          {meetsPlan(plan, 'pro') && (
             <Card className="border-primary/20 bg-gradient-to-r from-primary/5 to-transparent">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -2236,7 +2426,7 @@ function SettingsPageInner() {
             </Card>
           )}
 
-          {plan === 'free' && (
+          {!meetsPlan(plan, 'pro') && (
             <Card className="border-primary/20 bg-gradient-to-r from-primary/5 to-transparent">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -2290,14 +2480,18 @@ function SettingsPageInner() {
                         ? t.settings.premiumPlanName
                         : plan === 'pro'
                           ? t.settings.proPlanName
-                          : t.settings.freePlanName}
+                          : plan === 'basic'
+                            ? t.settings.basicPlanName
+                            : t.settings.freePlanName}
                     </p>
                     <p className="text-sm text-muted-foreground">
                       {plan === 'premium'
                         ? t.settings.premiumFeatures
                         : plan === 'pro'
                           ? t.settings.proFeatures
-                          : t.settings.freeFeatures}
+                          : plan === 'basic'
+                            ? t.settings.basicFeatures
+                            : t.settings.freeFeatures}
                     </p>
                   </div>
                 </div>
@@ -2338,6 +2532,34 @@ function SettingsPageInner() {
                         {t.settings.upgradeToPremiumBtn}
                       </Button>
                     )}
+                    {plan === 'basic' && (
+                      <>
+                        {/* Basic->Pro/Premium both go through the SAME
+                            change-plan flow as Pro->Premium above (Basic
+                            already has a real Stripe subscription, unlike
+                            a brand-new signup) - never the UpgradeModal's
+                            /api/stripe/subscribe, which explicitly rejects
+                            an account that's already subscribed. */}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full sm:w-auto"
+                          disabled={isChangingPlan}
+                          onClick={() => setPendingPlanChange('pro')}
+                        >
+                          {t.settings.upgradeToProBtn}
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="w-full gap-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 sm:w-auto"
+                          disabled={isChangingPlan}
+                          onClick={() => setPendingPlanChange('premium')}
+                        >
+                          <Crown className="h-3.5 w-3.5" />
+                          {t.settings.upgradeToPremiumBtn}
+                        </Button>
+                      </>
+                    )}
                   </div>
                 ) : (
                   <Button
@@ -2371,7 +2593,7 @@ function SettingsPageInner() {
                 </p>
               )}
 
-              {plan === 'free' && planUsage && (
+              {plan === 'basic' && planUsage && (
                 <>
                   <Separator />
                   <div className="space-y-4">
@@ -2381,10 +2603,24 @@ function SettingsPageInner() {
                     </div>
                     {(
                       [
-                        ['reservations_this_month', t.upgradeModal.reservationsPerMonthLabel, FREE_LIMITS.reservationsPerMonth],
-                        ['clients', t.upgradeModal.clientsLabel, FREE_LIMITS.clients],
-                        ['services', t.upgradeModal.servicesLabel, FREE_LIMITS.services],
-                        ['resources', t.upgradeModal.resourcesLabel, FREE_LIMITS.resources],
+                        ['clients', t.upgradeModal.clientsLabel],
+                        ['services', t.upgradeModal.servicesLabel],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <div key={key} className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">{label}</span>
+                        <span className="flex items-center gap-2">
+                          <span className="font-medium">{planUsage[key]}</span>
+                          <Badge variant="secondary" className="text-emerald-600 dark:text-emerald-400">
+                            {t.settings.unlimitedLabel}
+                          </Badge>
+                        </span>
+                      </div>
+                    ))}
+                    {(
+                      [
+                        ['reservations_this_month', t.upgradeModal.reservationsPerMonthLabel, BASIC_LIMITS.reservationsPerMonth],
+                        ['resources', t.upgradeModal.resourcesLabel, BASIC_LIMITS.resources],
                       ] as const
                     ).map(([key, label, limit]) => {
                       const used = planUsage[key]
@@ -2414,7 +2650,6 @@ function SettingsPageInner() {
                     </div>
                     {(
                       [
-                        ['reservations_this_month', t.upgradeModal.reservationsPerMonthLabel],
                         ['clients', t.upgradeModal.clientsLabel],
                         ['services', t.upgradeModal.servicesLabel],
                       ] as const
@@ -2431,6 +2666,7 @@ function SettingsPageInner() {
                     ))}
                     {(
                       [
+                        ['reservations_this_month', t.upgradeModal.reservationsPerMonthLabel, PRO_LIMITS.reservationsPerMonth],
                         ['resources', t.upgradeModal.resourcesLabel, PRO_LIMITS.resources],
                       ] as const
                     ).map(([key, label, limit]) => {

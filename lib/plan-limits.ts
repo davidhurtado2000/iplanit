@@ -1,19 +1,35 @@
 import { createClient } from '@/lib/supabase/client'
 
 // Kept in sync by hand with the thresholds hardcoded in
-// scripts/052-three-tier-plans.sql (Postgres can't import this constant) -
+// scripts/090-basic-tier-rename.sql (Postgres can't import this constant) -
 // change both together if these numbers ever move.
-export const FREE_LIMITS = {
-  reservationsPerMonth: 50,
-  clients: 20,
-  services: 3,
-  resources: 2,
+//
+// 'free' is no longer a sellable tier (see scripts/090) - it now means
+// "frozen: no active paid subscription" (lapsed/cancelled, or a brand-new
+// signup that hasn't picked a plan yet, until Phase 4's registration flow
+// ships). A frozen account can see its existing data but create nothing
+// new - every kind capped at 0, distinct from Basic's real limits below.
+export const FROZEN_LIMITS = {
+  reservationsPerMonth: 0,
+  clients: 0,
+  services: 0,
+  resources: 0,
 }
 
-// Pro has no cap on reservations/clients/services (see limitFor below) -
-// only resources and team seats stay capped, higher than Free.
-export const PRO_LIMITS = {
+// Basic is the new floor paid tier ($15/mo) - clients/services are
+// deliberately NOT capped here (David's call, inspired by Fresha: gate on
+// resources, not on catalog size) - only reservations and resources cap.
+export const BASIC_LIMITS = {
+  reservationsPerMonth: 100,
   resources: 5,
+}
+
+// Pro has its own real reservation cap now too (not unlimited like the old
+// 2-tier system) - only Premium is truly unlimited. Clients/services stay
+// uncapped on Pro (see limitFor below).
+export const PRO_LIMITS = {
+  reservationsPerMonth: 500,
+  resources: 10,
   teamSeats: 2,
 }
 
@@ -27,7 +43,7 @@ export const PREMIUM_LIMITS = {
   extraSeatPriceUsd: 10,
 }
 
-export type PlanTier = 'free' | 'pro' | 'premium'
+export type PlanTier = 'free' | 'basic' | 'pro' | 'premium'
 export type PlanUsageKind = 'reservations_this_month' | 'clients' | 'services' | 'resources'
 
 interface PlanUsage {
@@ -39,28 +55,32 @@ interface PlanUsage {
   team_seats: number
 }
 
-const TIER_RANK: Record<PlanTier, number> = { free: 0, pro: 1, premium: 2 }
+// 'free' ranks below every real tier (including Basic) - a frozen account
+// must never pass a meetsPlan() check the way an actual low tier would.
+const TIER_RANK: Record<PlanTier, number> = { free: -1, basic: 0, pro: 1, premium: 2 }
 
 // Rank comparison instead of an equality check, so "requires Pro" also
 // passes for Premium accounts without needing a separate branch anywhere
 // that gates a feature.
 export function meetsPlan(plan: string | null | undefined, required: 'pro' | 'premium'): boolean {
-  const rank = TIER_RANK[(plan as PlanTier) ?? 'free'] ?? 0
+  const rank = TIER_RANK[(plan as PlanTier) ?? 'free'] ?? -1
   return rank >= TIER_RANK[required]
 }
 
 function limitFor(plan: PlanTier, kind: PlanUsageKind): number | null {
-  if (kind === 'reservations_this_month') return plan === 'free' ? FREE_LIMITS.reservationsPerMonth : null
-  if (kind === 'clients') return plan === 'free' ? FREE_LIMITS.clients : null
-  if (kind === 'services') return plan === 'free' ? FREE_LIMITS.services : null
+  // Frozen - blocked from creating anything new, regardless of kind.
+  if (plan === 'free') return 0
   if (plan === 'premium') return null
-  return plan === 'pro' ? PRO_LIMITS[kind] : FREE_LIMITS[kind]
+  // Clients/services are unlimited on every real (non-frozen) tier now.
+  if (kind === 'clients' || kind === 'services') return null
+  if (kind === 'reservations_this_month') return plan === 'pro' ? PRO_LIMITS.reservationsPerMonth : BASIC_LIMITS.reservationsPerMonth
+  return plan === 'pro' ? PRO_LIMITS.resources : BASIC_LIMITS.resources
 }
 
 /**
  * Fresh, on-demand check (not cached) so it's always accurate right before
  * opening a "create" form - the actual guarantee against going over the
- * limit is the database trigger (see scripts/052-three-tier-plans.sql),
+ * limit is the database trigger (see scripts/090-basic-tier-rename.sql),
  * this is only the proactive UX nicety that shows the Upgrade modal before
  * the user bothers filling out a form that would just get rejected.
  *

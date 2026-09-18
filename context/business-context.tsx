@@ -47,6 +47,16 @@ interface Business {
   notify_cancellations: boolean
   notify_reminders: boolean
   reminder_hours: number
+  /** Free-text override for the human message line in the reminder email
+   * and the manual WhatsApp reminder button - see
+   * scripts/089-reminder-message-templates.sql. Null means "use the
+   * built-in default wording" (same convention as worker_label_* above).
+   * Supports {client}/{service}/{date}/{time}/{business} tokens, applied
+   * via lib/reminder-template.ts. One field each, not a per-language pair -
+   * a business only ever sends in the one language its own country
+   * already implies. */
+  reminder_email_message: string | null
+  reminder_whatsapp_message: string | null
   /** Client birthday emails - see scripts/071-client-birthdays.sql. The
    * discount is informational only (mentioned in the email, applied
    * manually by the business) - nothing here touches pricing/checkout. */
@@ -65,7 +75,7 @@ interface Business {
 }
 
 interface AiAddonStatus {
-  plan: 'free' | 'pro' | 'premium'
+  plan: 'free' | 'basic' | 'pro' | 'premium'
   ai_addon_active: boolean | null
   ai_addon_override: boolean | null
   ai_addon_access_until: string | null

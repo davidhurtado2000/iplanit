@@ -6,7 +6,7 @@ import { AlertTriangle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
-import { FREE_LIMITS, PRO_LIMITS, PREMIUM_LIMITS, type PlanTier } from '@/lib/plan-limits'
+import { FROZEN_LIMITS, BASIC_LIMITS, PRO_LIMITS, PREMIUM_LIMITS, type PlanTier } from '@/lib/plan-limits'
 import { Button } from '@/components/ui/button'
 import { UpgradeModal } from '@/components/upgrade-modal'
 
@@ -98,19 +98,32 @@ export function PlanUsageBanner() {
   const sedeCount = businesses.filter((b) => b.organization_id === currentBusiness.organization_id).length
 
   if (usage.plan === 'free') {
-    if (usage.reservations_this_month > FREE_LIMITS.reservationsPerMonth) {
-      items.push({ label: labels.reservations, used: usage.reservations_this_month, limit: FREE_LIMITS.reservationsPerMonth })
+    // Frozen: no active subscription - every dimension is capped at 0, so
+    // any existing data at all shows up as "over limit" here, reinforcing
+    // that a plan needs to be picked before anything new can be created.
+    if (usage.reservations_this_month > FROZEN_LIMITS.reservationsPerMonth) {
+      items.push({ label: labels.reservations, used: usage.reservations_this_month, limit: FROZEN_LIMITS.reservationsPerMonth })
     }
-    if (usage.clients > FREE_LIMITS.clients) {
-      items.push({ label: labels.clients, used: usage.clients, limit: FREE_LIMITS.clients })
+    if (usage.clients > FROZEN_LIMITS.clients) {
+      items.push({ label: labels.clients, used: usage.clients, limit: FROZEN_LIMITS.clients })
     }
-    if (usage.services > FREE_LIMITS.services) {
-      items.push({ label: labels.services, used: usage.services, limit: FREE_LIMITS.services })
+    if (usage.services > FROZEN_LIMITS.services) {
+      items.push({ label: labels.services, used: usage.services, limit: FROZEN_LIMITS.services })
     }
-    if (usage.resources > FREE_LIMITS.resources) {
-      items.push({ label: labels.resources, used: usage.resources, limit: FREE_LIMITS.resources })
+    if (usage.resources > FROZEN_LIMITS.resources) {
+      items.push({ label: labels.resources, used: usage.resources, limit: FROZEN_LIMITS.resources })
+    }
+  } else if (usage.plan === 'basic') {
+    if (usage.reservations_this_month > BASIC_LIMITS.reservationsPerMonth) {
+      items.push({ label: labels.reservations, used: usage.reservations_this_month, limit: BASIC_LIMITS.reservationsPerMonth })
+    }
+    if (usage.resources > BASIC_LIMITS.resources) {
+      items.push({ label: labels.resources, used: usage.resources, limit: BASIC_LIMITS.resources })
     }
   } else if (usage.plan === 'pro') {
+    if (usage.reservations_this_month > PRO_LIMITS.reservationsPerMonth) {
+      items.push({ label: labels.reservations, used: usage.reservations_this_month, limit: PRO_LIMITS.reservationsPerMonth })
+    }
     if (usage.resources > PRO_LIMITS.resources) {
       items.push({ label: labels.resources, used: usage.resources, limit: PRO_LIMITS.resources })
     }

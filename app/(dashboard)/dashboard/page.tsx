@@ -260,7 +260,7 @@ export default function DashboardPage() {
     )
   }
 
-  const plan = (profile?.plan ?? 'free') as 'free' | 'pro' | 'premium'
+  const plan = (profile?.plan ?? 'free') as 'free' | 'basic' | 'pro' | 'premium'
   const isPremium = plan === 'premium'
   const isProOrPremium = plan === 'pro' || plan === 'premium'
   const aiAddonActive = isAiAddonActive(aiAddonStatus)
@@ -327,9 +327,10 @@ export default function DashboardPage() {
         </Card>
       )}
 
-      {/* Free Plan Usage Banner - hidden for Pro and Premium, both already
-          paying, neither needs the "upgrade" nag. */}
-      {plan === 'free' && (
+      {/* Upgrade nudge - shown for the frozen (no active subscription) and
+          Basic tiers alike, hidden for Pro/Premium since both already pay
+          for something above the floor and don't need the nag. */}
+      {!isProOrPremium && (
         <Card className="border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 dark:border-amber-900 dark:from-amber-950/40 dark:to-orange-950/30">
           <CardContent className="py-4">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -338,7 +339,9 @@ export default function DashboardPage() {
                   <Crown className="h-5 w-5 text-amber-600 dark:text-amber-400" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-amber-900 dark:text-amber-200">{t.dashboard.freePlan}</p>
+                  <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                    {plan === 'basic' ? t.settings.basicPlanName : t.settings.freePlanName}
+                  </p>
                   <p className="text-xs text-amber-700 dark:text-amber-300">
                     {todayReservations.length} {t.dashboard.reservationsWord}
                   </p>
@@ -499,11 +502,23 @@ export default function DashboardPage() {
               <p className="text-xs font-medium text-muted-foreground">{t.dashboard.planCard}</p>
               <div className="mt-1 flex items-center gap-2">
                 <Badge variant={plan === 'free' ? 'secondary' : 'default'}>
-                  {plan === 'premium' ? t.dashboard.premium : plan === 'pro' ? t.dashboard.pro : t.dashboard.free}
+                  {plan === 'premium'
+                    ? t.dashboard.premium
+                    : plan === 'pro'
+                      ? t.dashboard.pro
+                      : plan === 'basic'
+                        ? t.settings.basicPlanName
+                        : t.dashboard.free}
                 </Badge>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                {plan === 'premium' ? t.dashboard.allFeatures : plan === 'pro' ? t.dashboard.proAccess : t.dashboard.basicAccess}
+                {plan === 'premium'
+                  ? t.dashboard.allFeatures
+                  : plan === 'pro'
+                    ? t.dashboard.proAccess
+                    : plan === 'basic'
+                      ? t.settings.basicFeatures
+                      : t.settings.freeFeatures}
               </p>
             </div>
             <div className="p-4">

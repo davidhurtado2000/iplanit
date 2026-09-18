@@ -28,6 +28,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { getWhatsappLink } from '@/lib/whatsapp'
+import { applyReminderPlaceholders, formatReminderDate, formatReminderTime } from '@/lib/reminder-template'
 import {
   Select,
   SelectContent,
@@ -299,19 +300,26 @@ export function ReservationModal({
   // 'free' (their own separate signup), which would otherwise wrongly hide
   // every Pro/Premium feature in this modal for staff on a paid business.
   const hasPaidPlan = meetsPlan(aiAddonStatus?.plan ?? profile?.plan, 'pro')
+  // Only Premium is truly unlimited on reservations now (scripts/090-
+  // basic-tier-rename.sql) - Pro has its own real 500/mo cap, so it can no
+  // longer skip the proactive limit check the way hasPaidPlan used to let
+  // it (that shortcut assumed Pro was unlimited too, back when it was).
+  const isUnlimitedReservations = (aiAddonStatus?.plan ?? profile?.plan) === 'premium'
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
 
   // Checked fresh right when a "create" open is requested, rather than on
-  // every render - the database trigger (scripts/052-three-tier-plans.sql)
+  // every render - the database trigger (scripts/090-basic-tier-rename.sql)
   // is the actual guarantee, this is only the proactive nicety that avoids
   // making someone fill out the whole form just to hit a rejection at the
   // end. Closes the (still-empty) create dialog and shows the Upgrade modal
-  // in its place instead of leaving a dead form open. The hasPaidPlan guard
-  // here is just a perf shortcut to skip the RPC round-trip when already
-  // paid - isPlanLimitReached is tier-aware on its own and would return
-  // false anyway.
+  // in its place instead of leaving a dead form open. The isUnlimitedReservations
+  // guard here is just a perf shortcut to skip the RPC round-trip when
+  // already unlimited (Premium only) - isPlanLimitReached is tier-aware on
+  // its own and would return false anyway, but Basic/Pro both have a real
+  // cap now, so neither can skip this check the way hasPaidPlan (Pro or
+  // above) used to let Pro do.
   useEffect(() => {
-    if (!isOpen || mode !== 'create' || hasPaidPlan || !currentBusiness) return
+    if (!isOpen || mode !== 'create' || isUnlimitedReservations || !currentBusiness) return
     let cancelled = false
     isPlanLimitReached(currentBusiness.id, 'reservations_this_month').then((reached) => {
       if (!cancelled && reached) {
@@ -323,7 +331,7 @@ export function ReservationModal({
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, mode, hasPaidPlan, currentBusiness?.id])
+  }, [isOpen, mode, isUnlimitedReservations, currentBusiness?.id])
 
   // "Última visita" card, Pro+ only (see the plan gate below where it
   // renders) - a lightweight, dedicated single-row lookup rather than
@@ -1480,33 +1488,24 @@ export function ReservationModal({
   // already typed in, staff still has to hit send themselves. Message
   // language matches clientEmailLanguage (the client's likely language by
   // business country), not the staff member's own dashboard language.
+  // Uses the business's own custom template (Settings > Notificaciones,
+  // scripts/089-reminder-message-templates.sql) when set, falling back to
+  // the built-in default otherwise.
   const whatsappReminderHref =
     reservation && viewClient?.phone
       ? getWhatsappLink(
           viewClient.phone,
-          (viewService ? t.reservation.whatsappReminderMessage : t.reservation.whatsappReminderMessageNoService)
-            .replace('{client}', viewClient.name)
-            .replace('{service}', viewService?.name ?? '')
-            .replace(
-              '{date}',
-              capitalizeFirst(
-                new Date(reservation.start_time).toLocaleDateString(clientEmailLanguage === 'en' ? 'en-US' : 'es-PE', {
-                  timeZone: tz,
-                  weekday: 'long',
-                  day: 'numeric',
-                  month: 'long',
-                })
-              )
-            )
-            .replace(
-              '{time}',
-              new Date(reservation.start_time).toLocaleTimeString(clientEmailLanguage === 'en' ? 'en-US' : 'es-PE', {
-                timeZone: tz,
-                hour: '2-digit',
-                minute: '2-digit',
-              })
-            )
-            .replace('{business}', currentBusiness?.name ?? '')
+          applyReminderPlaceholders(
+            currentBusiness?.reminder_whatsapp_message ||
+              (viewService ? t.reservation.whatsappReminderMessage : t.reservation.whatsappReminderMessageNoService),
+            {
+              client: viewClient.name,
+              service: viewService?.name ?? '',
+              date: formatReminderDate(reservation.start_time, tz, clientEmailLanguage),
+              time: formatReminderTime(reservation.start_time, tz, clientEmailLanguage),
+              business: currentBusiness?.name ?? '',
+            }
+          )
         )
       : null
 
