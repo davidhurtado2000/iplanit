@@ -88,6 +88,7 @@ export async function POST(request: Request) {
       await setPlanByUserId(userId, tier, {
         stripe_customer_id: customerId,
         stripe_subscription_id: subscriptionId,
+        requires_plan_selection: false,
       })
       break
     }
@@ -137,6 +138,7 @@ export async function POST(request: Request) {
         stripe_subscription_id: subscription.id,
         ai_addon_active: addonActive,
         extra_seats_purchased: extraSeats,
+        requires_plan_selection: false,
       })
       break
     }

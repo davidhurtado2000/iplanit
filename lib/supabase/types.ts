@@ -188,6 +188,7 @@ export interface Database {
           ai_addon_override: boolean
           ai_addon_access_until: string | null
           extra_seats_purchased: number
+          requires_plan_selection: boolean
           created_at: string
           updated_at: string
         }
@@ -205,6 +206,7 @@ export interface Database {
           ai_addon_override?: boolean
           ai_addon_access_until?: string | null
           extra_seats_purchased?: number
+          requires_plan_selection?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -222,6 +224,7 @@ export interface Database {
           ai_addon_override?: boolean
           ai_addon_access_until?: string | null
           extra_seats_purchased?: number
+          requires_plan_selection?: boolean
           created_at?: string
           updated_at?: string
         }

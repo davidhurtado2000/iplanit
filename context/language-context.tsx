@@ -242,6 +242,10 @@ const TRANSLATIONS = {
     errorDescription: 'Ocurrió un error inesperado. Podés intentar de nuevo, o recargar la página si el problema sigue.',
     errorRetry: 'Reintentar',
     errorReload: 'Recargar página',
+    onboardingPlan: {
+      title: 'Elige tu plan para empezar',
+      subtitle: 'Todos los planes incluyen 30 días de prueba gratis - elige el que mejor se adapte a tu negocio.',
+    },
     upgradeModal: {
       title: 'Elige tu plan',
       descFeaturePremium: 'La funcion "{feature}" esta disponible en el plan Premium.',
@@ -1796,6 +1800,10 @@ const TRANSLATIONS = {
     errorDescription: "An unexpected error occurred. You can try again, or reload the page if it keeps happening.",
     errorRetry: 'Try again',
     errorReload: 'Reload page',
+    onboardingPlan: {
+      title: 'Choose your plan to get started',
+      subtitle: 'Every plan includes a 30-day free trial - pick whichever fits your business best.',
+    },
     upgradeModal: {
       title: 'Choose your plan',
       descFeaturePremium: 'The "{feature}" feature is available on the Premium plan.',

@@ -15,6 +15,12 @@ export interface Profile {
   ai_addon_override: boolean
   ai_addon_access_until: string | null
   created_at: string
+  /** Gates the /onboarding/plan redirect in app/(dashboard)/layout.tsx -
+   * see scripts/092-plan-onboarding-gate.sql. True only for accounts
+   * created after Phase 4 shipped; every pre-existing account was
+   * explicitly backfilled to false so this never touches an existing
+   * customer until Phase 5 decides to flip it deliberately. */
+  requires_plan_selection: boolean
 }
 
 type AuthContextType = {
@@ -58,6 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           ai_addon_override: false,
           ai_addon_access_until: null,
           created_at: new Date().toISOString(),
+          requires_plan_selection: true,
         })
       }
     } catch {

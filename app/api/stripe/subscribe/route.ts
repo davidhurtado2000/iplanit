@@ -112,7 +112,7 @@ export async function POST(request: Request) {
       // access synchronously instead of waiting on the webhook.
       await serviceSupabase
         .from('profiles')
-        .update({ plan: tier, stripe_subscription_id: subscription.id })
+        .update({ plan: tier, stripe_subscription_id: subscription.id, requires_plan_selection: false })
         .eq('id', user.id)
       return NextResponse.json({ success: true })
     }
