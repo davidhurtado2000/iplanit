@@ -16,7 +16,7 @@ interface PremiumFeatureProps {
   children: React.ReactNode
   featureName: string
   className?: string
-  requiredPlan?: 'pro' | 'premium'
+  requiredPlan?: 'basic' | 'pro' | 'premium'
 }
 
 export function PremiumFeature({ children, featureName, className, requiredPlan = 'premium' }: PremiumFeatureProps) {
@@ -57,7 +57,7 @@ export function PremiumFeature({ children, featureName, className, requiredPlan 
         </div>
         <div>
           <p className="font-medium text-foreground">
-            {requiredPlan === 'pro' ? t.proFeatureTitle : t.premiumFeatureTitle}
+            {requiredPlan === 'premium' ? t.premiumFeatureTitle : requiredPlan === 'pro' ? t.proFeatureTitle : t.basicFeatureTitle}
           </p>
           <p className="text-sm text-muted-foreground">{featureName}</p>
         </div>
@@ -87,7 +87,7 @@ interface PremiumButtonProps {
   className?: string
   variant?: 'default' | 'outline' | 'ghost' | 'secondary'
   size?: 'default' | 'sm' | 'lg' | 'icon'
-  requiredPlan?: 'pro' | 'premium'
+  requiredPlan?: 'basic' | 'pro' | 'premium'
 }
 
 export function PremiumButton({
@@ -141,7 +141,7 @@ export function PremiumButton({
 // Badge component for premium/pro-only indicators
 interface PremiumBadgeProps {
   className?: string
-  requiredPlan?: 'pro' | 'premium'
+  requiredPlan?: 'basic' | 'pro' | 'premium'
 }
 
 export function PremiumBadge({ className, requiredPlan = 'premium' }: PremiumBadgeProps) {

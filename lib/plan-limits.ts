@@ -61,8 +61,11 @@ const TIER_RANK: Record<PlanTier, number> = { free: -1, basic: 0, pro: 1, premiu
 
 // Rank comparison instead of an equality check, so "requires Pro" also
 // passes for Premium accounts without needing a separate branch anywhere
-// that gates a feature.
-export function meetsPlan(plan: string | null | undefined, required: 'pro' | 'premium'): boolean {
+// that gates a feature. 'basic' is a valid `required` value too (the
+// floor real paid tier - excludes only a frozen/no-subscription account),
+// not just 'pro'/'premium' - see the Analytics page's 3-tier report gating
+// for where this matters (scripts/090-basic-tier-rename.sql).
+export function meetsPlan(plan: string | null | undefined, required: 'basic' | 'pro' | 'premium'): boolean {
   const rank = TIER_RANK[(plan as PlanTier) ?? 'free'] ?? -1
   return rank >= TIER_RANK[required]
 }

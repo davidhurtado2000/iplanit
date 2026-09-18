@@ -42,6 +42,7 @@ import { useBusinesses } from '@/hooks/use-businesses'
 import { useAuth } from '@/hooks/use-auth'
 import { getWorkerLabel } from '@/lib/worker-label'
 import { isAiAddonActive } from '@/lib/ai-usage-client'
+import { meetsPlan } from '@/lib/plan-limits'
 import {
   useDashboardData,
   type Reservation,
@@ -226,10 +227,20 @@ function DemandHeatmap({
 // dashboard/settings for the same reason.
 function AnalyticsPageInner() {
   const searchParams = useSearchParams()
-  const initialTab = searchParams.get('tab') === 'ai-chat' ? 'ai-chat' : 'overview'
   const { currentBusiness, businesses, loading: businessLoading, aiAddonStatus } = useBusinesses()
   const { profile } = useAuth()
   const aiAddonActive = isAiAddonActive(aiAddonStatus)
+  // Resolved through the business owner (aiAddonStatus.plan), not the
+  // caller's own profile - a staff member's own profile.plan is typically
+  // 'free' (their own separate signup), which would otherwise hide every
+  // Pro/Premium report for staff on a paid business. Drives the 3-tier
+  // report gating below (scripts/090-basic-tier-rename.sql).
+  const plan = aiAddonStatus?.plan ?? profile?.plan
+  // Basic never sees the "overview"/"demand" tabs (see TabsList below), so
+  // its default landing tab can't be 'overview' the way every other tier's
+  // is - Tabs would render with no trigger visually marked active.
+  const initialTab =
+    searchParams.get('tab') === 'ai-chat' ? 'ai-chat' : meetsPlan(plan, 'pro') ? 'overview' : 'services'
   const {
     reservations: businessReservations,
     clients: businessClients,
@@ -693,7 +704,10 @@ function AnalyticsPageInner() {
               <SelectItem value="90d">{tr.range90d}</SelectItem>
               <SelectItem value="ytd">{tr.rangeYtd}</SelectItem>
               <SelectItem value="all">{tr.rangeAll}</SelectItem>
-              <SelectItem value="custom">{tr.rangeCustom}</SelectItem>
+              {/* Custom date range is Pro+ (scripts/090-basic-tier-
+                  rename.sql) - Basic only ever sees the fixed presets
+                  above. */}
+              {meetsPlan(plan, 'pro') && <SelectItem value="custom">{tr.rangeCustom}</SelectItem>}
             </SelectContent>
           </Select>
           {range === 'custom' && (
@@ -738,16 +752,24 @@ function AnalyticsPageInner() {
         }
       />
 
-      <PremiumFeature featureName={tr.premiumTitle} requiredPlan="pro">
+      {/* Basic is the floor real paid tier (excludes only a frozen/no-
+          subscription account) - "overview"/"demand" and the "team" tab
+          are further gated per-tab below, inside this outer boundary. */}
+      <PremiumFeature featureName={tr.premiumTitle} requiredPlan="basic">
         <Tabs defaultValue={initialTab} className="space-y-4">
           <TabsList className="flex-wrap">
-            <TabsTrigger value="overview">{tr.tabOverview}</TabsTrigger>
-            <TabsTrigger value="demand">{tr.tabDemand}</TabsTrigger>
+            {meetsPlan(plan, 'pro') && (
+              <>
+                <TabsTrigger value="overview">{tr.tabOverview}</TabsTrigger>
+                <TabsTrigger value="demand">{tr.tabDemand}</TabsTrigger>
+              </>
+            )}
             <TabsTrigger value="services">{tr.tabServices}</TabsTrigger>
             <TabsTrigger value="clients">{tr.tabClients}</TabsTrigger>
-            {(filterableResources.length > 0 || filterableWorkers.length > 0 || sellerBreakdown.length > 0) && (
-              <TabsTrigger value="team">{tr.tabTeam}</TabsTrigger>
-            )}
+            {meetsPlan(plan, 'premium') &&
+              (filterableResources.length > 0 || filterableWorkers.length > 0 || sellerBreakdown.length > 0) && (
+                <TabsTrigger value="team">{tr.tabTeam}</TabsTrigger>
+              )}
             {hasMultipleSedes && <TabsTrigger value="compare">{tr.tabCompareSedes}</TabsTrigger>}
             <TabsTrigger value="ai-chat" className="gap-1.5">
               <Sparkles className="h-3.5 w-3.5" />
@@ -1035,128 +1057,142 @@ function AnalyticsPageInner() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <PieChart className="h-4 w-4 text-muted-foreground" />
-                  {tr.revenueSegmentTitle}
-                </CardTitle>
-                <CardDescription>{tr.revenueSegmentDesc}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {totalRevenue === 0 ? (
-                  <p className="py-10 text-center text-sm text-muted-foreground">{tr.noData}</p>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="flex h-3 overflow-hidden rounded-full bg-muted">
-                      <div
-                        style={{ width: `${revenueBySegment.returningSharePct}%`, backgroundColor: 'var(--chart-4)' }}
-                      />
-                      <div style={{ width: `${revenueBySegment.newSharePct}%`, backgroundColor: 'var(--chart-2)' }} />
-                    </div>
-                    <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-                      <div className="flex items-center gap-2">
-                        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: 'var(--chart-4)' }} />
-                        <span className="text-muted-foreground">{tr.revenueSegmentReturning}</span>
-                        <span className="font-medium">
-                          {currencySymbol} {revenueBySegment.returningRevenue.toFixed(0)} ({revenueBySegment.returningSharePct}%)
-                        </span>
+            {/* Revenue by segment (new vs. returning) is Pro+ - part of
+                the "more sophisticated dashboard" step up from Basic's 3
+                fixed reports. */}
+            {meetsPlan(plan, 'pro') && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <PieChart className="h-4 w-4 text-muted-foreground" />
+                    {tr.revenueSegmentTitle}
+                  </CardTitle>
+                  <CardDescription>{tr.revenueSegmentDesc}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {totalRevenue === 0 ? (
+                    <p className="py-10 text-center text-sm text-muted-foreground">{tr.noData}</p>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex h-3 overflow-hidden rounded-full bg-muted">
+                        <div
+                          style={{ width: `${revenueBySegment.returningSharePct}%`, backgroundColor: 'var(--chart-4)' }}
+                        />
+                        <div style={{ width: `${revenueBySegment.newSharePct}%`, backgroundColor: 'var(--chart-2)' }} />
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: 'var(--chart-2)' }} />
-                        <span className="text-muted-foreground">{tr.revenueSegmentNew}</span>
-                        <span className="font-medium">
-                          {currencySymbol} {revenueBySegment.newRevenue.toFixed(0)} ({revenueBySegment.newSharePct}%)
-                        </span>
+                      <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+                        <div className="flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: 'var(--chart-4)' }} />
+                          <span className="text-muted-foreground">{tr.revenueSegmentReturning}</span>
+                          <span className="font-medium">
+                            {currencySymbol} {revenueBySegment.returningRevenue.toFixed(0)} ({revenueBySegment.returningSharePct}%)
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: 'var(--chart-2)' }} />
+                          <span className="text-muted-foreground">{tr.revenueSegmentNew}</span>
+                          <span className="font-medium">
+                            {currencySymbol} {revenueBySegment.newRevenue.toFixed(0)} ({revenueBySegment.newSharePct}%)
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <UserX className="h-4 w-4 text-muted-foreground" />
-                  {tr.atRiskClientsTitle}
-                </CardTitle>
-                <CardDescription>{tr.atRiskClientsDesc}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {atRiskClients.length === 0 ? (
-                  <p className="py-10 text-center text-sm text-muted-foreground">{tr.atRiskNoData}</p>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{tr.atRiskColClient}</TableHead>
-                        <TableHead className="text-right">{tr.atRiskColLastVisit}</TableHead>
-                        <TableHead className="text-right">{tr.atRiskColDaysSince}</TableHead>
-                        <TableHead className="text-right">{tr.atRiskColLifetimeRevenue}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {atRiskClients.map((c) => (
-                        <TableRow key={c.clientId}>
-                          <TableCell className="font-medium">{c.name}</TableCell>
-                          <TableCell className="text-right">
-                            {new Date(c.lastVisit).toLocaleDateString(locale, {
-                              timeZone: timezone,
-                              day: 'numeric',
-                              month: 'short',
-                            })}
-                          </TableCell>
-                          <TableCell className="text-right">{c.daysSinceLastVisit}</TableCell>
-                          <TableCell className="text-right">{currencySymbol} {c.lifetimeRevenue.toFixed(0)}</TableCell>
+            {/* At-risk clients + reliability are Premium-only (David's
+                tier spec) - wrapped in PremiumFeature (not a plain
+                conditional) so Basic/Pro see a real upsell instead of the
+                cards just vanishing. */}
+            <PremiumFeature featureName={tr.atRiskClientsTitle} requiredPlan="premium" className="min-h-[160px]">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <UserX className="h-4 w-4 text-muted-foreground" />
+                    {tr.atRiskClientsTitle}
+                  </CardTitle>
+                  <CardDescription>{tr.atRiskClientsDesc}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {atRiskClients.length === 0 ? (
+                    <p className="py-10 text-center text-sm text-muted-foreground">{tr.atRiskNoData}</p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{tr.atRiskColClient}</TableHead>
+                          <TableHead className="text-right">{tr.atRiskColLastVisit}</TableHead>
+                          <TableHead className="text-right">{tr.atRiskColDaysSince}</TableHead>
+                          <TableHead className="text-right">{tr.atRiskColLifetimeRevenue}</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
+                      </TableHeader>
+                      <TableBody>
+                        {atRiskClients.map((c) => (
+                          <TableRow key={c.clientId}>
+                            <TableCell className="font-medium">{c.name}</TableCell>
+                            <TableCell className="text-right">
+                              {new Date(c.lastVisit).toLocaleDateString(locale, {
+                                timeZone: timezone,
+                                day: 'numeric',
+                                month: 'short',
+                              })}
+                            </TableCell>
+                            <TableCell className="text-right">{c.daysSinceLastVisit}</TableCell>
+                            <TableCell className="text-right">{currencySymbol} {c.lifetimeRevenue.toFixed(0)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            </PremiumFeature>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <ShieldAlert className="h-4 w-4 text-muted-foreground" />
-                  {tr.reliabilityTitle}
-                </CardTitle>
-                <CardDescription>{tr.reliabilityDesc}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {clientReliability.length === 0 ? (
-                  <p className="py-10 text-center text-sm text-muted-foreground">{tr.reliabilityNoData}</p>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{tr.reliabilityColClient}</TableHead>
-                        <TableHead className="text-right">{tr.reliabilityColTotal}</TableHead>
-                        <TableHead className="text-right">{tr.reliabilityColNoShow}</TableHead>
-                        <TableHead className="text-right">{tr.reliabilityColCancelled}</TableHead>
-                        <TableHead className="text-right">{tr.reliabilityColRate}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {clientReliability.map((c) => (
-                        <TableRow key={c.clientId}>
-                          <TableCell className="font-medium">{c.name}</TableCell>
-                          <TableCell className="text-right">{c.totalCount}</TableCell>
-                          <TableCell className="text-right">{c.noShowCount}</TableCell>
-                          <TableCell className="text-right">{c.cancelledCount}</TableCell>
-                          <TableCell className="text-right">{c.issueRate}%</TableCell>
+            <PremiumFeature featureName={tr.reliabilityTitle} requiredPlan="premium" className="min-h-[160px]">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <ShieldAlert className="h-4 w-4 text-muted-foreground" />
+                    {tr.reliabilityTitle}
+                  </CardTitle>
+                  <CardDescription>{tr.reliabilityDesc}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {clientReliability.length === 0 ? (
+                    <p className="py-10 text-center text-sm text-muted-foreground">{tr.reliabilityNoData}</p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{tr.reliabilityColClient}</TableHead>
+                          <TableHead className="text-right">{tr.reliabilityColTotal}</TableHead>
+                          <TableHead className="text-right">{tr.reliabilityColNoShow}</TableHead>
+                          <TableHead className="text-right">{tr.reliabilityColCancelled}</TableHead>
+                          <TableHead className="text-right">{tr.reliabilityColRate}</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
+                      </TableHeader>
+                      <TableBody>
+                        {clientReliability.map((c) => (
+                          <TableRow key={c.clientId}>
+                            <TableCell className="font-medium">{c.name}</TableCell>
+                            <TableCell className="text-right">{c.totalCount}</TableCell>
+                            <TableCell className="text-right">{c.noShowCount}</TableCell>
+                            <TableCell className="text-right">{c.cancelledCount}</TableCell>
+                            <TableCell className="text-right">{c.issueRate}%</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            </PremiumFeature>
           </TabsContent>
 
-          {(filterableResources.length > 0 || filterableWorkers.length > 0 || sellerBreakdown.length > 0) && (
+          {meetsPlan(plan, 'premium') &&
+            (filterableResources.length > 0 || filterableWorkers.length > 0 || sellerBreakdown.length > 0) && (
             <TabsContent value="team" className="space-y-6">
               {filterableResources.length > 0 && (
                 <div className="space-y-3">

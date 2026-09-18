@@ -50,12 +50,13 @@ interface UpgradeModalProps {
   isOpen: boolean
   onClose: () => void
   feature?: string
-  // Unset = generic "you hit your Basic-tier limit" framing, all three
-  // cards shown equally. 'premium' = opened from a Premium-only gate (e.g.
-  // Analytics, Cochera) - Basic/Pro both note the feature isn't included
-  // there. 'pro' = opened from a Pro-or-above gate (e.g. Team) - only Basic
-  // notes it's missing.
-  requiredPlan?: 'pro' | 'premium'
+  // Unset or 'basic' = generic "you're frozen/hit a limit" framing, all
+  // three cards shown equally, none flagged as missing the feature (Basic
+  // itself already satisfies a 'basic' requirement). 'premium' = opened
+  // from a Premium-only gate (e.g. some Analytics reports, Cochera) -
+  // Basic/Pro both note the feature isn't included there. 'pro' = opened
+  // from a Pro-or-above gate (e.g. Team) - only Basic notes it's missing.
+  requiredPlan?: 'basic' | 'pro' | 'premium'
 }
 
 // Routed by the business's own country so a US business's WhatsApp reaches
@@ -311,9 +312,9 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan }: Upgrade
                       </div>
                     ))}
                   </div>
-                  {requiredPlan && feature && (
+                  {(requiredPlan === 'pro' || requiredPlan === 'premium') && feature && (
                     <p className="text-xs italic text-muted-foreground">
-                      {m.proFeatureNotIncluded.replace('{feature}', feature)}
+                      {m.basicFeatureNotIncluded.replace('{feature}', feature)}
                     </p>
                   )}
                   <div className="mt-auto border-t pt-4">
