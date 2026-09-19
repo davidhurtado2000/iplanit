@@ -19,20 +19,20 @@ export function Pricing() {
 
   const plans = [
     {
-      name: l.planFreeName,
-      price: 0,
-      desc: l.planFreeDesc,
-      cta: l.planFreeCta,
+      name: l.planBasicName,
+      price: 15,
+      desc: l.planBasicDesc,
+      cta: l.planBasicCta,
       href: '/register',
       highlight: false,
-      // Free's items are plain numeric limits - self-explanatory on their
+      // Basic's items are plain numeric limits - self-explanatory on their
       // own, no separate description line needed the way Pro/Premium's
       // feature list does below.
       features: [
-        { title: l.planFreeFeature1 },
-        { title: l.planFreeFeature2 },
-        { title: l.planFreeFeature3 },
-        { title: l.planFreeFeature4 },
+        { title: l.planBasicFeature1 },
+        { title: l.planBasicFeature2 },
+        { title: l.planBasicFeature3 },
+        { title: l.planBasicFeature4 },
       ] as PlanFeature[],
     },
     {

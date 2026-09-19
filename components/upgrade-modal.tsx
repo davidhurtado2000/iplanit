@@ -57,6 +57,12 @@ interface UpgradeModalProps {
   // Basic/Pro both note the feature isn't included there. 'pro' = opened
   // from a Pro-or-above gate (e.g. Team) - only Basic notes it's missing.
   requiredPlan?: 'basic' | 'pro' | 'premium'
+  // True only for app/onboarding/plan/page.tsx's mandatory, non-dismissible
+  // rendering - swaps the generic "choose the plan that fits" intro line
+  // for one that actually says this step can't be skipped, instead of
+  // reading like an optional upsell nudge the same way it does everywhere
+  // else this modal is used.
+  isOnboarding?: boolean
 }
 
 // Routed by the business's own country so a US business's WhatsApp reaches
@@ -78,7 +84,7 @@ const SALES_EMAIL = 'davidsoftwareservicesllc@gmail.com'
 // this - a real gap found while testing the old hosted-Checkout flow).
 type Step = 'plans' | 'card' | 'confirm' | 'success'
 
-export function UpgradeModal({ isOpen, onClose, feature, requiredPlan }: UpgradeModalProps) {
+export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboarding }: UpgradeModalProps) {
   const { t, language } = useLanguage()
   const router = useRouter()
   const { user, refreshProfile } = useAuth()
@@ -263,7 +269,9 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan }: Upgrade
         ? m.descFeaturePro.replace('{feature}', feature)
         : feature
           ? m.descGenericWithFeature.replace('{feature}', feature)
-          : m.descGeneric
+          : isOnboarding
+            ? m.descOnboarding
+            : m.descGeneric
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>

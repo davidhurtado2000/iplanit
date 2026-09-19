@@ -34,7 +34,7 @@ const JSON_LD = {
         'SaaS platform for managing bookings, appointments, and schedules for service businesses',
       publisher: { '@id': 'https://www.iplanit.io/#organization' },
       offers: [
-        { '@type': 'Offer', name: 'Free', price: '0', priceCurrency: 'USD' },
+        { '@type': 'Offer', name: 'Basic', price: '15', priceCurrency: 'USD' },
         { '@type': 'Offer', name: 'Pro', price: '25', priceCurrency: 'USD' },
         { '@type': 'Offer', name: 'Premium', price: '40', priceCurrency: 'USD' },
       ],
@@ -55,7 +55,7 @@ const JSON_LD = {
           name: 'How much does iPlanit cost?',
           acceptedAnswer: {
             '@type': 'Answer',
-            text: "There's a free plan, plus Pro ($25/month) and Premium ($40/month) plans with more features. No credit card required to start.",
+            text: 'Basic is $15/month, Pro is $25/month, and Premium is $40/month. Every plan includes a 30-day free trial.',
           },
         },
         {
@@ -63,7 +63,7 @@ const JSON_LD = {
           name: 'Do I need a credit card to try it?',
           acceptedAnswer: {
             '@type': 'Answer',
-            text: 'No. You can start on the Free plan without entering any payment details.',
+            text: "Yes. A card is required to start your 30-day free trial, but you won't be charged until the trial ends, and you can cancel anytime before that.",
           },
         },
         {

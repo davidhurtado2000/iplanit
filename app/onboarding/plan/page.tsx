@@ -58,7 +58,7 @@ export default function OnboardingPlanPage() {
         <h1 className="text-xl font-bold text-foreground">{t.onboardingPlan.title}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{t.onboardingPlan.subtitle}</p>
       </div>
-      <UpgradeModal isOpen onClose={() => {}} />
+      <UpgradeModal isOpen onClose={() => {}} isOnboarding />
     </div>
   )
 }
