@@ -356,6 +356,7 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                       <p className="text-xs font-medium text-amber-600 dark:text-amber-400">{m.trialBadge}</p>
                     )}
                   </div>
+                  <p className="border-t pt-3 text-sm font-semibold text-foreground">{m.proIncludesBasicLabel}</p>
                   <div className="space-y-2.5">
                     {PRO_FEATURES.map((f) => (
                       <div key={f.title} className="flex items-start gap-2.5">
