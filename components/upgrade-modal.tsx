@@ -321,9 +321,13 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
             transition={{ duration: reduceMotion ? 0 : 0.6 }}
           >
             <DialogHeader>
-              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-orange-500">
-                <Crown className="h-7 w-7 text-white" />
-              </div>
+              {/* Was a crown-in-amber-gradient circle - inconsistent now
+                  that the cards below use ink black instead of amber as
+                  Premium's color. The iPlanit mark's own circular badge
+                  is already black, so it doubles as ties-the-page-together
+                  branding instead of a generic "upgrade" icon; Crown stays
+                  everywhere else (buttons, badges, locks) unchanged. */}
+              <img src="/favicon-96x96.png" alt="" className="mx-auto mb-4 h-14 w-14 rounded-full" />
               <DialogTitle className="text-center text-xl">{m.title}</DialogTitle>
               <DialogDescription className="text-center">{description}</DialogDescription>
             </DialogHeader>
