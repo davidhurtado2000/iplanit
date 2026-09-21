@@ -2010,8 +2010,6 @@ export function ReservationModal({
                   setClientComboOpen(open)
                   if (!open) {
                     setClientSearch('')
-                    setIsAddingClient(false)
-                    setNewClientError('')
                   }
                 }}
               >
@@ -2038,115 +2036,6 @@ export function ReservationModal({
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                  {isAddingClient ? (
-                    <div className="max-h-[70vh] space-y-3 overflow-y-auto p-4">
-                      <div className="flex items-center gap-2">
-                        <UserPlus className="h-4 w-4 text-primary" />
-                        <p className="text-sm font-semibold">{t.reservation.addNewClientTitle}</p>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <Label htmlFor="new-client-name" className="text-xs">{t.clients.fullName}</Label>
-                        <Input
-                          id="new-client-name"
-                          autoFocus
-                          placeholder={t.clients.namePlaceholder}
-                          value={newClientForm.name}
-                          onChange={(e) => setNewClientForm({ ...newClientForm, name: e.target.value })}
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <div className="space-y-1.5">
-                          <Label htmlFor="new-client-email" className="text-xs">{t.clients.emailLabel}</Label>
-                          <Input
-                            id="new-client-email"
-                            type="email"
-                            placeholder={t.clients.emailPlaceholder}
-                            value={newClientForm.email}
-                            onChange={(e) => setNewClientForm({ ...newClientForm, email: e.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label htmlFor="new-client-phone" className="text-xs">{t.clients.phoneLabel}</Label>
-                          <PhoneInput
-                            id="new-client-phone"
-                            value={newClientForm.phone}
-                            onChange={(phone) => setNewClientForm({ ...newClientForm, phone })}
-                            defaultCountry={currentBusiness?.country === 'US' ? 'US' : 'PE'}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <div className="space-y-1.5">
-                          <Label htmlFor="new-client-doc-type" className="text-xs">{t.clients.documentTypeLabel}</Label>
-                          <Select
-                            value={newClientForm.documentType}
-                            onValueChange={(value: ClientDocumentType) =>
-                              setNewClientForm({ ...newClientForm, documentType: value })
-                            }
-                          >
-                            <SelectTrigger id="new-client-doc-type">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {DOCUMENT_TYPES.map((type) => (
-                                <SelectItem key={type} value={type}>
-                                  {documentTypeLabels[type]}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label htmlFor="new-client-doc-number" className="text-xs">{t.clients.documentNumberLabel}</Label>
-                          <Input
-                            id="new-client-doc-number"
-                            maxLength={30}
-                            value={newClientForm.documentNumber}
-                            onChange={(e) => setNewClientForm({ ...newClientForm, documentNumber: e.target.value })}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <Label htmlFor="new-client-notes" className="text-xs">{t.clients.notesLabel}</Label>
-                        <Textarea
-                          id="new-client-notes"
-                          rows={2}
-                          placeholder={t.clients.notesPlaceholder}
-                          value={newClientForm.notes}
-                          onChange={(e) => setNewClientForm({ ...newClientForm, notes: e.target.value })}
-                        />
-                      </div>
-
-                      {newClientError && <p className="text-xs text-destructive">{newClientError}</p>}
-
-                      <div className="flex justify-end gap-2 border-t pt-3">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setIsAddingClient(false)
-                            setNewClientError('')
-                          }}
-                        >
-                          {t.services.cancelBtn}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={handleCreateInlineClient}
-                          disabled={isSavingNewClient || !newClientForm.name.trim()}
-                        >
-                          {isSavingNewClient && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
-                          {t.reservation.addNewClientSave}
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
                     <Command shouldFilter={false}>
                       <CommandInput
                         placeholder={t.reservation.searchClientPlaceholder}
@@ -2197,6 +2086,7 @@ export function ReservationModal({
                                 notes: '',
                               })
                               setNewClientError('')
+                              setClientComboOpen(false)
                               setIsAddingClient(true)
                             }}
                           >
@@ -2206,9 +2096,137 @@ export function ReservationModal({
                         </CommandGroup>
                       </CommandList>
                     </Command>
-                  )}
                 </PopoverContent>
               </Popover>
+
+              {/* Own Dialog instead of living inside the Popover above -
+                  a Popover's width is locked to its trigger's (see
+                  w-[--radix-popover-trigger-width] above) and it's meant
+                  for lightweight anchored content, not a ~9-field form.
+                  On a phone that meant a form squeezed into a ~300px-wide
+                  floating panel, anchored to a button mid-scroll inside
+                  the reservation dialog itself - found live 2026-09-21,
+                  "se ve bastante mal". A real Dialog centers itself and
+                  sizes normally regardless of screen width. */}
+              <Dialog
+                open={isAddingClient}
+                onOpenChange={(open) => {
+                  setIsAddingClient(open)
+                  if (!open) setNewClientError('')
+                }}
+              >
+                <DialogContent className="sm:max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2 text-base">
+                      <UserPlus className="h-4 w-4 text-primary" />
+                      {t.reservation.addNewClientTitle}
+                    </DialogTitle>
+                  </DialogHeader>
+
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="new-client-name" className="text-xs">{t.clients.fullName}</Label>
+                      <Input
+                        id="new-client-name"
+                        autoFocus
+                        placeholder={t.clients.namePlaceholder}
+                        value={newClientForm.name}
+                        onChange={(e) => setNewClientForm({ ...newClientForm, name: e.target.value })}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="new-client-email" className="text-xs">{t.clients.emailLabel}</Label>
+                        <Input
+                          id="new-client-email"
+                          type="email"
+                          placeholder={t.clients.emailPlaceholder}
+                          value={newClientForm.email}
+                          onChange={(e) => setNewClientForm({ ...newClientForm, email: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="new-client-phone" className="text-xs">{t.clients.phoneLabel}</Label>
+                        <PhoneInput
+                          id="new-client-phone"
+                          value={newClientForm.phone}
+                          onChange={(phone) => setNewClientForm({ ...newClientForm, phone })}
+                          defaultCountry={currentBusiness?.country === 'US' ? 'US' : 'PE'}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="new-client-doc-type" className="text-xs">{t.clients.documentTypeLabel}</Label>
+                        <Select
+                          value={newClientForm.documentType}
+                          onValueChange={(value: ClientDocumentType) =>
+                            setNewClientForm({ ...newClientForm, documentType: value })
+                          }
+                        >
+                          <SelectTrigger id="new-client-doc-type">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {DOCUMENT_TYPES.map((type) => (
+                              <SelectItem key={type} value={type}>
+                                {documentTypeLabels[type]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="new-client-doc-number" className="text-xs">{t.clients.documentNumberLabel}</Label>
+                        <Input
+                          id="new-client-doc-number"
+                          maxLength={30}
+                          value={newClientForm.documentNumber}
+                          onChange={(e) => setNewClientForm({ ...newClientForm, documentNumber: e.target.value })}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="new-client-notes" className="text-xs">{t.clients.notesLabel}</Label>
+                      <Textarea
+                        id="new-client-notes"
+                        rows={2}
+                        placeholder={t.clients.notesPlaceholder}
+                        value={newClientForm.notes}
+                        onChange={(e) => setNewClientForm({ ...newClientForm, notes: e.target.value })}
+                      />
+                    </div>
+
+                    {newClientError && <p className="text-xs text-destructive">{newClientError}</p>}
+                  </div>
+
+                  <DialogFooter>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setIsAddingClient(false)
+                        setNewClientError('')
+                      }}
+                    >
+                      {t.services.cancelBtn}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleCreateInlineClient}
+                      disabled={isSavingNewClient || !newClientForm.name.trim()}
+                    >
+                      {isSavingNewClient && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+                      {t.reservation.addNewClientSave}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </div>
 
             {canAddAttendees && (

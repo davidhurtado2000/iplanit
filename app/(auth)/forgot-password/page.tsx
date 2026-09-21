@@ -74,11 +74,11 @@ export default function ForgotPasswordPage() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
       <LanguageToggle className="max-w-md" />
 
-      <div className="mb-8 flex items-center gap-2">
+      <Link href="/" className="mb-8 flex items-center gap-2">
         <img src="/favicon-96x96.png" alt="" className="h-9 w-9" />
         <img src="/logotipo_modolight.png" alt="iPlanit" className="h-7 w-auto dark:hidden" />
         <img src="/logotipo_mododark.png" alt="iPlanit" className="hidden h-7 w-auto dark:block" />
-      </div>
+      </Link>
 
       <Card className="w-full max-w-md">
         {sent ? (
