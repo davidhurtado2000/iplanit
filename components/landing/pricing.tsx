@@ -12,6 +12,14 @@ interface PlanFeature {
   desc?: string
 }
 
+// Card redesign, chosen from a 3-way comparison (see the "Premium Card
+// Concepts" artifact from 2026-09-21): every plan is a color band
+// (name/desc/price/CTA) over a plain body (features), same shape for
+// all three, only the band's color differs - matches upgrade-modal.tsx's
+// in-app cards so the visual language is the same whether someone's
+// looking at pricing here or inside the app.
+type Band = 'muted' | 'primary' | 'ink'
+
 export function Pricing() {
   const { t } = useLanguage()
   const l = t.landing
@@ -24,7 +32,7 @@ export function Pricing() {
       desc: l.planBasicDesc,
       cta: l.planBasicCta,
       href: '/register',
-      highlight: false,
+      band: 'muted' as Band,
       // Basic's items are plain numeric limits - self-explanatory on their
       // own, no separate description line needed the way Pro/Premium's
       // feature list does below.
@@ -41,7 +49,7 @@ export function Pricing() {
       desc: l.planProDesc,
       cta: l.planProCta,
       href: '/register',
-      highlight: false,
+      band: 'primary' as Band,
       hasAiAddon: true,
       includesLabel: l.planProIncludesFree,
       // Title + description per feature (not just the bare title upgrade-
@@ -62,7 +70,8 @@ export function Pricing() {
       desc: l.planPremiumDesc,
       cta: l.planPremiumCta,
       href: '/register',
-      highlight: true,
+      band: 'ink' as Band,
+      mostPopular: true,
       hasAiAddon: true,
       includesLabel: l.planPremiumIncludesPro,
       features: [
@@ -89,55 +98,77 @@ export function Pricing() {
         <div className="mt-16 grid gap-6 lg:grid-cols-3 lg:items-start">
           {plans.map((plan, i) => (
             <Reveal key={plan.name} delayMs={i * 100}>
-              <div
-                className={cn(
-                  'relative flex h-full flex-col rounded-2xl border p-7 transition-transform duration-300 hover:-translate-y-1',
-                  plan.highlight
-                    ? 'plan-highlight-glow border-primary bg-card'
-                    : 'bg-card hover:border-primary/30 hover:shadow-lg'
-                )}
-              >
-                {plan.highlight && (
-                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
+              <div className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-border transition-transform duration-300 hover:-translate-y-1 hover:shadow-lg">
+                {plan.mostPopular && (
+                  <span className="absolute -top-3 left-1/2 z-10 -translate-x-1/2 rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
                     {l.pricingMostPopular}
                   </span>
                 )}
-                <h3 className="text-lg font-semibold text-foreground">{plan.name}</h3>
-                <p className="mt-1 text-sm text-muted-foreground">{plan.desc}</p>
-                <div className="mt-5 flex items-baseline gap-1">
-                  <span className="font-mono text-4xl font-bold tracking-tight tabular-nums text-foreground">${plan.price}</span>
-                  <span className="text-sm text-muted-foreground">{l.pricingPerMonth}</span>
-                </div>
-                <Button asChild className="mt-6 w-full active:scale-[0.97]" variant={plan.highlight ? 'default' : 'outline'}>
-                  <Link href={plan.href}>{plan.cta}</Link>
-                </Button>
-                <ul className="mt-7 space-y-4 text-sm">
-                  {plan.includesLabel && (
-                    <li className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {plan.includesLabel}
-                    </li>
+                <div
+                  className={cn(
+                    'px-7 pt-8 pb-7',
+                    plan.band === 'ink' && 'bg-neutral-950 dark:bg-neutral-900',
+                    plan.band === 'primary' && 'bg-primary',
+                    plan.band === 'muted' && 'bg-muted'
                   )}
-                  {plan.features.map((feature) => (
-                    <li key={feature.title} className="flex items-start gap-2.5">
-                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                      <span>
-                        <span className="block font-medium text-foreground">{feature.title}</span>
-                        {feature.desc && (
-                          <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">{feature.desc}</span>
-                        )}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-                {plan.hasAiAddon && (
-                  <div className="mt-5 flex items-start gap-2.5 rounded-lg border border-dashed border-primary/30 bg-primary/5 p-3">
-                    <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                    <span className="text-xs leading-snug">
-                      <span className="block font-medium text-foreground">{l.planAiAddonTitle}</span>
-                      <span className="mt-0.5 block text-muted-foreground">{l.planAiAddonDesc}</span>
+                >
+                  <h3 className={cn('text-lg font-semibold', plan.band === 'muted' ? 'text-foreground' : 'text-white')}>
+                    {plan.name}
+                  </h3>
+                  <p className={cn('mt-1 text-sm', plan.band === 'muted' ? 'text-muted-foreground' : 'text-white/70')}>
+                    {plan.desc}
+                  </p>
+                  <div className="mt-5 flex items-baseline gap-1">
+                    <span
+                      className={cn(
+                        'font-mono text-4xl font-bold tracking-tight tabular-nums',
+                        plan.band === 'muted' ? 'text-foreground' : 'text-white'
+                      )}
+                    >
+                      ${plan.price}
+                    </span>
+                    <span className={cn('text-sm', plan.band === 'muted' ? 'text-muted-foreground' : 'text-white/70')}>
+                      {l.pricingPerMonth}
                     </span>
                   </div>
-                )}
+                  <Button
+                    asChild
+                    className={cn(
+                      'mt-6 w-full active:scale-[0.97]',
+                      plan.band !== 'muted' && 'bg-white text-neutral-900 hover:bg-neutral-200'
+                    )}
+                    variant={plan.band === 'muted' ? 'outline' : 'default'}
+                  >
+                    <Link href={plan.href}>{plan.cta}</Link>
+                  </Button>
+                </div>
+                <div className="flex flex-1 flex-col bg-card px-7 pt-7 pb-7">
+                  <ul className="space-y-4 text-sm">
+                    {plan.includesLabel && (
+                      <li className="text-xs font-semibold text-foreground">{plan.includesLabel}</li>
+                    )}
+                    {plan.features.map((feature) => (
+                      <li key={feature.title} className="flex items-start gap-2.5">
+                        <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                        <span>
+                          <span className="block font-medium text-foreground">{feature.title}</span>
+                          {feature.desc && (
+                            <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">{feature.desc}</span>
+                          )}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  {plan.hasAiAddon && (
+                    <div className="mt-5 flex items-start gap-2.5 rounded-lg border border-dashed border-primary/30 bg-primary/5 p-3">
+                      <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                      <span className="text-xs leading-snug">
+                        <span className="block font-medium text-foreground">{l.planAiAddonTitle}</span>
+                        <span className="mt-0.5 block text-muted-foreground">{l.planAiAddonDesc}</span>
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
             </Reveal>
           ))}

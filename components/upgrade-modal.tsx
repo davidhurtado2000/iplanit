@@ -165,12 +165,14 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
     { icon: Headphones, title: m.featurePrioritySupportTitle, description: m.featurePrioritySupportDesc },
   ]
 
-  // Black/elegant treatment for the Premium card - David's idea, testing it
-  // scoped to just this modal for now since there are no Premium customers
-  // yet to disrupt. Only applies when Premium is actually the card being
-  // sold here (matches the existing de-emphasis logic below: a 'pro'-only
-  // gate shows Premium in the plain/unemphasized style instead, same as
-  // it already did with the amber treatment this replaces).
+  // Card redesign, chosen from a 3-way comparison (see the "Premium Card
+  // Concepts" artifact from 2026-09-21): every plan card is now a color
+  // band (name/price/trial badge) over a plain body (features/CTA), same
+  // shape for all three, only the band's color differs - Basic muted,
+  // Pro primary blue, Premium ink black. *Highlighted here means "this
+  // plan's real band color", vs. the flat muted band it falls back to
+  // when a requiredPlan gate makes this card not the one being sold.
+  const proHighlighted = requiredPlan !== 'premium'
   const premiumHighlighted = requiredPlan !== 'pro'
 
   const priceForTier = (tier: 'basic' | 'pro' | 'premium') =>
@@ -297,7 +299,7 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-      <DialogContent className="sm:max-w-3xl" showCloseButton={!isOnboarding}>
+      <DialogContent className="sm:max-w-4xl" showCloseButton={!isOnboarding}>
         {isOnboarding && (
           <button
             type="button"
@@ -334,17 +336,17 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                 </div>
               )}
 
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-3">
                 {/* Basic card - never satisfies a requiredPlan gate (both
                     'pro' and 'premium' mean Basic is missing the feature),
-                    so it always renders in the plain/unemphasized style. */}
+                    so its band always renders in the plain/muted style. */}
                 <motion.div
                   initial={{ opacity: 0, y: reduceMotion ? 0 : 14 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: reduceMotion ? 0 : 0.55, delay: reduceMotion ? 0 : 0.1, ease: [0.2, 0.7, 0.3, 1] }}
-                  className="flex flex-col gap-4 rounded-xl border-2 border-border p-4 sm:p-5"
+                  className="flex flex-col overflow-hidden rounded-xl border-2 border-border"
                 >
-                  <div>
+                  <div className="bg-muted px-4 py-4 sm:px-5">
                     <p className="text-sm font-semibold text-foreground">{m.basicTitle}</p>
                     <div className="flex items-baseline gap-1">
                       <span className="text-2xl font-bold text-foreground sm:text-3xl">${BASIC_PRICE_USD}</span>
@@ -354,33 +356,35 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                       <p className="text-xs font-medium text-amber-600 dark:text-amber-400">{m.trialBadge}</p>
                     )}
                   </div>
-                  <div className="space-y-2.5">
-                    {BASIC_FEATURES.map((f) => (
-                      <div key={f.title} className="flex items-start gap-2.5">
-                        <div className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
-                          <Check className="h-2.5 w-2.5 text-green-600 dark:text-green-400" />
+                  <div className="flex flex-1 flex-col gap-4 p-4 sm:p-5">
+                    <div className="space-y-2.5">
+                      {BASIC_FEATURES.map((f) => (
+                        <div key={f.title} className="flex items-start gap-2.5">
+                          <div className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
+                            <Check className="h-2.5 w-2.5 text-green-600 dark:text-green-400" />
+                          </div>
+                          <div>
+                            <p className="text-xs font-medium text-foreground">{f.title}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-xs font-medium text-foreground">{f.title}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {(requiredPlan === 'pro' || requiredPlan === 'premium') && feature && (
-                    <p className="text-xs italic text-muted-foreground">
-                      {m.basicFeatureNotIncluded.replace('{feature}', feature)}
-                    </p>
-                  )}
-                  <div className="mt-auto border-t pt-4">
-                    <Button
-                      className="w-full gap-2 px-6 has-[>svg]:px-6"
-                      variant="outline"
-                      onClick={() => handleSubscribe('basic')}
-                      disabled={loadingTier !== null}
-                    >
-                      {loadingTier === 'basic' && <Loader2 className="h-4 w-4 animate-spin" />}
-                      {m.subscribeBasicBtn}
-                    </Button>
+                      ))}
+                    </div>
+                    {(requiredPlan === 'pro' || requiredPlan === 'premium') && feature && (
+                      <p className="text-xs italic text-muted-foreground">
+                        {m.basicFeatureNotIncluded.replace('{feature}', feature)}
+                      </p>
+                    )}
+                    <div className="mt-auto border-t pt-4">
+                      <Button
+                        className="w-full gap-2 px-6 has-[>svg]:px-6"
+                        variant="outline"
+                        onClick={() => handleSubscribe('basic')}
+                        disabled={loadingTier !== null}
+                      >
+                        {loadingTier === 'basic' && <Loader2 className="h-4 w-4 animate-spin" />}
+                        {m.subscribeBasicBtn}
+                      </Button>
+                    </div>
                   </div>
                 </motion.div>
 
@@ -389,56 +393,63 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                   initial={{ opacity: 0, y: reduceMotion ? 0 : 14 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: reduceMotion ? 0 : 0.55, delay: reduceMotion ? 0 : 0.24, ease: [0.2, 0.7, 0.3, 1] }}
-                  className={cn(
-                    'flex flex-col gap-4 rounded-xl border-2 p-4 sm:p-5',
-                    requiredPlan === 'premium' ? 'border-border' : 'border-primary/30 bg-primary/5'
-                  )}
+                  className="flex flex-col overflow-hidden rounded-xl border-2 border-border"
                 >
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">{m.proTitle}</p>
+                  <div className={cn('px-4 py-4 sm:px-5', proHighlighted ? 'bg-primary' : 'bg-muted')}>
+                    <p className={cn('text-sm font-semibold', proHighlighted ? 'text-primary-foreground' : 'text-foreground')}>
+                      {m.proTitle}
+                    </p>
                     <div className="flex items-baseline gap-1">
-                      <span className="text-2xl font-bold text-foreground sm:text-3xl">${PRO_PRICE_USD}</span>
-                      <span className="text-xs text-muted-foreground sm:text-sm">{m.perMonth}</span>
+                      <span className={cn('text-2xl font-bold sm:text-3xl', proHighlighted ? 'text-primary-foreground' : 'text-foreground')}>
+                        ${PRO_PRICE_USD}
+                      </span>
+                      <span className={cn('text-xs sm:text-sm', proHighlighted ? 'text-primary-foreground/70' : 'text-muted-foreground')}>
+                        {m.perMonth}
+                      </span>
                     </div>
                     {trialEligible && (
-                      <p className="text-xs font-medium text-amber-600 dark:text-amber-400">{m.trialBadge}</p>
+                      <p className={cn('text-xs font-medium', proHighlighted ? 'text-amber-200' : 'text-amber-600 dark:text-amber-400')}>
+                        {m.trialBadge}
+                      </p>
                     )}
                   </div>
-                  <p className="border-t pt-3 text-sm font-semibold text-foreground">{m.proIncludesBasicLabel}</p>
-                  <div className="space-y-2.5">
-                    {PRO_FEATURES.map((f) => (
-                      <div key={f.title} className="flex items-start gap-2.5">
-                        <div className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
-                          <Check className="h-2.5 w-2.5 text-green-600 dark:text-green-400" />
+                  <div className="flex flex-1 flex-col gap-4 p-4 sm:p-5">
+                    <p className="text-sm font-semibold text-foreground">{m.proIncludesBasicLabel}</p>
+                    <div className="space-y-2.5">
+                      {PRO_FEATURES.map((f) => (
+                        <div key={f.title} className="flex items-start gap-2.5">
+                          <div className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
+                            <Check className="h-2.5 w-2.5 text-green-600 dark:text-green-400" />
+                          </div>
+                          <div>
+                            <p className="text-xs font-medium text-foreground">{f.title}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-xs font-medium text-foreground">{f.title}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex items-start gap-2 rounded-lg border border-dashed border-primary/30 bg-primary/5 p-2.5">
-                    <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-                    <span className="text-[11px] leading-snug">
-                      <span className="block font-medium text-foreground">{t.landing.planAiAddonTitle}</span>
-                      <span className="mt-0.5 block text-muted-foreground">{t.landing.planAiAddonDesc}</span>
-                    </span>
-                  </div>
-                  {requiredPlan === 'premium' && feature && (
-                    <p className="text-xs italic text-muted-foreground">
-                      {m.proFeatureNotIncluded.replace('{feature}', feature)}
-                    </p>
-                  )}
-                  <div className="mt-auto border-t pt-4">
-                    <Button
-                      className="w-full gap-2 px-6 has-[>svg]:px-6"
-                      variant={requiredPlan === 'premium' ? 'outline' : 'default'}
-                      onClick={() => handleSubscribe('pro')}
-                      disabled={loadingTier !== null}
-                    >
-                      {loadingTier === 'pro' && <Loader2 className="h-4 w-4 animate-spin" />}
-                      {m.subscribeProBtn}
-                    </Button>
+                      ))}
+                    </div>
+                    <div className="flex items-start gap-2 rounded-lg border border-dashed border-primary/30 bg-primary/5 p-2.5">
+                      <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                      <span className="text-[11px] leading-snug">
+                        <span className="block font-medium text-foreground">{t.landing.planAiAddonTitle}</span>
+                        <span className="mt-0.5 block text-muted-foreground">{t.landing.planAiAddonDesc}</span>
+                      </span>
+                    </div>
+                    {requiredPlan === 'premium' && feature && (
+                      <p className="text-xs italic text-muted-foreground">
+                        {m.proFeatureNotIncluded.replace('{feature}', feature)}
+                      </p>
+                    )}
+                    <div className="mt-auto border-t pt-4">
+                      <Button
+                        className={cn('w-full gap-2 px-6 has-[>svg]:px-6', !proHighlighted && 'bg-muted-foreground/10 text-foreground hover:bg-muted-foreground/20')}
+                        variant={proHighlighted ? 'default' : 'outline'}
+                        onClick={() => handleSubscribe('pro')}
+                        disabled={loadingTier !== null}
+                      >
+                        {loadingTier === 'pro' && <Loader2 className="h-4 w-4 animate-spin" />}
+                        {m.subscribeProBtn}
+                      </Button>
+                    </div>
                   </div>
                 </motion.div>
 
@@ -447,15 +458,9 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                   initial={{ opacity: 0, y: reduceMotion ? 0 : 14 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: reduceMotion ? 0 : 0.55, delay: reduceMotion ? 0 : 0.38, ease: [0.2, 0.7, 0.3, 1] }}
-                  className={cn(
-                    'flex flex-col gap-4 rounded-xl border-2 p-4 sm:p-5',
-                    !premiumHighlighted &&
-                      'border-border',
-                    premiumHighlighted &&
-                      'border-neutral-800 bg-neutral-950 shadow-lg shadow-black/20 dark:border-neutral-600 dark:bg-neutral-900'
-                  )}
+                  className="flex flex-col overflow-hidden rounded-xl border-2 border-border"
                 >
-                  <div>
+                  <div className={cn('px-4 py-4 sm:px-5', premiumHighlighted ? 'bg-neutral-950 dark:bg-neutral-900' : 'bg-muted')}>
                     <p className={cn('text-sm font-semibold', premiumHighlighted ? 'text-white' : 'text-foreground')}>
                       {m.premiumTitle}
                     </p>
@@ -473,67 +478,47 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                       </p>
                     )}
                   </div>
-                  <p
-                    className={cn(
-                      'border-t pt-3 text-sm font-semibold',
-                      premiumHighlighted ? 'border-white/15 text-white' : 'text-foreground'
-                    )}
-                  >
-                    {m.premiumIncludesProLabel}
-                  </p>
-                  <div className="space-y-2.5">
-                    {PREMIUM_FEATURES.map((f) => (
-                      <div key={f.title} className="flex items-start gap-2.5">
-                        <div
-                          className={cn(
-                            'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full',
-                            premiumHighlighted ? 'bg-white/15' : 'bg-green-100 dark:bg-green-900/30'
-                          )}
-                        >
-                          <Check className={cn('h-2.5 w-2.5', premiumHighlighted ? 'text-white' : 'text-green-600 dark:text-green-400')} />
+                  <div className="flex flex-1 flex-col gap-4 p-4 sm:p-5">
+                    <p className="text-sm font-semibold text-foreground">{m.premiumIncludesProLabel}</p>
+                    <div className="space-y-2.5">
+                      {PREMIUM_FEATURES.map((f) => (
+                        <div key={f.title} className="flex items-start gap-2.5">
+                          <div className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
+                            <Check className="h-2.5 w-2.5 text-green-600 dark:text-green-400" />
+                          </div>
+                          <div>
+                            <p className="text-xs font-medium text-foreground">{f.title}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className={cn('text-xs font-medium', premiumHighlighted ? 'text-neutral-100' : 'text-foreground')}>
-                            {f.title}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div
-                    className={cn(
-                      'flex items-start gap-2 rounded-lg border border-dashed p-2.5',
-                      premiumHighlighted ? 'border-white/20 bg-white/5' : 'border-primary/30 bg-primary/5'
-                    )}
-                  >
-                    <Sparkles className={cn('mt-0.5 h-3.5 w-3.5 shrink-0', premiumHighlighted ? 'text-white' : 'text-primary')} />
-                    <span className="text-[11px] leading-snug">
-                      <span className={cn('block font-medium', premiumHighlighted ? 'text-white' : 'text-foreground')}>
-                        {t.landing.planAiAddonTitle}
+                      ))}
+                    </div>
+                    <div className="flex items-start gap-2 rounded-lg border border-dashed border-primary/30 bg-primary/5 p-2.5">
+                      <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                      <span className="text-[11px] leading-snug">
+                        <span className="block font-medium text-foreground">{t.landing.planAiAddonTitle}</span>
+                        <span className="mt-0.5 block text-muted-foreground">{t.landing.planAiAddonDesc}</span>
                       </span>
-                      <span className={cn('mt-0.5 block', premiumHighlighted ? 'text-neutral-400' : 'text-muted-foreground')}>
-                        {t.landing.planAiAddonDesc}
-                      </span>
-                    </span>
-                  </div>
-                  <div className={cn('mt-auto border-t pt-4', premiumHighlighted && 'border-white/15')}>
-                    <Button
-                      className={cn(
-                        'w-full gap-2 px-6 has-[>svg]:px-6',
-                        premiumHighlighted
-                          ? 'bg-white text-neutral-900 hover:bg-neutral-200'
-                          : 'bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600'
-                      )}
-                      onClick={() => handleSubscribe('premium')}
-                      disabled={loadingTier !== null}
-                    >
-                      {loadingTier === 'premium' ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Crown className="h-4 w-4" />
-                      )}
-                      {m.subscribePremiumBtn}
-                    </Button>
+                    </div>
+                    <div className="mt-auto border-t pt-4">
+                      <Button
+                        className={cn(
+                          'w-full gap-2 px-6 has-[>svg]:px-6',
+                          premiumHighlighted
+                            ? 'bg-neutral-950 text-white hover:bg-neutral-800 dark:bg-neutral-900 dark:hover:bg-neutral-700'
+                            : 'bg-muted-foreground/10 text-foreground hover:bg-muted-foreground/20'
+                        )}
+                        variant={premiumHighlighted ? undefined : 'outline'}
+                        onClick={() => handleSubscribe('premium')}
+                        disabled={loadingTier !== null}
+                      >
+                        {loadingTier === 'premium' ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Crown className="h-4 w-4" />
+                        )}
+                        {m.subscribePremiumBtn}
+                      </Button>
+                    </div>
                   </div>
                 </motion.div>
               </div>
