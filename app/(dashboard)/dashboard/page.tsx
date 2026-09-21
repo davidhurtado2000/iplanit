@@ -331,7 +331,7 @@ export default function DashboardPage() {
           Basic tiers alike, hidden for Pro/Premium since both already pay
           for something above the floor and don't need the nag. */}
       {!isProOrPremium && (
-        <Card className="border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 dark:border-amber-900 dark:from-amber-950/40 dark:to-orange-950/30">
+        <Card className="border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30">
           <CardContent className="py-4">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-3 sm:items-center">
@@ -349,7 +349,7 @@ export default function DashboardPage() {
               </div>
               <Button
                 size="sm"
-                className="gap-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600"
+                className="gap-2 bg-amber-500 text-white hover:bg-amber-600"
                 onClick={() => {
                   setUpgradeModalPlan(undefined)
                   setShowUpgradeModal(true)

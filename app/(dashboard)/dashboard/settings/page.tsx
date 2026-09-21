@@ -2477,7 +2477,7 @@ function SettingsPageInner() {
                       read as "you're on Premium" even though the label text
                       below correctly said "Plan Pro". */}
                   {plan === 'premium' ? (
-                    <Crown className="h-8 w-8 shrink-0 text-amber-500" />
+                    <Crown className="h-8 w-8 shrink-0 text-neutral-900 dark:text-white" />
                   ) : (
                     <Sparkles className="h-8 w-8 shrink-0 text-muted-foreground" />
                   )}
@@ -2527,7 +2527,7 @@ function SettingsPageInner() {
                     {plan === 'pro' && (
                       <Button
                         size="sm"
-                        className="w-full gap-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 sm:w-auto"
+                        className="w-full gap-1.5 bg-neutral-950 text-white hover:bg-neutral-800 dark:bg-neutral-900 dark:hover:bg-neutral-700 sm:w-auto"
                         disabled={isChangingPlan}
                         onClick={() => setPendingPlanChange('premium')}
                       >
@@ -2558,7 +2558,7 @@ function SettingsPageInner() {
                         </Button>
                         <Button
                           size="sm"
-                          className="w-full gap-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 sm:w-auto"
+                          className="w-full gap-1.5 bg-neutral-950 text-white hover:bg-neutral-800 dark:bg-neutral-900 dark:hover:bg-neutral-700 sm:w-auto"
                           disabled={isChangingPlan}
                           onClick={() => setPendingPlanChange('premium')}
                         >
@@ -2753,7 +2753,7 @@ function SettingsPageInner() {
               {plan === 'free' && (
                 <>
                   <Separator />
-                  <div className="space-y-3 rounded-lg border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 p-4 dark:border-amber-900 dark:from-amber-950/40 dark:to-orange-950/30">
+                  <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30">
                     <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
                       <Crown className="h-4 w-4 text-amber-500" />
                       {t.settings.premiumFeaturesTitle}
@@ -2783,15 +2783,15 @@ function SettingsPageInner() {
               {plan === 'pro' && (
                 <>
                   <Separator />
-                  <div className="space-y-3 rounded-lg border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 p-4 dark:border-emerald-900 dark:from-emerald-950/40 dark:to-teal-950/30">
+                  <div className="space-y-3 rounded-lg border border-primary/25 bg-primary/5 p-4">
                     <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                      <Crown className="h-4 w-4 text-amber-500" />
+                      <Crown className="h-4 w-4 text-primary" />
                       {t.settings.proIncludedTitle}
                     </h3>
                     <ul className="space-y-2">
                       {t.settings.proFeaturesList.map((feature) => (
                         <li key={feature} className="flex items-center gap-2 text-sm">
-                          <Check className="h-4 w-4 text-emerald-500" />
+                          <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
                           <span>{feature}</span>
                         </li>
                       ))}
@@ -2812,15 +2812,15 @@ function SettingsPageInner() {
               {plan === 'premium' && (
                 <>
                   <Separator />
-                  <div className="space-y-3 rounded-lg border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 p-4 dark:border-emerald-900 dark:from-emerald-950/40 dark:to-teal-950/30">
+                  <div className="space-y-3 rounded-lg border border-neutral-300 bg-neutral-950/5 p-4 dark:border-neutral-700 dark:bg-white/5">
                     <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                      <Crown className="h-4 w-4 text-amber-500" />
+                      <Crown className="h-4 w-4 text-neutral-900 dark:text-white" />
                       {t.settings.premiumIncludedTitle}
                     </h3>
                     <ul className="space-y-2">
                       {t.settings.premiumFeaturesList.map((feature) => (
                         <li key={feature} className="flex items-center gap-2 text-sm">
-                          <Check className="h-4 w-4 text-emerald-500" />
+                          <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
                           <span>{feature}</span>
                         </li>
                       ))}

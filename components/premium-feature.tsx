@@ -12,6 +12,36 @@ import { useLanguage } from '@/context/language-context'
 import { cn } from '@/lib/utils'
 import { meetsPlan } from '@/lib/plan-limits'
 
+// Same 3 colors as the plan cards (upgrade-modal.tsx / landing pricing.tsx)
+// - muted/blue/ink - so a locked-feature placeholder or badge always
+// matches whichever tier it's actually gated behind, instead of every
+// gate looking like a generic "Premium" nudge in amber. Only used where
+// the element fully controls its own background (icon circle, its own
+// button, a self-contained badge pill) - PremiumButton's inline Lock
+// below stays amber on purpose: it composites onto whatever variant/
+// color the caller gave that button, and a black or blue lock can go
+// invisible against a same-colored button in a way amber never does.
+const TIER_ACCENT = {
+  basic: {
+    iconWrap: 'bg-muted',
+    icon: 'text-muted-foreground',
+    button: 'bg-muted-foreground/15 text-foreground hover:bg-muted-foreground/25',
+    badge: 'bg-muted text-muted-foreground',
+  },
+  pro: {
+    iconWrap: 'bg-primary/15',
+    icon: 'text-primary',
+    button: 'bg-primary text-primary-foreground hover:bg-primary/90',
+    badge: 'bg-primary/10 text-primary',
+  },
+  premium: {
+    iconWrap: 'bg-neutral-950/10 dark:bg-white/10',
+    icon: 'text-neutral-900 dark:text-white',
+    button: 'bg-neutral-950 text-white hover:bg-neutral-800 dark:bg-neutral-900 dark:hover:bg-neutral-700',
+    badge: 'bg-neutral-950/10 text-neutral-900 dark:bg-white/10 dark:text-white',
+  },
+} as const
+
 interface PremiumFeatureProps {
   children: React.ReactNode
   featureName: string
@@ -52,8 +82,8 @@ export function PremiumFeature({ children, featureName, className, requiredPlan 
           className
         )}
       >
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-amber-400/20 to-orange-500/20">
-          <Crown className="h-6 w-6 text-amber-500" />
+        <div className={cn('flex h-12 w-12 items-center justify-center rounded-full', TIER_ACCENT[requiredPlan].iconWrap)}>
+          <Crown className={cn('h-6 w-6', TIER_ACCENT[requiredPlan].icon)} />
         </div>
         <div>
           <p className="font-medium text-foreground">
@@ -63,7 +93,7 @@ export function PremiumFeature({ children, featureName, className, requiredPlan 
         </div>
         <Button
           size="sm"
-          className="gap-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600"
+          className={cn('gap-2', TIER_ACCENT[requiredPlan].button)}
           onClick={() => setShowUpgradeModal(true)}
         >
           <Crown className="h-4 w-4" />
@@ -153,7 +183,8 @@ export function PremiumBadge({ className, requiredPlan = 'premium' }: PremiumBad
 
   return (
     <span className={cn(
-      'inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-500/10 to-orange-500/10 px-2 py-0.5 text-xs font-medium text-amber-600',
+      'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
+      TIER_ACCENT[requiredPlan].badge,
       className
     )}>
       <Crown className="h-3 w-3" />

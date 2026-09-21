@@ -216,15 +216,15 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
               {/* Plan Badge / Upgrade CTA */}
               <div className="border-t p-4">
                 {userPlan === 'premium' ? (
-                  <div className="rounded-lg bg-gradient-to-r from-amber-500/10 to-orange-500/10 p-3">
+                  <div className="rounded-lg bg-neutral-950/10 p-3 dark:bg-white/10">
                     <div className="flex items-center gap-2">
-                      <Crown className="h-4 w-4 text-amber-500" />
+                      <Crown className="h-4 w-4 text-neutral-900 dark:text-white" />
                       <span className="text-sm font-medium">{t.mobileNav.premium}</span>
                     </div>
                   </div>
                 ) : (
                   <Button
-                    className="w-full gap-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600"
+                    className="w-full gap-2 bg-amber-500 text-white hover:bg-amber-600"
                     onClick={() => {
                       onToggle()
                       setShowUpgradeModal(true)

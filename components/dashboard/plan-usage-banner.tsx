@@ -169,7 +169,7 @@ export function PlanUsageBanner() {
           </div>
           <Button
             size="sm"
-            className="shrink-0 bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600"
+            className="shrink-0 bg-amber-500 text-white hover:bg-amber-600"
             onClick={() =>
               usage.plan === 'premium' ? router.push('/dashboard/settings?tab=team') : setShowUpgradeModal(true)
             }

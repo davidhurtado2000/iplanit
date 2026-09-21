@@ -329,7 +329,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         {!isCollapsed && (userPlan === 'free' || userPlan === 'basic') && (
           <div className="mx-2 mb-2">
             <Button
-              className="w-full gap-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600"
+              className="w-full gap-2 bg-amber-500 text-white hover:bg-amber-600"
               onClick={() => setShowUpgradeModal(true)}
             >
               <Crown className="h-4 w-4" />
