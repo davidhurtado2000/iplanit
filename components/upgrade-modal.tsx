@@ -357,12 +357,12 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                       <span className="text-xs text-muted-foreground sm:text-sm">{m.perMonth}</span>
                     </div>
                     {trialEligible && (
-                      <span className="mt-1 inline-flex items-center rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-semibold text-white">
+                      <span className="mt-1 text-xs font-medium text-amber-500">
                         {m.trialBadge}
                       </span>
                     )}
                     <Button
-                      className="mt-3 w-full gap-2 px-6 has-[>svg]:px-6"
+                      className="mt-3 w-full gap-2 px-6 shadow-sm transition-shadow hover:shadow-md active:scale-[0.97] has-[>svg]:px-6"
                       variant="outline"
                       onClick={() => handleSubscribe('basic')}
                       disabled={loadingTier !== null}
@@ -412,13 +412,13 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                       </span>
                     </div>
                     {trialEligible && (
-                      <span className="mt-1 inline-flex items-center rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-semibold text-white">
+                      <span className="mt-1 text-xs font-medium text-amber-500">
                         {m.trialBadge}
                       </span>
                     )}
                     <Button
                       className={cn(
-                        'mt-3 w-full gap-2 px-6 has-[>svg]:px-6',
+                        'mt-3 w-full gap-2 px-6 shadow-sm transition-shadow hover:shadow-md active:scale-[0.97] has-[>svg]:px-6',
                         proHighlighted
                           ? 'bg-white text-neutral-900 hover:bg-neutral-200'
                           : 'bg-muted-foreground/10 text-foreground hover:bg-muted-foreground/20'
@@ -480,13 +480,13 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                       </span>
                     </div>
                     {trialEligible && (
-                      <span className="mt-1 inline-flex items-center rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-semibold text-white">
+                      <span className="mt-1 text-xs font-medium text-amber-500">
                         {m.trialBadge}
                       </span>
                     )}
                     <Button
                       className={cn(
-                        'mt-3 w-full gap-2 px-6 has-[>svg]:px-6',
+                        'mt-3 w-full gap-2 px-6 shadow-sm transition-shadow hover:shadow-md active:scale-[0.97] has-[>svg]:px-6',
                         premiumHighlighted
                           ? 'bg-white text-neutral-900 hover:bg-neutral-200'
                           : 'bg-muted-foreground/10 text-foreground hover:bg-muted-foreground/20'
