@@ -106,7 +106,7 @@ export function Pricing() {
                   2026-09-21, "Mas popular" was rendering cut off. */}
               <div className="relative h-full">
                 {plan.mostPopular && (
-                  <span className="absolute -top-3 left-1/2 z-10 -translate-x-1/2 rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
+                  <span className="absolute -top-3 left-1/2 z-10 -translate-x-1/2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-primary shadow-sm">
                     {l.pricingMostPopular}
                   </span>
                 )}
