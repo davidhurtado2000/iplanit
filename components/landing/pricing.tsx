@@ -50,6 +50,7 @@ export function Pricing() {
       cta: l.planProCta,
       href: '/register',
       band: 'primary' as Band,
+      mostPopular: true,
       hasAiAddon: true,
       includesLabel: l.planProIncludesFree,
       // Title + description per feature (not just the bare title upgrade-
@@ -71,7 +72,6 @@ export function Pricing() {
       cta: l.planPremiumCta,
       href: '/register',
       band: 'ink' as Band,
-      mostPopular: true,
       hasAiAddon: true,
       includesLabel: l.planPremiumIncludesPro,
       features: [
@@ -98,12 +98,19 @@ export function Pricing() {
         <div className="mt-16 grid gap-6 lg:grid-cols-3 lg:items-start">
           {plans.map((plan, i) => (
             <Reveal key={plan.name} delayMs={i * 100}>
-              <div className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-border transition-transform duration-300 hover:-translate-y-1 hover:shadow-lg">
+              {/* Badge lives in an outer wrapper without overflow-hidden -
+                  the card below needs overflow-hidden so the band's top
+                  corners stay clipped to rounded-2xl, but that same
+                  overflow-hidden was clipping this badge's "-top-3" (it
+                  sits half outside the card on purpose) - found live
+                  2026-09-21, "Mas popular" was rendering cut off. */}
+              <div className="relative h-full">
                 {plan.mostPopular && (
                   <span className="absolute -top-3 left-1/2 z-10 -translate-x-1/2 rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
                     {l.pricingMostPopular}
                   </span>
                 )}
+                <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-border transition-transform duration-300 hover:-translate-y-1 hover:shadow-lg">
                 <div
                   className={cn(
                     'px-7 pt-8 pb-7',
@@ -168,6 +175,7 @@ export function Pricing() {
                       </span>
                     </div>
                   )}
+                </div>
                 </div>
               </div>
             </Reveal>
