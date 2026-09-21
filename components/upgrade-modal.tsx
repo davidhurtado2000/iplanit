@@ -30,6 +30,7 @@ import {
   FileSpreadsheet,
   Headphones,
   MapPin,
+  Car,
 } from 'lucide-react'
 import { useLanguage } from '@/context/language-context'
 import { useAuth } from '@/hooks/use-auth'
@@ -154,10 +155,13 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
   ]
 
   const PREMIUM_FEATURES = [
-    { icon: MapPin, title: m.featureSedesTitle, description: m.featureSedesDesc },
-    { icon: Users, title: m.featureClientHistoryTitle, description: m.featureClientHistoryDesc },
+    { icon: Clock, title: m.featureUnlimitedReservationsTitle },
+    { icon: Layers, title: m.featureUnlimitedServicesTitle },
     { icon: Layers, title: m.featureUnlimitedRecordsTitle, description: m.featureUnlimitedRecordsDesc },
+    { icon: MapPin, title: m.featureSedesTitle, description: m.featureSedesDesc },
+    { icon: BarChart3, title: m.featurePremiumReportsTitle },
     { icon: FileSpreadsheet, title: m.featureCsvTitle, description: m.featureCsvDesc },
+    { icon: Car, title: m.featureParkingTitle },
     { icon: Headphones, title: m.featurePrioritySupportTitle, description: m.featurePrioritySupportDesc },
   ]
 
@@ -405,6 +409,13 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                       </div>
                     ))}
                   </div>
+                  <div className="flex items-start gap-2 rounded-lg border border-dashed border-primary/30 bg-primary/5 p-2.5">
+                    <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                    <span className="text-[11px] leading-snug">
+                      <span className="block font-medium text-foreground">{t.landing.planAiAddonTitle}</span>
+                      <span className="mt-0.5 block text-muted-foreground">{t.landing.planAiAddonDesc}</span>
+                    </span>
+                  </div>
                   {requiredPlan === 'premium' && feature && (
                     <p className="text-xs italic text-muted-foreground">
                       {m.proFeatureNotIncluded.replace('{feature}', feature)}
@@ -455,6 +466,13 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                         </div>
                       </div>
                     ))}
+                  </div>
+                  <div className="flex items-start gap-2 rounded-lg border border-dashed border-primary/30 bg-primary/5 p-2.5">
+                    <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                    <span className="text-[11px] leading-snug">
+                      <span className="block font-medium text-foreground">{t.landing.planAiAddonTitle}</span>
+                      <span className="mt-0.5 block text-muted-foreground">{t.landing.planAiAddonDesc}</span>
+                    </span>
                   </div>
                   <div className="mt-auto border-t pt-4">
                     <Button
