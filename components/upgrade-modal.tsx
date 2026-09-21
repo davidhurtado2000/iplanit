@@ -334,7 +334,7 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
 
             <div className="space-y-6 py-4">
               {trialEligible && (
-                <div className="mx-auto flex w-fit items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm">
+                <div className="mx-auto flex w-fit items-center gap-1.5 rounded-full bg-amber-500 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm">
                   <Gift className="h-3.5 w-3.5" />
                   {m.trialPromoBanner}
                 </div>
@@ -412,7 +412,7 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                       </span>
                     </div>
                     {trialEligible && (
-                      <p className={cn('text-xs font-medium', proHighlighted ? 'text-amber-200' : 'text-amber-600 dark:text-amber-400')}>
+                      <p className={cn('text-xs font-medium', proHighlighted ? 'text-amber-300' : 'text-amber-600 dark:text-amber-400')}>
                         {m.trialBadge}
                       </p>
                     )}
