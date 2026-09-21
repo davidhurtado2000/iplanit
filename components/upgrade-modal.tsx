@@ -165,6 +165,14 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
     { icon: Headphones, title: m.featurePrioritySupportTitle, description: m.featurePrioritySupportDesc },
   ]
 
+  // Black/elegant treatment for the Premium card - David's idea, testing it
+  // scoped to just this modal for now since there are no Premium customers
+  // yet to disrupt. Only applies when Premium is actually the card being
+  // sold here (matches the existing de-emphasis logic below: a 'pro'-only
+  // gate shows Premium in the plain/unemphasized style instead, same as
+  // it already did with the amber treatment this replaces).
+  const premiumHighlighted = requiredPlan !== 'pro'
+
   const priceForTier = (tier: 'basic' | 'pro' | 'premium') =>
     tier === 'premium' ? PREMIUM_PRICE_USD : tier === 'pro' ? PRO_PRICE_USD : BASIC_PRICE_USD
 
@@ -441,42 +449,81 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                   transition={{ duration: reduceMotion ? 0 : 0.55, delay: reduceMotion ? 0 : 0.38, ease: [0.2, 0.7, 0.3, 1] }}
                   className={cn(
                     'flex flex-col gap-4 rounded-xl border-2 p-4 sm:p-5',
-                    requiredPlan === 'pro' ? 'border-border' : 'border-amber-400/60 bg-amber-500/5'
+                    !premiumHighlighted &&
+                      'border-border',
+                    premiumHighlighted &&
+                      'border-neutral-800 bg-neutral-950 shadow-lg shadow-black/20 dark:border-neutral-600 dark:bg-neutral-900'
                   )}
                 >
                   <div>
-                    <p className="text-sm font-semibold text-foreground">{m.premiumTitle}</p>
+                    <p className={cn('text-sm font-semibold', premiumHighlighted ? 'text-white' : 'text-foreground')}>
+                      {m.premiumTitle}
+                    </p>
                     <div className="flex items-baseline gap-1">
-                      <span className="text-2xl font-bold text-foreground sm:text-3xl">${PREMIUM_PRICE_USD}</span>
-                      <span className="text-xs text-muted-foreground sm:text-sm">{m.perMonth}</span>
+                      <span className={cn('text-2xl font-bold sm:text-3xl', premiumHighlighted ? 'text-white' : 'text-foreground')}>
+                        ${PREMIUM_PRICE_USD}
+                      </span>
+                      <span className={cn('text-xs sm:text-sm', premiumHighlighted ? 'text-neutral-400' : 'text-muted-foreground')}>
+                        {m.perMonth}
+                      </span>
                     </div>
                     {trialEligible && (
-                      <p className="text-xs font-medium text-amber-600 dark:text-amber-400">{m.trialBadge}</p>
+                      <p className={cn('text-xs font-medium', premiumHighlighted ? 'text-amber-300' : 'text-amber-600 dark:text-amber-400')}>
+                        {m.trialBadge}
+                      </p>
                     )}
                   </div>
-                  <p className="border-t pt-3 text-sm font-semibold text-foreground">{m.premiumIncludesProLabel}</p>
+                  <p
+                    className={cn(
+                      'border-t pt-3 text-sm font-semibold',
+                      premiumHighlighted ? 'border-white/15 text-white' : 'text-foreground'
+                    )}
+                  >
+                    {m.premiumIncludesProLabel}
+                  </p>
                   <div className="space-y-2.5">
                     {PREMIUM_FEATURES.map((f) => (
                       <div key={f.title} className="flex items-start gap-2.5">
-                        <div className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
-                          <Check className="h-2.5 w-2.5 text-green-600 dark:text-green-400" />
+                        <div
+                          className={cn(
+                            'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full',
+                            premiumHighlighted ? 'bg-white/15' : 'bg-green-100 dark:bg-green-900/30'
+                          )}
+                        >
+                          <Check className={cn('h-2.5 w-2.5', premiumHighlighted ? 'text-white' : 'text-green-600 dark:text-green-400')} />
                         </div>
                         <div>
-                          <p className="text-xs font-medium text-foreground">{f.title}</p>
+                          <p className={cn('text-xs font-medium', premiumHighlighted ? 'text-neutral-100' : 'text-foreground')}>
+                            {f.title}
+                          </p>
                         </div>
                       </div>
                     ))}
                   </div>
-                  <div className="flex items-start gap-2 rounded-lg border border-dashed border-primary/30 bg-primary/5 p-2.5">
-                    <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                  <div
+                    className={cn(
+                      'flex items-start gap-2 rounded-lg border border-dashed p-2.5',
+                      premiumHighlighted ? 'border-white/20 bg-white/5' : 'border-primary/30 bg-primary/5'
+                    )}
+                  >
+                    <Sparkles className={cn('mt-0.5 h-3.5 w-3.5 shrink-0', premiumHighlighted ? 'text-white' : 'text-primary')} />
                     <span className="text-[11px] leading-snug">
-                      <span className="block font-medium text-foreground">{t.landing.planAiAddonTitle}</span>
-                      <span className="mt-0.5 block text-muted-foreground">{t.landing.planAiAddonDesc}</span>
+                      <span className={cn('block font-medium', premiumHighlighted ? 'text-white' : 'text-foreground')}>
+                        {t.landing.planAiAddonTitle}
+                      </span>
+                      <span className={cn('mt-0.5 block', premiumHighlighted ? 'text-neutral-400' : 'text-muted-foreground')}>
+                        {t.landing.planAiAddonDesc}
+                      </span>
                     </span>
                   </div>
-                  <div className="mt-auto border-t pt-4">
+                  <div className={cn('mt-auto border-t pt-4', premiumHighlighted && 'border-white/15')}>
                     <Button
-                      className="w-full gap-2 px-6 has-[>svg]:px-6 bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600"
+                      className={cn(
+                        'w-full gap-2 px-6 has-[>svg]:px-6',
+                        premiumHighlighted
+                          ? 'bg-white text-neutral-900 hover:bg-neutral-200'
+                          : 'bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600'
+                      )}
                       onClick={() => handleSubscribe('premium')}
                       disabled={loadingTier !== null}
                     >
