@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { useLanguage } from '@/context/language-context'
+import { BusinessProvider } from '@/context/business-context'
 import { UpgradeModal } from '@/components/upgrade-modal'
 
 // Phase 4 of the pricing overhaul (scripts/092-plan-onboarding-gate.sql):
@@ -21,7 +22,23 @@ import { UpgradeModal } from '@/components/upgrade-modal'
 // instead of as a dismissible dialog - onClose is a no-op since this step
 // isn't skippable, but its own success screen's "Go to dashboard" button
 // still navigates normally once a plan is actually chosen.
+//
+// UpgradeModal calls useBusinesses() internally (to resolve the caller's
+// real plan tier through the business owner) - this route sits OUTSIDE
+// app/(dashboard)/layout.tsx (deliberately, so the dashboard chrome never
+// renders here), so it never inherits that layout's BusinessProvider the
+// way every other UpgradeModal usage in the app does. Without this
+// wrapper, mounting UpgradeModal here throws "useBusinessContext must be
+// used within BusinessProvider" (found live 2026-09-21).
 export default function OnboardingPlanPage() {
+  return (
+    <BusinessProvider>
+      <OnboardingPlanContent />
+    </BusinessProvider>
+  )
+}
+
+function OnboardingPlanContent() {
   const { user, profile, loading } = useAuth()
   const router = useRouter()
   const { t } = useLanguage()
