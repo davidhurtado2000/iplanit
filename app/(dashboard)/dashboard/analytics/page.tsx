@@ -757,7 +757,17 @@ function AnalyticsPageInner() {
           are further gated per-tab below, inside this outer boundary. */}
       <PremiumFeature featureName={tr.premiumTitle} requiredPlan="basic">
         <Tabs defaultValue={initialTab} className="space-y-4">
-          <TabsList className="flex-wrap">
+          {/* Grid on mobile instead of the base inline-flex/h-9/w-fit -
+              those don't actually wrap cleanly with a variable 3-7 tabs:
+              h-9 is a fixed height, so once flex-wrap pushed a tab (e.g.
+              "Ask the AI") onto a second line, the row stayed clipped to
+              one row's height and visually overlapped the content below
+              instead of the tab list growing - found live 2026-09-21.
+              Matches the same grid/h-auto pattern already used for
+              Settings' own tab bar (app/(dashboard)/dashboard/settings/
+              page.tsx), reverting to the normal single-row layout from
+              sm: up where there's room for all of them. */}
+          <TabsList className="grid h-auto w-full grid-cols-2 gap-1.5 p-1.5 sm:inline-flex sm:h-9 sm:w-fit sm:gap-0 sm:p-[3px]">
             {meetsPlan(plan, 'pro') && (
               <>
                 <TabsTrigger value="overview">{tr.tabOverview}</TabsTrigger>
@@ -779,9 +789,18 @@ function AnalyticsPageInner() {
 
           <TabsContent value="overview" className="space-y-4">
             <div className="flex items-center justify-end">
-              <Button variant="ghost" size="sm" className="-mr-2 gap-2 text-muted-foreground" onClick={handleExportReservations}>
+              {/* "Export reservations (CSV)" ran past the edge of the
+                  screen on mobile (found live 2026-09-21) - icon-only
+                  there, full label once there's room for it from sm: up. */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="-mr-2 gap-2 text-muted-foreground"
+                onClick={handleExportReservations}
+                aria-label={tr.exportReservations}
+              >
                 <Download className="h-4 w-4" />
-                {tr.exportReservations}
+                <span className="hidden sm:inline">{tr.exportReservations}</span>
               </Button>
             </div>
 
