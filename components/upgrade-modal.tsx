@@ -139,7 +139,9 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
 
   const BASIC_FEATURES = [
     { icon: Clock, title: m.featureBasicReservationsTitle },
+    { icon: Users, title: m.featureBasicClientsTitle },
     { icon: Layers, title: m.featureBasicResourcesTitle },
+    { icon: BarChart3, title: m.featureBasicReportsTitle },
   ]
 
   const PRO_FEATURES = [
