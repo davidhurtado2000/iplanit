@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { motion, useReducedMotion } from 'framer-motion'
 import {
   Dialog,
   DialogContent,
@@ -89,6 +90,7 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
   const router = useRouter()
   const { user, refreshProfile, signOut } = useAuth()
   const { currentBusiness } = useBusinesses()
+  const reduceMotion = useReducedMotion()
   const m = t.upgradeModal
   const [loadingTier, setLoadingTier] = useState<'basic' | 'pro' | 'premium' | null>(null)
   const [checkoutError, setCheckoutError] = useState('')
@@ -307,7 +309,12 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                 {/* Basic card - never satisfies a requiredPlan gate (both
                     'pro' and 'premium' mean Basic is missing the feature),
                     so it always renders in the plain/unemphasized style. */}
-                <div className="flex flex-col gap-4 rounded-xl border-2 border-border p-4 sm:p-5">
+                <motion.div
+                  initial={{ opacity: 0, y: reduceMotion ? 0 : 14 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: reduceMotion ? 0 : 0.35, delay: reduceMotion ? 0 : 0.05, ease: [0.2, 0.7, 0.3, 1] }}
+                  className="flex flex-col gap-4 rounded-xl border-2 border-border p-4 sm:p-5"
+                >
                   <div>
                     <p className="text-sm font-semibold text-foreground">{m.basicTitle}</p>
                     <div className="flex items-baseline gap-1">
@@ -346,10 +353,13 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                       {m.subscribeBasicBtn}
                     </Button>
                   </div>
-                </div>
+                </motion.div>
 
                 {/* Pro card */}
-                <div
+                <motion.div
+                  initial={{ opacity: 0, y: reduceMotion ? 0 : 14 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: reduceMotion ? 0 : 0.35, delay: reduceMotion ? 0 : 0.12, ease: [0.2, 0.7, 0.3, 1] }}
                   className={cn(
                     'flex flex-col gap-4 rounded-xl border-2 p-4 sm:p-5',
                     requiredPlan === 'premium' ? 'border-border' : 'border-primary/30 bg-primary/5'
@@ -394,10 +404,13 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                       {m.subscribeProBtn}
                     </Button>
                   </div>
-                </div>
+                </motion.div>
 
                 {/* Premium card */}
-                <div
+                <motion.div
+                  initial={{ opacity: 0, y: reduceMotion ? 0 : 14 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: reduceMotion ? 0 : 0.35, delay: reduceMotion ? 0 : 0.19, ease: [0.2, 0.7, 0.3, 1] }}
                   className={cn(
                     'flex flex-col gap-4 rounded-xl border-2 p-4 sm:p-5',
                     requiredPlan === 'pro' ? 'border-border' : 'border-amber-400/60 bg-amber-500/5'
@@ -440,7 +453,7 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                       {m.subscribePremiumBtn}
                     </Button>
                   </div>
-                </div>
+                </motion.div>
               </div>
 
               {checkoutError && <p className="text-center text-xs text-destructive">{checkoutError}</p>}

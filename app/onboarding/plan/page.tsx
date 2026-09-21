@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { Loader2 } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { useLanguage } from '@/context/language-context'
@@ -42,6 +43,7 @@ function OnboardingPlanContent() {
   const { user, profile, loading } = useAuth()
   const router = useRouter()
   const { t } = useLanguage()
+  const reduceMotion = useReducedMotion()
 
   useEffect(() => {
     if (loading) return
@@ -56,26 +58,42 @@ function OnboardingPlanContent() {
     }
   }, [loading, user, profile, router])
 
-  if (loading || !user || !profile || !profile.requires_plan_selection) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
+  const ready = !loading && !!user && !!profile && profile.requires_plan_selection
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-background px-4 py-12">
-      <div className="flex items-center gap-2">
-        <img src="/favicon-96x96.png" alt="" className="h-9 w-9" />
-        <img src="/logotipo_modolight.png" alt="iPlanit" className="h-7 w-auto dark:hidden" />
-        <img src="/logotipo_mododark.png" alt="iPlanit" className="hidden h-7 w-auto dark:block" />
-      </div>
-      <div className="text-center">
-        <h1 className="text-xl font-bold text-foreground">{t.onboardingPlan.title}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{t.onboardingPlan.subtitle}</p>
-      </div>
-      <UpgradeModal isOpen onClose={() => {}} isOnboarding />
+      <AnimatePresence mode="wait">
+        {!ready ? (
+          <motion.div
+            key="loading"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: reduceMotion ? 0 : 0.2 }}
+          >
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="content"
+            initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: reduceMotion ? 0 : 0.35, ease: [0.2, 0.7, 0.3, 1] }}
+            className="flex flex-col items-center gap-8"
+          >
+            <div className="flex items-center gap-2">
+              <img src="/favicon-96x96.png" alt="" className="h-9 w-9" />
+              <img src="/logotipo_modolight.png" alt="iPlanit" className="h-7 w-auto dark:hidden" />
+              <img src="/logotipo_mododark.png" alt="iPlanit" className="hidden h-7 w-auto dark:block" />
+            </div>
+            <div className="text-center">
+              <h1 className="text-xl font-bold text-foreground">{t.onboardingPlan.title}</h1>
+              <p className="mt-1 text-sm text-muted-foreground">{t.onboardingPlan.subtitle}</p>
+            </div>
+            <UpgradeModal isOpen onClose={() => {}} isOnboarding />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
