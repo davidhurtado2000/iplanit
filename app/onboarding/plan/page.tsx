@@ -69,7 +69,7 @@ function OnboardingPlanContent() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: reduceMotion ? 0 : 0.2 }}
+            transition={{ duration: reduceMotion ? 0 : 0.3 }}
           >
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </motion.div>
@@ -78,7 +78,7 @@ function OnboardingPlanContent() {
             key="content"
             initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: reduceMotion ? 0 : 0.35, ease: [0.2, 0.7, 0.3, 1] }}
+            transition={{ duration: reduceMotion ? 0 : 0.5, ease: [0.2, 0.7, 0.3, 1] }}
             className="flex flex-col items-center gap-8"
           >
             <div className="flex items-center gap-2">

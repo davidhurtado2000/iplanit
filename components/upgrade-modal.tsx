@@ -94,7 +94,13 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
   const m = t.upgradeModal
   const [loadingTier, setLoadingTier] = useState<'basic' | 'pro' | 'premium' | null>(null)
   const [checkoutError, setCheckoutError] = useState('')
-  const [trialEligible, setTrialEligible] = useState(false)
+  // null = still resolving (has_used_trial hasn't answered yet) - the
+  // plans step waits for this instead of rendering with trialEligible
+  // implicitly false and then having the trial badges/banner pop in a
+  // beat later once it resolves, which read as disorienting for new
+  // users (found live 2026-09-21: the "Free for your first 30 days" text
+  // appearing ~1s after everything else).
+  const [trialEligible, setTrialEligible] = useState<boolean | null>(null)
 
   const [step, setStep] = useState<Step>('plans')
   const [selectedTier, setSelectedTier] = useState<'basic' | 'pro' | 'premium' | null>(null)
@@ -287,8 +293,17 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
             {t.signOut}
           </button>
         )}
-        {step === 'plans' && (
-          <>
+        {step === 'plans' && trialEligible === null && (
+          <div className="flex min-h-[420px] items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        )}
+        {step === 'plans' && trialEligible !== null && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: reduceMotion ? 0 : 0.6 }}
+          >
             <DialogHeader>
               <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-orange-500">
                 <Crown className="h-7 w-7 text-white" />
@@ -312,7 +327,7 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                 <motion.div
                   initial={{ opacity: 0, y: reduceMotion ? 0 : 14 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: reduceMotion ? 0 : 0.35, delay: reduceMotion ? 0 : 0.05, ease: [0.2, 0.7, 0.3, 1] }}
+                  transition={{ duration: reduceMotion ? 0 : 0.55, delay: reduceMotion ? 0 : 0.1, ease: [0.2, 0.7, 0.3, 1] }}
                   className="flex flex-col gap-4 rounded-xl border-2 border-border p-4 sm:p-5"
                 >
                   <div>
@@ -359,7 +374,7 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                 <motion.div
                   initial={{ opacity: 0, y: reduceMotion ? 0 : 14 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: reduceMotion ? 0 : 0.35, delay: reduceMotion ? 0 : 0.12, ease: [0.2, 0.7, 0.3, 1] }}
+                  transition={{ duration: reduceMotion ? 0 : 0.55, delay: reduceMotion ? 0 : 0.24, ease: [0.2, 0.7, 0.3, 1] }}
                   className={cn(
                     'flex flex-col gap-4 rounded-xl border-2 p-4 sm:p-5',
                     requiredPlan === 'premium' ? 'border-border' : 'border-primary/30 bg-primary/5'
@@ -410,7 +425,7 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                 <motion.div
                   initial={{ opacity: 0, y: reduceMotion ? 0 : 14 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: reduceMotion ? 0 : 0.35, delay: reduceMotion ? 0 : 0.19, ease: [0.2, 0.7, 0.3, 1] }}
+                  transition={{ duration: reduceMotion ? 0 : 0.55, delay: reduceMotion ? 0 : 0.38, ease: [0.2, 0.7, 0.3, 1] }}
                   className={cn(
                     'flex flex-col gap-4 rounded-xl border-2 p-4 sm:p-5',
                     requiredPlan === 'pro' ? 'border-border' : 'border-amber-400/60 bg-amber-500/5'
@@ -473,7 +488,7 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                 </button>
               </div>
             </div>
-          </>
+          </motion.div>
         )}
 
         {step === 'card' && clientSecret && (
