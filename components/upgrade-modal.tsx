@@ -357,12 +357,12 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                       <span className="text-xs text-muted-foreground sm:text-sm">{m.perMonth}</span>
                     </div>
                     {trialEligible && (
-                      <span className="mt-1 text-xs font-medium text-amber-500">
+                      <span className="mt-1 text-xs font-medium text-amber-600 dark:text-amber-400">
                         {m.trialBadge}
                       </span>
                     )}
                     <Button
-                      className="mt-3 w-full gap-2 px-6 shadow-sm transition-shadow hover:shadow-md active:scale-[0.97] has-[>svg]:px-6"
+                      className="mt-3 w-full gap-2 px-6 shadow-sm transition-shadow hover:bg-neutral-100 hover:shadow-md active:scale-[0.97] has-[>svg]:px-6 dark:hover:bg-neutral-800"
                       variant="outline"
                       onClick={() => handleSubscribe('basic')}
                       disabled={loadingTier !== null}
@@ -412,7 +412,7 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                       </span>
                     </div>
                     {trialEligible && (
-                      <span className="mt-1 text-xs font-medium text-amber-500">
+                      <span className={cn('mt-1 text-xs font-medium', proHighlighted ? 'text-amber-300' : 'text-amber-600 dark:text-amber-400')}>
                         {m.trialBadge}
                       </span>
                     )}
@@ -480,7 +480,7 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                       </span>
                     </div>
                     {trialEligible && (
-                      <span className="mt-1 text-xs font-medium text-amber-500">
+                      <span className={cn('mt-1 text-xs font-medium', premiumHighlighted ? 'text-amber-300' : 'text-amber-600 dark:text-amber-400')}>
                         {m.trialBadge}
                       </span>
                     )}

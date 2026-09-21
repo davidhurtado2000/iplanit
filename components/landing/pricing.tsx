@@ -142,7 +142,9 @@ export function Pricing() {
                     asChild
                     className={cn(
                       'mt-6 w-full shadow-sm transition-shadow hover:shadow-md active:scale-[0.97]',
-                      plan.band !== 'muted' && 'bg-white text-neutral-900 hover:bg-neutral-200'
+                      plan.band === 'muted'
+                        ? 'hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                        : 'bg-white text-neutral-900 hover:bg-neutral-200'
                     )}
                     variant={plan.band === 'muted' ? 'outline' : 'default'}
                   >
