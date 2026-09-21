@@ -215,13 +215,22 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
 
               {/* Plan Badge / Upgrade CTA */}
               <div className="border-t p-4">
-                {userPlan === 'premium' ? (
-                  <div className="rounded-lg bg-neutral-950/10 p-3 dark:bg-white/10">
-                    <div className="flex items-center gap-2">
-                      <Crown className="h-4 w-4 text-neutral-900 dark:text-white" />
-                      <span className="text-sm font-medium">{t.mobileNav.premium}</span>
-                    </div>
-                  </div>
+                {userPlan === 'pro' || userPlan === 'premium' ? (
+                  <Link
+                    href="/dashboard/settings?tab=plan"
+                    onClick={onToggle}
+                    className={cn(
+                      'flex items-center gap-2 rounded-lg p-3 transition-colors',
+                      userPlan === 'premium'
+                        ? 'bg-neutral-950/10 hover:bg-neutral-950/15 dark:bg-white/10 dark:hover:bg-white/15'
+                        : 'bg-primary/10 hover:bg-primary/15'
+                    )}
+                  >
+                    <Crown className={cn('h-4 w-4', userPlan === 'premium' ? 'text-neutral-900 dark:text-white' : 'text-primary')} />
+                    <span className="text-sm font-medium">
+                      {userPlan === 'premium' ? t.settings.premiumPlanName : t.settings.proPlanName}
+                    </span>
+                  </Link>
                 ) : (
                   <Button
                     className="w-full gap-2 bg-amber-500 text-white hover:bg-amber-600"

@@ -262,6 +262,28 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
                 </div>
               </Link>
             )}
+            {/* Plan status pill - Pro/Premium only; Free/Basic get the
+                actionable upgrade CTA further down instead (see "Plan
+                Badge" below), so this never competes with that for
+                attention. Sits inside the sidebar's own chrome, which is
+                already near-black regardless of site theme (--sidebar
+                token) - Premium goes white/inverted rather than the ink
+                black used everywhere else, since black-on-black here
+                would just disappear. */}
+            {currentBusiness && (userPlan === 'pro' || userPlan === 'premium') && (
+              <Link
+                href="/dashboard/settings?tab=plan"
+                className={cn(
+                  'mt-3 flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
+                  userPlan === 'premium'
+                    ? 'bg-white text-neutral-900 hover:bg-neutral-200'
+                    : 'bg-sidebar-primary/15 text-sidebar-primary hover:bg-sidebar-primary/25'
+                )}
+              >
+                <Crown className="h-3 w-3" />
+                {userPlan === 'premium' ? t.settings.premiumPlanName : t.settings.proPlanName}
+              </Link>
+            )}
           </div>
         )}
 
