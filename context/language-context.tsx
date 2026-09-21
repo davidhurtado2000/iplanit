@@ -35,13 +35,12 @@ const TRANSLATIONS = {
       navFaq: 'Preguntas',
       navBlog: 'Blog',
       loginCta: 'Iniciar sesion',
-      signupCta: 'Empieza gratis',
+      signupCta: 'Prueba gratis',
       goToDashboard: 'Ir al Dashboard',
 
-      heroBadge: 'Sin tarjeta de credito',
       heroTitle: 'Menos llamadas, mas reservas',
       heroSubtitle: 'Desde peluquerias hasta clinicas y academias: organiza tu calendario, tus clientes y tu equipo - y dale a tus clientes un link para reservar solos, a cualquier hora.',
-      heroCtaPrimary: 'Empieza gratis',
+      heroCtaPrimary: 'Prueba gratis',
       heroCtaSecondary: 'Ver como funciona',
       heroMockToday: 'Hoy',
       heroMockBooked: 'reservas hoy',
@@ -208,8 +207,8 @@ const TRANSLATIONS = {
       faqA8: 'Cada negocio tiene sus datos aislados a nivel de base de datos, accesibles solo para esa cuenta, y toda la conexion viaja encriptada (HTTPS).',
 
       finalCtaTitle: 'Listo para organizar tu negocio?',
-      finalCtaSubtitle: 'Crea tu cuenta gratis en menos de 2 minutos - sin tarjeta de credito.',
-      finalCtaButton: 'Empieza gratis',
+      finalCtaSubtitle: 'Activa tu prueba gratis de 30 dias en menos de 2 minutos.',
+      finalCtaButton: 'Prueba gratis',
 
       footerTagline: 'Reservas, calendario y clientes - todo en un solo lugar.',
       footerProduct: 'Producto',
@@ -1604,13 +1603,12 @@ const TRANSLATIONS = {
       navFaq: 'FAQ',
       navBlog: 'Blog',
       loginCta: 'Log in',
-      signupCta: 'Start for free',
+      signupCta: 'Start free trial',
       goToDashboard: 'Go to Dashboard',
 
-      heroBadge: 'No credit card required',
       heroTitle: 'Fewer calls. More bookings',
       heroSubtitle: 'From hair salons to clinics and academies: organize your calendar, your clients, and your team - and give your clients a link to book themselves, anytime.',
-      heroCtaPrimary: 'Start for free',
+      heroCtaPrimary: 'Start free trial',
       heroCtaSecondary: 'See how it works',
       heroMockToday: 'Today',
       heroMockBooked: 'bookings today',
@@ -1777,8 +1775,8 @@ const TRANSLATIONS = {
       faqA8: "Each business's data is isolated at the database level, accessible only to that account, and every connection is encrypted (HTTPS).",
 
       finalCtaTitle: 'Ready to organize your business?',
-      finalCtaSubtitle: 'Create your free account in under 2 minutes - no credit card required.',
-      finalCtaButton: 'Start for free',
+      finalCtaSubtitle: 'Start your 30-day free trial in under 2 minutes.',
+      finalCtaButton: 'Start free trial',
 
       footerTagline: 'Bookings, calendar, and clients - all in one place.',
       footerProduct: 'Product',

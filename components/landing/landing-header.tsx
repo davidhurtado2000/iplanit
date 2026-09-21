@@ -127,6 +127,26 @@ export function LandingHeader() {
         )}
       >
         <div className="flex flex-col gap-1 px-4 py-4">
+          {/* Sign up/log in first, above the fold of the slide-down panel -
+              previously sat after Features, the 6-item industries list,
+              and Pricing/FAQ/Blog, which meant scrolling to even discover
+              they were there (found live 2026-09-21). */}
+          {isLoggedIn ? (
+            <Button asChild className="w-full">
+              <Link href="/dashboard" onClick={() => setMobileOpen(false)}>{l.goToDashboard}</Link>
+            </Button>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <Button asChild variant="outline" className="w-full">
+                <Link href="/login" onClick={() => setMobileOpen(false)}>{l.loginCta}</Link>
+              </Button>
+              <Button asChild className="w-full">
+                <Link href="/register" onClick={() => setMobileOpen(false)}>{l.signupCta}</Link>
+              </Button>
+            </div>
+          )}
+          <div className="my-2 border-t" />
+
           <Link
             href="/#funciones"
             onClick={() => setMobileOpen(false)}
@@ -170,20 +190,6 @@ export function LandingHeader() {
           <div className="flex items-center justify-between px-2">
             <LanguageToggle className="mb-0 w-auto justify-start" />
           </div>
-          {isLoggedIn ? (
-            <Button asChild className="mt-1 w-full">
-              <Link href="/dashboard">{l.goToDashboard}</Link>
-            </Button>
-          ) : (
-            <div className="mt-1 flex flex-col gap-2">
-              <Button asChild variant="outline" className="w-full">
-                <Link href="/login">{l.loginCta}</Link>
-              </Button>
-              <Button asChild className="w-full">
-                <Link href="/register">{l.signupCta}</Link>
-              </Button>
-            </div>
-          )}
         </div>
       </div>
     </header>
