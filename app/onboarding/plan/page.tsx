@@ -39,7 +39,7 @@ export default function OnboardingPlanPage() {
 }
 
 function OnboardingPlanContent() {
-  const { user, profile, loading, signOut } = useAuth()
+  const { user, profile, loading } = useAuth()
   const router = useRouter()
   const { t } = useLanguage()
 
@@ -65,14 +65,7 @@ function OnboardingPlanContent() {
   }
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center gap-8 bg-background px-4 py-12">
-      <button
-        type="button"
-        onClick={signOut}
-        className="absolute right-4 top-4 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-      >
-        {t.signOut}
-      </button>
+    <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-background px-4 py-12">
       <div className="flex items-center gap-2">
         <img src="/favicon-96x96.png" alt="" className="h-9 w-9" />
         <img src="/logotipo_modolight.png" alt="iPlanit" className="h-7 w-auto dark:hidden" />

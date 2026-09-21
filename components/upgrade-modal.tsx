@@ -87,7 +87,7 @@ type Step = 'plans' | 'card' | 'confirm' | 'success'
 export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboarding }: UpgradeModalProps) {
   const { t, language } = useLanguage()
   const router = useRouter()
-  const { user, refreshProfile } = useAuth()
+  const { user, refreshProfile, signOut } = useAuth()
   const { currentBusiness } = useBusinesses()
   const m = t.upgradeModal
   const [loadingTier, setLoadingTier] = useState<'basic' | 'pro' | 'premium' | null>(null)
@@ -275,7 +275,16 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-      <DialogContent className="sm:max-w-3xl">
+      <DialogContent className="sm:max-w-3xl" showCloseButton={!isOnboarding}>
+        {isOnboarding && (
+          <button
+            type="button"
+            onClick={signOut}
+            className="absolute top-4 right-4 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          >
+            {t.signOut}
+          </button>
+        )}
         {step === 'plans' && (
           <>
             <DialogHeader>
