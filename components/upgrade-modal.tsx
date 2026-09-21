@@ -357,8 +357,19 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                       <span className="text-xs text-muted-foreground sm:text-sm">{m.perMonth}</span>
                     </div>
                     {trialEligible && (
-                      <p className="text-xs font-medium text-amber-600 dark:text-amber-400">{m.trialBadge}</p>
+                      <span className="mt-1 inline-flex items-center rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-semibold text-white">
+                        {m.trialBadge}
+                      </span>
                     )}
+                    <Button
+                      className="mt-3 w-full gap-2 px-6 has-[>svg]:px-6"
+                      variant="outline"
+                      onClick={() => handleSubscribe('basic')}
+                      disabled={loadingTier !== null}
+                    >
+                      {loadingTier === 'basic' && <Loader2 className="h-4 w-4 animate-spin" />}
+                      {m.subscribeBasicBtn}
+                    </Button>
                   </div>
                   <div className="flex flex-1 flex-col gap-4 p-4 sm:p-5">
                     <div className="space-y-2.5">
@@ -378,17 +389,6 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                         {m.basicFeatureNotIncluded.replace('{feature}', feature)}
                       </p>
                     )}
-                    <div className="mt-auto border-t pt-4">
-                      <Button
-                        className="w-full gap-2 px-6 has-[>svg]:px-6"
-                        variant="outline"
-                        onClick={() => handleSubscribe('basic')}
-                        disabled={loadingTier !== null}
-                      >
-                        {loadingTier === 'basic' && <Loader2 className="h-4 w-4 animate-spin" />}
-                        {m.subscribeBasicBtn}
-                      </Button>
-                    </div>
                   </div>
                 </motion.div>
 
@@ -412,10 +412,24 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                       </span>
                     </div>
                     {trialEligible && (
-                      <p className={cn('text-xs font-medium', proHighlighted ? 'text-amber-300' : 'text-amber-600 dark:text-amber-400')}>
+                      <span className="mt-1 inline-flex items-center rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-semibold text-white">
                         {m.trialBadge}
-                      </p>
+                      </span>
                     )}
+                    <Button
+                      className={cn(
+                        'mt-3 w-full gap-2 px-6 has-[>svg]:px-6',
+                        proHighlighted
+                          ? 'bg-white text-neutral-900 hover:bg-neutral-200'
+                          : 'bg-muted-foreground/10 text-foreground hover:bg-muted-foreground/20'
+                      )}
+                      variant={proHighlighted ? 'default' : 'outline'}
+                      onClick={() => handleSubscribe('pro')}
+                      disabled={loadingTier !== null}
+                    >
+                      {loadingTier === 'pro' && <Loader2 className="h-4 w-4 animate-spin" />}
+                      {m.subscribeProBtn}
+                    </Button>
                   </div>
                   <div className="flex flex-1 flex-col gap-4 p-4 sm:p-5">
                     <p className="text-sm font-semibold text-foreground">{m.proIncludesBasicLabel}</p>
@@ -443,17 +457,6 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                         {m.proFeatureNotIncluded.replace('{feature}', feature)}
                       </p>
                     )}
-                    <div className="mt-auto border-t pt-4">
-                      <Button
-                        className={cn('w-full gap-2 px-6 has-[>svg]:px-6', !proHighlighted && 'bg-muted-foreground/10 text-foreground hover:bg-muted-foreground/20')}
-                        variant={proHighlighted ? 'default' : 'outline'}
-                        onClick={() => handleSubscribe('pro')}
-                        disabled={loadingTier !== null}
-                      >
-                        {loadingTier === 'pro' && <Loader2 className="h-4 w-4 animate-spin" />}
-                        {m.subscribeProBtn}
-                      </Button>
-                    </div>
                   </div>
                 </motion.div>
 
@@ -477,10 +480,28 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                       </span>
                     </div>
                     {trialEligible && (
-                      <p className={cn('text-xs font-medium', premiumHighlighted ? 'text-amber-300' : 'text-amber-600 dark:text-amber-400')}>
+                      <span className="mt-1 inline-flex items-center rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-semibold text-white">
                         {m.trialBadge}
-                      </p>
+                      </span>
                     )}
+                    <Button
+                      className={cn(
+                        'mt-3 w-full gap-2 px-6 has-[>svg]:px-6',
+                        premiumHighlighted
+                          ? 'bg-white text-neutral-900 hover:bg-neutral-200'
+                          : 'bg-muted-foreground/10 text-foreground hover:bg-muted-foreground/20'
+                      )}
+                      variant={premiumHighlighted ? 'default' : 'outline'}
+                      onClick={() => handleSubscribe('premium')}
+                      disabled={loadingTier !== null}
+                    >
+                      {loadingTier === 'premium' ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Crown className="h-4 w-4" />
+                      )}
+                      {m.subscribePremiumBtn}
+                    </Button>
                   </div>
                   <div className="flex flex-1 flex-col gap-4 p-4 sm:p-5">
                     <p className="text-sm font-semibold text-foreground">{m.premiumIncludesProLabel}</p>
@@ -502,26 +523,6 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
                         <span className="block font-medium text-foreground">{t.landing.planAiAddonTitle}</span>
                         <span className="mt-0.5 block text-muted-foreground">{t.landing.planAiAddonDesc}</span>
                       </span>
-                    </div>
-                    <div className="mt-auto border-t pt-4">
-                      <Button
-                        className={cn(
-                          'w-full gap-2 px-6 has-[>svg]:px-6',
-                          premiumHighlighted
-                            ? 'bg-neutral-950 text-white hover:bg-neutral-800 dark:bg-neutral-900 dark:hover:bg-neutral-700'
-                            : 'bg-muted-foreground/10 text-foreground hover:bg-muted-foreground/20'
-                        )}
-                        variant={premiumHighlighted ? undefined : 'outline'}
-                        onClick={() => handleSubscribe('premium')}
-                        disabled={loadingTier !== null}
-                      >
-                        {loadingTier === 'premium' ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Crown className="h-4 w-4" />
-                        )}
-                        {m.subscribePremiumBtn}
-                      </Button>
                     </div>
                   </div>
                 </motion.div>
