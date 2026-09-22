@@ -88,6 +88,7 @@ interface Worker {
   color: string
   is_active: boolean
   worker_group_id: string
+  allows_concurrent_services: boolean
 }
 
 export default function WorkersPage() {
@@ -174,6 +175,7 @@ export default function WorkersPage() {
     name: '',
     color: WORKER_COLORS[0],
     isActive: true,
+    allowsConcurrentServices: false,
   })
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([])
   const [useCustomHours, setUseCustomHours] = useState(false)
@@ -213,7 +215,12 @@ export default function WorkersPage() {
   const handleOpenWorkerModal = (worker?: Worker) => {
     if (worker) {
       setEditingWorker(worker)
-      setWorkerForm({ name: worker.name, color: worker.color || WORKER_COLORS[0], isActive: worker.is_active })
+      setWorkerForm({
+        name: worker.name,
+        color: worker.color || WORKER_COLORS[0],
+        isActive: worker.is_active,
+        allowsConcurrentServices: worker.allows_concurrent_services,
+      })
       setSelectedServiceIds(workerServices.filter((ws) => ws.worker_id === worker.id).map((ws) => ws.service_id))
       const existingHours = workerHours.filter((h) => h.worker_id === worker.id)
       if (existingHours.length > 0) {
@@ -232,7 +239,7 @@ export default function WorkersPage() {
       }
     } else {
       setEditingWorker(null)
-      setWorkerForm({ name: '', color: WORKER_COLORS[0], isActive: true })
+      setWorkerForm({ name: '', color: WORKER_COLORS[0], isActive: true, allowsConcurrentServices: false })
       setSelectedServiceIds([])
       setUseCustomHours(false)
       setHoursForm(DEFAULT_WORKER_HOURS)
@@ -252,6 +259,7 @@ export default function WorkersPage() {
         name: workerForm.name,
         color: workerForm.color,
         is_active: workerForm.isActive,
+        allows_concurrent_services: workerForm.allowsConcurrentServices,
       }
 
       let workerId: string
@@ -622,6 +630,17 @@ export default function WorkersPage() {
                 id="worker-active"
                 checked={workerForm.isActive}
                 onCheckedChange={(checked) => setWorkerForm({ ...workerForm, isActive: checked })}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-2 rounded-lg border p-4">
+              <div>
+                <Label>{t.workers.concurrentServicesTitle}</Label>
+                <p className="text-xs text-muted-foreground">{t.workers.concurrentServicesDesc}</p>
+              </div>
+              <Switch
+                checked={workerForm.allowsConcurrentServices}
+                onCheckedChange={(checked) => setWorkerForm({ ...workerForm, allowsConcurrentServices: checked })}
               />
             </div>
 

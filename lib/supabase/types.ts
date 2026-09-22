@@ -972,6 +972,7 @@ export interface Database {
           color: string
           is_active: boolean
           worker_group_id: string
+          allows_concurrent_services: boolean
           created_at: string
           updated_at: string
         }
@@ -982,6 +983,7 @@ export interface Database {
           color?: string
           is_active?: boolean
           worker_group_id?: string
+          allows_concurrent_services?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -992,6 +994,7 @@ export interface Database {
           color?: string
           is_active?: boolean
           worker_group_id?: string
+          allows_concurrent_services?: boolean
           created_at?: string
           updated_at?: string
         }

@@ -39,7 +39,8 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Loader2 } from 'lucide-react'
-import { Calendar, Clock, User, Briefcase, Trash2, MapPin, Repeat, DollarSign, ParkingSquare, ChevronDown, ChevronsUpDown, Check, Eye, UserPlus, Bold, List, UserCog, History, Plus, X, Users, MessageCircle } from 'lucide-react'
+import { Calendar, Clock, User, Briefcase, Trash2, MapPin, Repeat, DollarSign, ParkingSquare, ChevronDown, ChevronsUpDown, Check, Eye, UserPlus, Bold, List, UserCog, History, Plus, X, Users, MessageCircle, Copy } from 'lucide-react'
+import { toast } from 'sonner'
 import { renderSimpleMarkdown } from '@/lib/simple-markdown'
 import {
   DropdownMenu,
@@ -853,11 +854,16 @@ export function ReservationModal({
         .filter((r) => r.resource_id === formData.resource_id && r.status !== 'cancelled' && r.id !== reservation?.id)
         .map(expandByBuffer)
     : []
-  const workerBusyRanges = formData.worker_id
-    ? reservations
-        .filter((r) => r.worker_id === formData.worker_id && r.status !== 'cancelled' && r.id !== reservation?.id)
-        .map(expandByBuffer)
-    : []
+  // A worker with allows_concurrent_services (scripts/094) never counts as
+  // busy against themselves - skips both the slot suggestions here and the
+  // two save-time conflict checks further below.
+  const selectedWorker = workers.find((w) => w.id === formData.worker_id)
+  const workerBusyRanges =
+    formData.worker_id && !selectedWorker?.allows_concurrent_services
+      ? reservations
+          .filter((r) => r.worker_id === formData.worker_id && r.status !== 'cancelled' && r.id !== reservation?.id)
+          .map(expandByBuffer)
+      : []
   const busyRanges = [...resourceBusyRanges, ...workerBusyRanges]
 
   // A worker can have their own work schedule (scripts/057-staff-module.sql)
@@ -1046,7 +1052,7 @@ export function ReservationModal({
         }
       }
 
-      if (formData.worker_id) {
+      if (formData.worker_id && !selectedWorker?.allows_concurrent_services) {
         const { data: workerConflicts } = await supabase
           .from('reservations')
           .select('id')
@@ -1218,7 +1224,7 @@ export function ReservationModal({
         }
       }
 
-      if (formData.worker_id) {
+      if (formData.worker_id && !selectedWorker?.allows_concurrent_services) {
         let workerConflictQuery = supabase
           .from('reservations')
           .select('id')
@@ -1509,6 +1515,64 @@ export function ReservationModal({
         )
       : null
 
+  // Plain-text summary of the same fields shown in view mode below, in the
+  // same order and using the exact same t.reservation.* labels - so
+  // whatever this copies always matches what's actually on screen, letter
+  // for letter, instead of a second hand-written copy of the labels that
+  // could quietly drift from them later.
+  const handleCopyDetails = async () => {
+    if (!reservation) return
+    const lines = [`${t.reservation.clientLabel} ${viewClient?.name ?? reservation.client_id}`]
+    if (existingAttendees.length > 0) {
+      lines.push(
+        `${t.reservation.attendeesLabel}: ${existingAttendees
+          .map((a) => clients.find((c) => c.id === a.client_id)?.name ?? '—')
+          .join(', ')}`
+      )
+    }
+    lines.push(
+      `${reservation.type === 'visit' ? t.reservation.interestedInLabel : t.reservation.serviceLabel} ${
+        viewService
+          ? `${viewService.name} (${formatDuration(
+              Math.round((new Date(reservation.end_time).getTime() - new Date(reservation.start_time).getTime()) / 60000)
+            )})`
+          : t.reservation.noServiceVisit
+      }`
+    )
+    if (reservation.price || reservation.price_usd) {
+      lines.push(`${t.reservation.priceLabel}: ${isUSD ? '$' : 'S/'} ${reservation.price_usd || reservation.price}`)
+    }
+    if (viewParkingSpot) {
+      lines.push(`${t.reservation.parkingAssigned}: ${viewParkingSpot.name}`)
+    }
+    if (viewResource) {
+      lines.push(`${t.reservation.resourceLabel} ${viewResource.name}`)
+    }
+    if (viewWorker) {
+      lines.push(`${workerLabel.singular}: ${viewWorker.name}`)
+    }
+    lines.push(
+      `${t.reservation.datetimeLabel} ${capitalizeFirst(
+        new Date(reservation.start_time).toLocaleDateString(locale, {
+          weekday: 'short',
+          day: 'numeric',
+          month: 'short',
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      )}`
+    )
+    if (reservation.notes) {
+      lines.push(`${t.reservation.notesLabel} ${reservation.notes}`)
+    }
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'))
+      toast.success(t.reservation.copiedToClipboard)
+    } catch (err) {
+      console.error('[iplanit] Error copying reservation details:', err)
+    }
+  }
+
   return (
     <>
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -1719,6 +1783,10 @@ export function ReservationModal({
                 </DropdownMenuContent>
               </DropdownMenu>
               <div className="flex flex-wrap gap-2">
+                <Button variant="outline" disabled={isLoading} className="gap-2" onClick={handleCopyDetails}>
+                  <Copy className="h-4 w-4" />
+                  {t.reservation.copyDetailsBtn}
+                </Button>
                 {whatsappReminderHref && (
                   <Button variant="outline" disabled={isLoading} className="gap-2" asChild>
                     <a href={whatsappReminderHref} target="_blank" rel="noopener noreferrer">

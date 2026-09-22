@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useBusinessContext } from './business-context'
 import { useLanguage } from './language-context'
 import { playNotificationChime, playLostDealChime } from '@/lib/notification-sound'
+import { toDateStr } from '@/lib/timezone'
 
 // ---- Shared types used across all dashboard pages ----
 
@@ -170,6 +171,7 @@ export interface Worker {
   color: string
   is_active: boolean
   worker_group_id: string
+  allows_concurrent_services: boolean
 }
 
 /** A worker's own work schedule - no rows means "follows business_hours",
@@ -427,9 +429,16 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         color: 'var(--primary-foreground)',
         border: 'none',
       }
+      // Needs ?date= like notification-bell.tsx's equivalent click handler -
+      // plain '/dashboard/calendar' only ever lands on today (see
+      // calendar-view.tsx's useState(initialDate ?? new Date())), so
+      // clicking this from an already-open calendar page, or for a
+      // reservation on any other day, visibly did nothing (found live
+      // 2026-09-22).
+      const dateStr = toDateStr(batch[0].start_time, currentBusiness.timezone || 'America/Lima')
       const action = {
         label: t.dashboard.newReservationToastCta,
-        onClick: () => router.push('/dashboard/calendar'),
+        onClick: () => router.push(`/dashboard/calendar?date=${dateStr}`),
       }
 
       if (batch.length === 1) {
