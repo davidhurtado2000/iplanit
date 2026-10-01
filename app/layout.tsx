@@ -1,6 +1,6 @@
 import React from 'react'
 import type { Metadata } from 'next'
-import { Geist, Geist_Mono, Fraunces } from 'next/font/google'
+import { Geist, Geist_Mono, Sora } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { AuthProvider } from '@/context/auth-context'
 import { LanguageProvider } from '@/context/language-context'
@@ -18,14 +18,17 @@ const geistMono = Geist_Mono({
   variable: '--font-geist-mono',
 })
 
-// Display serif, used only by the public booking flow (app/reservar) for
+// Display face, used only by the public booking flow (app/reservar) for
 // business names, step titles, and the confirmation ticket's date/time -
 // loaded globally here (next/font requires this) but never applied outside
 // components that opt into the `font-display` utility, so it has zero
-// visual effect on the dashboard or the marketing site.
-const fraunces = Fraunces({
+// visual effect on the dashboard or the marketing site. Was Fraunces (a
+// serif) - replaced 2026-09-30 after David compared options live and
+// picked this warmer sans over both the serif and plain Geist-everywhere,
+// see the "Booking Page Fonts" artifact from that session.
+const sora = Sora({
   subsets: ['latin'],
-  variable: '--font-fraunces',
+  variable: '--font-sora',
 })
 
 export const metadata: Metadata = {
@@ -69,7 +72,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable} font-sans antialiased`}>
+      <body className={`${geistSans.variable} ${geistMono.variable} ${sora.variable} font-sans antialiased`}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <AuthProvider>
             <LanguageProvider>

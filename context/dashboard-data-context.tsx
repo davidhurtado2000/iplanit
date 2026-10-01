@@ -99,6 +99,9 @@ export interface Service {
   price: number | null
   price_usd: number | null
   color: string
+  /** Optional reference photo shown on the public booking link - see
+   * scripts/097. Null = falls back to the color swatch, same as before. */
+  image_url: string | null
   /** 'fixed' uses this row's own duration_minutes/price/price_usd. 'preset'
    * uses service_duration_options instead. 'hourly' uses hourly_rate(_usd)
    * x a client-chosen whole number of hours within [min_hours, max_hours]. */
@@ -117,6 +120,13 @@ export interface Service {
    * reservation-modal.tsx and the services edit form. */
   max_attendees: number | null
   is_active: boolean
+  /** When false, hidden from the public booking link (app/reservar) but
+   * still usable for reservations created internally - see scripts/095. */
+  visible_on_public_link: boolean
+  /** When false, the public booking link never asks the client to pick a
+   * resource for this service (even with 2+ linked) - the server
+   * auto-assigns whichever is free. See scripts/096. */
+  client_chooses_resource: boolean
   /** Shared by every row that came from duplicating this service (within
    * the same sede or into another one, scripts/054) - null until the first
    * time it's ever duplicated. Every member of the family gets the SAME id

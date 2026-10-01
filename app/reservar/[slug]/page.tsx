@@ -23,6 +23,7 @@ import {
   Building2,
   Copy,
   Check,
+  X,
   ParkingSquare,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -71,6 +72,7 @@ interface PublicService {
   price: number
   price_usd: number | null
   color: string
+  image_url: string | null
   pricing_mode: 'fixed' | 'preset' | 'hourly'
   hourly_rate: number | null
   hourly_rate_usd: number | null
@@ -78,6 +80,7 @@ interface PublicService {
   max_hours: number | null
   buffer_before_min: number
   buffer_after_min: number
+  client_chooses_resource: boolean
   duration_options: PublicDurationOption[]
   resources: PublicResource[]
 }
@@ -101,6 +104,15 @@ function addDays(dateStr: string, days: number) {
   return d.toISOString().slice(0, 10)
 }
 
+// A service with 2+ linked resources only asks the client to pick one when
+// client_chooses_resource is on (scripts/096) - off means the choice is
+// pure internal logistics to that business (e.g. interchangeable chairs),
+// so the client only ever sees date/time and the server auto-assigns
+// whichever linked resource is actually free.
+function needsResourceStep(svc: PublicService) {
+  return svc.resources.length > 1 && svc.client_chooses_resource
+}
+
 // The steps after "service" genuinely vary per service (duration/hours/
 // resource are each conditional on how that service is configured) - this
 // mirrors the exact same branching handleSelectService/goToResourceOrDatetime
@@ -109,7 +121,7 @@ function getStepSequence(svc: PublicService): Step[] {
   const steps: Step[] = []
   if (svc.pricing_mode === 'preset') steps.push('duration')
   if (svc.pricing_mode === 'hourly') steps.push('hours')
-  if (svc.resources.length > 1) steps.push('resource')
+  if (needsResourceStep(svc)) steps.push('resource')
   steps.push('datetime', 'contact')
   return steps
 }
@@ -147,6 +159,13 @@ export default function PublicBookingPage() {
   const [selectedSlot, setSelectedSlot] = useState<Date | null>(null)
 
   const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '', documentNumber: '', notes: '' })
+  // "Option A" from the client-accounts conversation - no login, just
+  // recognize a returning client earlier (while they're still typing)
+  // instead of only silently matching them server-side after they submit.
+  const [clientMatch, setClientMatch] = useState<{ name: string; email: string | null; phone: string | null } | null>(
+    null
+  )
+  const [matchDismissed, setMatchDismissed] = useState(false)
   const [needsParking, setNeedsParking] = useState(false)
   const [parkingAvailability, setParkingAvailability] = useState<'checking' | 'available' | 'unavailable' | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -217,28 +236,113 @@ export default function PublicBookingPage() {
       setSelectedSlot(null)
       const dayStart = parseInTimezone(`${selectedDate}T00:00`, tz)
       const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000)
-      const { data } = await supabase.rpc('get_public_busy_times', {
-        p_business_id: business.id,
-        p_resource_id: selectedResourceId,
-        p_from: dayStart.toISOString(),
-        p_to: dayEnd.toISOString(),
-      })
-      const busy = (data as { start_time: string; end_time: string }[] | null) || []
-      setSlots(
-        generateAvailableSlots(
-          selectedDate,
-          businessHours,
-          effectiveDurationMinutes,
-          busy,
-          tz,
-          selectedService.buffer_before_min || 0,
-          selectedService.buffer_after_min || 0
-        )
+
+      // No resource picked because this service has several and
+      // client_chooses_resource is off (scripts/096) - a time is only
+      // unavailable if EVERY linked resource is busy then, so fetch each
+      // one's own busy times and union their available slots, instead of
+      // querying with a null resource_id (get_public_busy_times returns
+      // nothing for that - it would read as "nothing is ever busy").
+      const candidateResourceIds: (string | null)[] =
+        !selectedResourceId && selectedService.resources.length > 1
+          ? selectedService.resources.map((r) => r.id)
+          : [selectedResourceId]
+
+      const slotSets = await Promise.all(
+        candidateResourceIds.map(async (resourceId) => {
+          const { data } = await supabase.rpc('get_public_busy_times', {
+            p_business_id: business.id,
+            p_resource_id: resourceId,
+            p_from: dayStart.toISOString(),
+            p_to: dayEnd.toISOString(),
+          })
+          const busy = (data as { start_time: string; end_time: string }[] | null) || []
+          return generateAvailableSlots(
+            selectedDate,
+            businessHours,
+            effectiveDurationMinutes,
+            busy,
+            tz,
+            selectedService.buffer_before_min || 0,
+            selectedService.buffer_after_min || 0
+          )
+        })
       )
+
+      const seenTimes = new Set<number>()
+      const unionedSlots = slotSets
+        .flat()
+        .filter((slot) => {
+          if (seenTimes.has(slot.getTime())) return false
+          seenTimes.add(slot.getTime())
+          return true
+        })
+        .sort((a, b) => a.getTime() - b.getTime())
+
+      setSlots(unionedSlots)
       setLoadingSlots(false)
     }
     loadSlots()
   }, [step, business, selectedService, selectedResourceId, selectedDate, businessHours, effectiveDurationMinutes])
+
+  // "Option A" from the client-accounts conversation (no login, no
+  // accounts) - create_public_reservation already recognizes a returning
+  // client by email/phone and backfills their record on submit
+  // (scripts/064/072/098), but only finds out AFTER they've retyped
+  // everything. This offers the same match earlier, while they're still
+  // typing, so they can just confirm it instead. Never overrides a name
+  // they've already typed themselves - only looks once the name field is
+  // still empty, and only once the email/phone they typed looks real
+  // enough to be worth a lookup (not on every keystroke).
+  useEffect(() => {
+    if (step !== 'contact' || !business) return
+    if (contactForm.name.trim() !== '') {
+      setClientMatch(null)
+      return
+    }
+
+    const email = contactForm.email.trim()
+    const phone = contactForm.phone.trim()
+    const emailLooksReal = email.includes('@') && email.includes('.')
+    const phoneLooksReal = phone.replace(/\D/g, '').length >= 7
+    if (!emailLooksReal && !phoneLooksReal) {
+      setClientMatch(null)
+      return
+    }
+
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      const { data } = await supabase.rpc('find_public_client_match', {
+        p_slug: slug,
+        p_email: emailLooksReal ? email : null,
+        p_phone: phoneLooksReal ? phone : null,
+      })
+      if (cancelled) return
+      const result = data as { match: boolean; name?: string; email?: string | null; phone?: string | null } | null
+      if (result?.match && result.name) {
+        setClientMatch({ name: result.name, email: result.email ?? null, phone: result.phone ?? null })
+        setMatchDismissed(false)
+      } else {
+        setClientMatch(null)
+      }
+    }, 600)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [step, business, slug, contactForm.name, contactForm.email, contactForm.phone])
+
+  const handleConfirmClientMatch = () => {
+    if (!clientMatch) return
+    setContactForm((prev) => ({
+      ...prev,
+      name: clientMatch.name,
+      email: prev.email || clientMatch.email || '',
+      phone: prev.phone || clientMatch.phone || '',
+    }))
+    setMatchDismissed(true)
+  }
 
   // Checks parking as soon as a slot is picked, instead of only finding out
   // after the client fills the whole contact form and hits submit -
@@ -274,11 +378,16 @@ export default function PublicBookingPage() {
   }, [business?.id, business?.offers_parking, selectedSlot, effectiveDurationMinutes])
 
   const goToResourceOrDatetime = (svc: PublicService) => {
-    if (svc.resources.length > 1) {
+    if (needsResourceStep(svc)) {
       setSelectedResourceId(null)
       setStep('resource')
     } else {
-      setSelectedResourceId(svc.resources[0]?.id ?? null)
+      // svc.resources.length <= 1: only one real choice, auto-select it (or
+      // null if the service has none at all). More than one but
+      // client_chooses_resource is off: leave it null on purpose - the
+      // slot search below then checks every linked resource instead of
+      // just one, and the server auto-assigns whichever is free.
+      setSelectedResourceId(svc.resources.length <= 1 ? svc.resources[0]?.id ?? null : null)
       setStep('datetime')
     }
   }
@@ -576,7 +685,15 @@ export default function PublicBookingPage() {
                         onClick={() => handleSelectService(svc)}
                         className="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50"
                       >
-                        <div className="h-10 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: svc.color }} />
+                        {svc.image_url ? (
+                          <img
+                            src={svc.image_url}
+                            alt=""
+                            className="h-14 w-14 shrink-0 rounded-lg object-cover"
+                          />
+                        ) : (
+                          <div className="h-10 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: svc.color }} />
+                        )}
                         <div className="min-w-0 flex-1">
                           <p className="font-display text-base text-foreground">{svc.name}</p>
                           <p className="text-xs text-muted-foreground">
@@ -718,7 +835,7 @@ export default function PublicBookingPage() {
                     size="sm"
                     className="-ml-3 gap-1 text-muted-foreground hover:text-foreground"
                     onClick={() =>
-                      setStep(selectedService.resources.length > 1 ? 'resource' : stepBeforeResource(selectedService))
+                      setStep(needsResourceStep(selectedService) ? 'resource' : stepBeforeResource(selectedService))
                     }
                   >
                     <ChevronLeft className="h-4 w-4" />
@@ -829,6 +946,33 @@ export default function PublicBookingPage() {
 
                   {submitError && (
                     <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{submitError}</div>
+                  )}
+
+                  {clientMatch && !matchDismissed && (
+                    <div className="flex items-start gap-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                      <div className="flex-1 text-sm">
+                        <p className="text-foreground">
+                          {tr.returningClientPrompt.replace('{name}', clientMatch.name)}
+                        </p>
+                        <div className="mt-2 flex gap-2">
+                          <Button type="button" size="sm" onClick={handleConfirmClientMatch}>
+                            {tr.returningClientConfirm}
+                          </Button>
+                          <Button type="button" size="sm" variant="ghost" onClick={() => setMatchDismissed(true)}>
+                            {tr.returningClientDeny}
+                          </Button>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setMatchDismissed(true)}
+                        className="shrink-0 text-muted-foreground hover:text-foreground"
+                        aria-label={tr.returningClientDeny}
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
                   )}
 
                   <div className="space-y-2">

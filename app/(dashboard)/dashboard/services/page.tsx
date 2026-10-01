@@ -2,7 +2,7 @@
 
 import React from "react"
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/dashboard/page-header'
@@ -73,6 +73,7 @@ import {
   X,
   Copy,
   Palette,
+  EyeOff,
 } from 'lucide-react'
 
 interface Service {
@@ -84,6 +85,7 @@ interface Service {
   price: number | null
   price_usd: number | null
   color: string
+  image_url: string | null
   pricing_mode: 'fixed' | 'preset' | 'hourly'
   hourly_rate: number | null
   hourly_rate_usd: number | null
@@ -93,6 +95,8 @@ interface Service {
   buffer_after_min: number
   max_attendees: number | null
   is_active: boolean
+  visible_on_public_link: boolean
+  client_chooses_resource: boolean
   duplicate_group_id: string | null
 }
 
@@ -183,7 +187,10 @@ export default function ServicesPage() {
     price: 0,
     priceUsd: '' as number | '',
     color: SERVICE_COLORS[0],
+    imageUrl: null as string | null,
     isActive: true,
+    visibleOnPublicLink: true,
+    clientChoosesResource: true,
     pricingMode: 'fixed' as 'fixed' | 'preset' | 'hourly',
     hourlyRate: '' as number | '',
     minHours: 1 as number | '',
@@ -198,6 +205,104 @@ export default function ServicesPage() {
   const [selectedResourceIds, setSelectedResourceIds] = useState<string[]>([])
   const [initialFormSnapshot, setInitialFormSnapshot] = useState('')
   const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false)
+  const [isUploadingServiceImage, setIsUploadingServiceImage] = useState(false)
+  const [serviceImageError, setServiceImageError] = useState('')
+  const serviceImageInputRef = useRef<HTMLInputElement>(null)
+
+  // Best-effort cleanup, never blocks the calling action on failure - a
+  // leftover file in storage is a cost/clutter problem, not a correctness
+  // one, so a delete that fails (network blip, already gone) just logs.
+  const deleteServiceImageFile = async (imageUrl: string) => {
+    const marker = '/service-images/'
+    const idx = imageUrl.indexOf(marker)
+    if (idx === -1) return
+    const path = imageUrl.slice(idx + marker.length).split('?')[0]
+    const { error } = await supabase.storage.from('service-images').remove([path])
+    if (error) console.error('[iplanit] Error deleting old service image:', error)
+  }
+
+  // A phone photo straight off the camera is routinely 3-8MB at 3000px+ -
+  // shown nowhere bigger than a 56px thumbnail today. Downscaling to at
+  // most 1200px (generous headroom for a bigger display later) and
+  // re-encoding as JPEG typically lands under ~300KB, which is what
+  // actually matters for both storage cost and how fast the public
+  // booking page loads. createImageBitmap + canvas needs no dependency and
+  // is supported by every browser this app already targets.
+  const resizeImageFile = async (file: File, maxDimension = 1200, quality = 0.82): Promise<File> => {
+    try {
+      const bitmap = await createImageBitmap(file)
+      const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height))
+      const width = Math.round(bitmap.width * scale)
+      const height = Math.round(bitmap.height * scale)
+
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return file
+
+      ctx.drawImage(bitmap, 0, 0, width, height)
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality))
+      if (!blob) return file
+
+      return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' })
+    } catch (err) {
+      // A file the browser can't decode as an image (rare, given the
+      // image/* check above) just uploads as-is rather than failing outright.
+      console.error('[iplanit] Error resizing service image, uploading original:', err)
+      return file
+    }
+  }
+
+  // {business_id}/{random}.jpg rather than {service_id}/... because a
+  // brand-new service doesn't have an id yet at the moment its image is
+  // picked here; the URL just gets saved as a normal form field like
+  // everything else once the service itself is created/updated. The old
+  // file (if this is a replace, not a first upload) is deleted right after
+  // the new one succeeds - the random name means nothing points at it
+  // anymore, and it would otherwise just sit in storage forever.
+  const handleServiceImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+
+    setServiceImageError('')
+
+    if (!file.type.startsWith('image/')) {
+      setServiceImageError(t.settings.photoInvalidType)
+      return
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setServiceImageError(t.settings.photoTooLarge)
+      return
+    }
+
+    const businessId = targetBusinessId || currentBusiness?.id
+    if (!businessId) return
+
+    const previousImageUrl = serviceForm.imageUrl
+
+    setIsUploadingServiceImage(true)
+    try {
+      const resized = await resizeImageFile(file)
+      const path = `${businessId}/${crypto.randomUUID()}.jpg`
+
+      const { error: uploadError } = await supabase.storage
+        .from('service-images')
+        .upload(path, resized, { upsert: true, cacheControl: '3600' })
+      if (uploadError) throw uploadError
+
+      const { data: urlData } = supabase.storage.from('service-images').getPublicUrl(path)
+      setServiceForm((prev) => ({ ...prev, imageUrl: urlData.publicUrl }))
+
+      if (previousImageUrl) await deleteServiceImageFile(previousImageUrl)
+    } catch (err) {
+      console.error('[iplanit] Error uploading service image:', err)
+      setServiceImageError(t.settings.photoUploadError)
+    } finally {
+      setIsUploadingServiceImage(false)
+    }
+  }
 
   const filteredServices = services.filter((s) =>
     s.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -287,7 +392,10 @@ export default function ServicesPage() {
         price: service.price || 0,
         priceUsd: service.price_usd ?? '',
         color: service.color,
+        imageUrl: service.image_url,
         isActive: service.is_active,
+        visibleOnPublicLink: service.visible_on_public_link,
+        clientChoosesResource: service.client_chooses_resource,
         pricingMode: service.pricing_mode,
         hourlyRate: (isUSD ? service.hourly_rate_usd : service.hourly_rate) ?? '',
         minHours: service.min_hours ?? 1,
@@ -314,7 +422,10 @@ export default function ServicesPage() {
         price: 0,
         priceUsd: '',
         color: SERVICE_COLORS[0],
+        imageUrl: null,
         isActive: true,
+        visibleOnPublicLink: true,
+        clientChoosesResource: true,
         pricingMode: 'fixed',
         hourlyRate: '',
         minHours: 1,
@@ -340,7 +451,7 @@ export default function ServicesPage() {
   // Prefills a NEW service's form from an existing one (create mode, not
   // edit - editingService stays null) so duplicating a service is just
   // "tweak a couple fields and save" instead of retyping everything.
-  const handleDuplicateService = (service: Service) => {
+  const handleDuplicateService = async (service: Service) => {
     setDurationOptionsError('')
     setEditingService(null)
     setTargetBusinessId(currentBusiness?.id || '')
@@ -352,7 +463,10 @@ export default function ServicesPage() {
       price: service.price || 0,
       priceUsd: service.price_usd ?? '',
       color: service.color,
+      imageUrl: service.image_url,
       isActive: service.is_active,
+      visibleOnPublicLink: service.visible_on_public_link,
+      clientChoosesResource: service.client_chooses_resource,
       pricingMode: service.pricing_mode,
       hourlyRate: (isUSD ? service.hourly_rate_usd : service.hourly_rate) ?? '',
       minHours: service.min_hours ?? 1,
@@ -379,6 +493,28 @@ export default function ServicesPage() {
     )
     setSaveError('')
     setIsServiceModalOpen(true)
+
+    // The modal above already opens showing the source's image immediately
+    // (no wait on the network) - this just gives the duplicate its OWN copy
+    // of the file in the background, instead of both services pointing at
+    // the same one. Without this, deleting either service later would
+    // delete the image the other one still uses.
+    if (service.image_url) {
+      const businessId = currentBusiness?.id
+      const marker = '/service-images/'
+      const idx = service.image_url.indexOf(marker)
+      if (businessId && idx !== -1) {
+        const sourcePath = service.image_url.slice(idx + marker.length).split('?')[0]
+        const newPath = `${businessId}/${crypto.randomUUID()}.jpg`
+        const { error: copyError } = await supabase.storage.from('service-images').copy(sourcePath, newPath)
+        if (copyError) {
+          console.error('[iplanit] Error copying service image for duplicate:', copyError)
+        } else {
+          const { data: urlData } = supabase.storage.from('service-images').getPublicUrl(newPath)
+          setServiceForm((prev) => ({ ...prev, imageUrl: urlData.publicUrl }))
+        }
+      }
+    }
   }
 
   // Resource links only ever come from the CURRENT business's own resources
@@ -469,7 +605,10 @@ export default function ServicesPage() {
         price: isUSD ? 0 : serviceForm.price || 0,
         price_usd: isUSD ? (serviceForm.priceUsd !== '' ? serviceForm.priceUsd : 0) : null,
         color: serviceForm.color,
+        image_url: serviceForm.imageUrl,
         is_active: serviceForm.isActive,
+        visible_on_public_link: serviceForm.visibleOnPublicLink,
+        client_chooses_resource: serviceForm.clientChoosesResource,
         pricing_mode: serviceForm.pricingMode,
         hourly_rate:
           serviceForm.pricingMode === 'hourly' && !isUSD && serviceForm.hourlyRate !== ''
@@ -599,6 +738,7 @@ export default function ServicesPage() {
         .eq('id', deletingService.id)
 
       if (error) throw error
+      if (deletingService.image_url) await deleteServiceImageFile(deletingService.image_url)
       await Promise.all([refetchServicesAndResources(), refetchServiceResources()])
     } catch (err) {
       console.error('[v0] Error deleting service:', err)
@@ -691,6 +831,12 @@ export default function ServicesPage() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <h3 className="truncate font-semibold text-foreground">{service.name}</h3>
+                    {!service.visible_on_public_link && (
+                      <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        <EyeOff className="h-2.5 w-2.5" />
+                        {t.services.hiddenFromPublicLinkBadge}
+                      </span>
+                    )}
                     {service.description && (
                       <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">{service.description}</p>
                     )}
@@ -1092,6 +1238,19 @@ export default function ServicesPage() {
                     ))}
                   </div>
                   <p className="text-xs text-muted-foreground">{t.services.resourcesAssociatedHint}</p>
+                  {selectedResourceIds.length > 1 && (
+                    <div className="flex items-center justify-between gap-2 rounded-lg border p-4">
+                      <div>
+                        <Label htmlFor="service-client-chooses-resource">{t.services.clientChoosesResourceTitle}</Label>
+                        <p className="text-xs text-muted-foreground">{t.services.clientChoosesResourceDesc}</p>
+                      </div>
+                      <Switch
+                        id="service-client-chooses-resource"
+                        checked={serviceForm.clientChoosesResource}
+                        onCheckedChange={(checked) => setServiceForm({ ...serviceForm, clientChoosesResource: checked })}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
             </FormSection>
@@ -1148,12 +1307,82 @@ export default function ServicesPage() {
                 </div>
               </div>
 
+              <div className="space-y-2">
+                <Label>{t.services.serviceImageTitle}</Label>
+                <div className="flex items-center gap-4">
+                  <div className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted">
+                    {serviceForm.imageUrl ? (
+                      <img src={serviceForm.imageUrl} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="h-6 w-6 rounded-full" style={{ backgroundColor: serviceForm.color }} />
+                    )}
+                    {isUploadingServiceImage && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-background/70">
+                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <input
+                      ref={serviceImageInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleServiceImageChange}
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={isUploadingServiceImage}
+                        onClick={() => serviceImageInputRef.current?.click()}
+                      >
+                        {isUploadingServiceImage
+                          ? t.settings.logoUploading
+                          : serviceForm.imageUrl
+                            ? t.services.changeImageBtn
+                            : t.services.uploadImageBtn}
+                      </Button>
+                      {serviceForm.imageUrl && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          disabled={isUploadingServiceImage}
+                          onClick={() => {
+                            if (serviceForm.imageUrl) deleteServiceImageFile(serviceForm.imageUrl)
+                            setServiceForm({ ...serviceForm, imageUrl: null })
+                          }}
+                        >
+                          {t.services.removeImageBtn}
+                        </Button>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">{t.services.serviceImageHint}</p>
+                    {serviceImageError && <p className="mt-1 text-xs text-destructive">{serviceImageError}</p>}
+                  </div>
+                </div>
+              </div>
+
               <div className="flex items-center justify-between">
                 <Label htmlFor="service-active">{t.services.serviceActive}</Label>
                 <Switch
                   id="service-active"
                   checked={serviceForm.isActive}
                   onCheckedChange={(checked) => setServiceForm({ ...serviceForm, isActive: checked })}
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-2 rounded-lg border p-4">
+                <div>
+                  <Label htmlFor="service-visible-public">{t.services.visibleOnPublicLinkTitle}</Label>
+                  <p className="text-xs text-muted-foreground">{t.services.visibleOnPublicLinkDesc}</p>
+                </div>
+                <Switch
+                  id="service-visible-public"
+                  checked={serviceForm.visibleOnPublicLink}
+                  onCheckedChange={(checked) => setServiceForm({ ...serviceForm, visibleOnPublicLink: checked })}
                 />
               </div>
             </FormSection>

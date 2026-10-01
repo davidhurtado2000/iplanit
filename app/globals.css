@@ -107,7 +107,7 @@
   --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, "Courier New", monospace;
   /* Public booking flow only (app/reservar) - see layout.tsx for why loading
      this here has no effect anywhere else. */
-  --font-display: var(--font-fraunces), Georgia, serif;
+  --font-display: var(--font-sora), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);

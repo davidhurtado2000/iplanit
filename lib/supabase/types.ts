@@ -402,6 +402,7 @@ export interface Database {
           price: number
           price_usd: number | null
           color: string
+          image_url: string | null
           pricing_mode: 'fixed' | 'preset' | 'hourly'
           hourly_rate: number | null
           hourly_rate_usd: number | null
@@ -411,6 +412,8 @@ export interface Database {
           buffer_after_min: number
           max_attendees: number | null
           is_active: boolean
+          visible_on_public_link: boolean
+          client_chooses_resource: boolean
           duplicate_group_id: string | null
           created_at: string
           updated_at: string
@@ -424,6 +427,7 @@ export interface Database {
           price?: number
           price_usd?: number | null
           color?: string
+          image_url?: string | null
           pricing_mode?: 'fixed' | 'preset' | 'hourly'
           hourly_rate?: number | null
           hourly_rate_usd?: number | null
@@ -433,6 +437,8 @@ export interface Database {
           buffer_after_min?: number
           max_attendees?: number | null
           is_active?: boolean
+          visible_on_public_link?: boolean
+          client_chooses_resource?: boolean
           duplicate_group_id?: string | null
           created_at?: string
           updated_at?: string
@@ -446,6 +452,7 @@ export interface Database {
           price?: number
           price_usd?: number | null
           color?: string
+          image_url?: string | null
           pricing_mode?: 'fixed' | 'preset' | 'hourly'
           hourly_rate?: number | null
           hourly_rate_usd?: number | null
@@ -455,6 +462,8 @@ export interface Database {
           buffer_after_min?: number
           max_attendees?: number | null
           is_active?: boolean
+          visible_on_public_link?: boolean
+          client_chooses_resource?: boolean
           duplicate_group_id?: string | null
           created_at?: string
           updated_at?: string
@@ -1181,6 +1190,10 @@ export interface Database {
       }
       get_public_busy_times: {
         Args: { p_business_id: string; p_resource_id: string | null; p_from: string; p_to: string }
+        Returns: Json
+      }
+      find_public_client_match: {
+        Args: { p_slug: string; p_email?: string | null; p_phone?: string | null; p_document_number?: string | null }
         Returns: Json
       }
       create_public_reservation: {
