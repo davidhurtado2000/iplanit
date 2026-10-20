@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -129,6 +129,12 @@ function getStepSequence(svc: PublicService): Step[] {
 export default function PublicBookingPage() {
   const params = useParams<{ slug: string }>()
   const slug = params?.slug
+  // ?embed=1 means this is loaded inside an <iframe> on the business's own
+  // website (Settings' "Insertar en tu web" snippet) rather than visited
+  // directly - min-h-screen there would force the iframe to the full
+  // viewport height instead of sizing to the actual content.
+  const searchParams = useSearchParams()
+  const isEmbed = searchParams.get('embed') === '1'
   const supabase = createClient()
   const { language, t, locale } = useLanguage()
   const tr = t.publicBooking
@@ -510,7 +516,12 @@ export default function PublicBookingPage() {
 
   if (loading) {
     return (
-      <div className="booking-shell flex min-h-screen items-center justify-center bg-background">
+      <div
+        className={cn(
+          'booking-shell flex items-center justify-center bg-background',
+          isEmbed ? 'py-16' : 'min-h-screen'
+        )}
+      >
         <LogoLoader />
       </div>
     )
@@ -518,7 +529,12 @@ export default function PublicBookingPage() {
 
   if (notFound || !business) {
     return (
-      <div className="booking-shell flex min-h-screen flex-col items-center justify-center gap-3 bg-background px-4 text-center">
+      <div
+        className={cn(
+          'booking-shell flex flex-col items-center justify-center gap-3 bg-background px-4 text-center',
+          isEmbed ? 'py-16' : 'min-h-screen'
+        )}
+      >
         <Building2 className="h-10 w-10 text-muted-foreground/50" />
         <h1 className="text-xl font-semibold">{tr.notFoundTitle}</h1>
         <p className="text-sm text-muted-foreground">{tr.notFoundDesc}</p>
@@ -530,8 +546,13 @@ export default function PublicBookingPage() {
   const stepIndex = stepSequence.indexOf(step)
 
   return (
-    <div className="booking-shell flex min-h-screen flex-col items-center bg-background px-4 py-10">
-      <LanguageToggle className="max-w-md" />
+    <div
+      className={cn(
+        'booking-shell flex flex-col items-center bg-background px-4',
+        isEmbed ? 'py-6' : 'min-h-screen py-10'
+      )}
+    >
+      {!isEmbed && <LanguageToggle className="max-w-md" />}
 
       <div className="mb-6 flex w-full max-w-md flex-col items-center text-center">
         <Avatar className="h-16 w-16 rounded-2xl shadow-sm">

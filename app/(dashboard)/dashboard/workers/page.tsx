@@ -2,7 +2,7 @@
 
 import React from "react"
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/dashboard/page-header'
@@ -57,6 +57,9 @@ import {
   Palette,
   Clock,
   Building,
+  CalendarDays,
+  Copy,
+  Check,
 } from 'lucide-react'
 
 const WORKER_COLORS = [
@@ -89,6 +92,7 @@ interface Worker {
   is_active: boolean
   worker_group_id: string
   allows_concurrent_services: boolean
+  calendar_feed_token: string
 }
 
 export default function WorkersPage() {
@@ -192,6 +196,37 @@ export default function WorkersPage() {
   ]
 
   const filteredWorkers = workers.filter((w) => w.name.toLowerCase().includes(searchQuery.toLowerCase()))
+
+  const [calendarLinkWorker, setCalendarLinkWorker] = useState<Worker | null>(null)
+  const [calendarLinkCopied, setCalendarLinkCopied] = useState(false)
+  const calendarLinkInputRef = useRef<HTMLInputElement>(null)
+  const calendarFeedUrl =
+    calendarLinkWorker && typeof window !== 'undefined'
+      ? `${window.location.origin}/api/public/calendar/${calendarLinkWorker.calendar_feed_token}`
+      : ''
+  // One-click subscribe instead of making someone copy a URL and hunt for
+  // the right menu themselves. Google's own "render?cid=" endpoint opens
+  // its add-external-calendar screen pre-filled; webcal:// is the long-
+  // standing convention browsers/OSes hand off to the default calendar app
+  // (Apple Calendar, Outlook) with the same "subscribe?" prompt - no
+  // deep-link equivalent exists for Google, which is why it needs its own
+  // URL instead of also using webcal://.
+  const googleCalendarAddUrl = calendarFeedUrl
+    ? `https://calendar.google.com/calendar/render?cid=${encodeURIComponent(calendarFeedUrl)}`
+    : ''
+  const webcalUrl = calendarFeedUrl ? calendarFeedUrl.replace(/^https?:\/\//, 'webcal://') : ''
+  const handleCopyCalendarLink = async () => {
+    if (!calendarFeedUrl) return
+    try {
+      if (!navigator.clipboard) throw new Error('Clipboard API unavailable')
+      await navigator.clipboard.writeText(calendarFeedUrl)
+      setCalendarLinkCopied(true)
+      setTimeout(() => setCalendarLinkCopied(false), 2000)
+    } catch (err) {
+      console.error('[iplanit] Clipboard write failed, falling back to text selection:', err)
+      calendarLinkInputRef.current?.select()
+    }
+  }
 
   const [togglingWorkerId, setTogglingWorkerId] = useState<string | null>(null)
   const handleQuickToggleActive = async (worker: Worker) => {
@@ -461,6 +496,10 @@ export default function WorkersPage() {
                           <DropdownMenuItem onClick={() => handleOpenWorkerModal(worker)}>
                             <Pencil className="mr-2 h-4 w-4" />
                             {t.services.edit}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setCalendarLinkWorker(worker)}>
+                            <CalendarDays className="mr-2 h-4 w-4" />
+                            {t.workers.calendarLinkMenuItem}
                           </DropdownMenuItem>
                           {missingSedes.length > 0 && (
                             <>
@@ -733,6 +772,65 @@ export default function WorkersPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={!!calendarLinkWorker} onOpenChange={(open) => !open && setCalendarLinkWorker(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t.workers.calendarLinkTitle}</DialogTitle>
+            <DialogDescription>{t.workers.calendarLinkDesc}</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            {/* Stacked, same weight for both - side by side squeezed "Add to
+                Apple Calendar / Outlook" into half-width and the filled-vs-
+                outline treatment made one read as the "real" option and the
+                other as an afterthought. Colored icon chips (not the actual
+                Google/Apple logos - brand guideline risk) give each a
+                distinct identity without implying either is primary. */}
+            <a
+              href={googleCalendarAddUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-3 rounded-lg border bg-background px-4 py-3 text-sm font-medium transition-colors hover:bg-muted/50"
+            >
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-500 text-white">
+                <CalendarDays className="h-4 w-4" />
+              </span>
+              {t.workers.calendarLinkGoogleBtn}
+            </a>
+            <a
+              href={webcalUrl}
+              className="flex items-center gap-3 rounded-lg border bg-background px-4 py-3 text-sm font-medium transition-colors hover:bg-muted/50"
+            >
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-800 text-white dark:bg-neutral-200 dark:text-neutral-900">
+                <CalendarDays className="h-4 w-4" />
+              </span>
+              {t.workers.calendarLinkAppleBtn}
+            </a>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-border" />
+            <span className="text-xs text-muted-foreground">{t.workers.calendarLinkManualDivider}</span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Input
+              ref={calendarLinkInputRef}
+              value={calendarFeedUrl}
+              readOnly
+              className="font-mono text-xs"
+              onClick={(e) => e.currentTarget.select()}
+            />
+            <Button type="button" variant="outline" onClick={handleCopyCalendarLink} className="gap-2">
+              {calendarLinkCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              {calendarLinkCopied ? t.settings.linkCopied : t.settings.copyLink}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">{t.workers.calendarLinkInstructions}</p>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

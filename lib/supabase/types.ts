@@ -982,6 +982,7 @@ export interface Database {
           is_active: boolean
           worker_group_id: string
           allows_concurrent_services: boolean
+          calendar_feed_token: string
           created_at: string
           updated_at: string
         }
@@ -993,6 +994,7 @@ export interface Database {
           is_active?: boolean
           worker_group_id?: string
           allows_concurrent_services?: boolean
+          calendar_feed_token?: string
           created_at?: string
           updated_at?: string
         }
@@ -1004,6 +1006,7 @@ export interface Database {
           is_active?: boolean
           worker_group_id?: string
           allows_concurrent_services?: boolean
+          calendar_feed_token?: string
           created_at?: string
           updated_at?: string
         }

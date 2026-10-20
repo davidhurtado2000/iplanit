@@ -182,6 +182,7 @@ export interface Worker {
   is_active: boolean
   worker_group_id: string
   allows_concurrent_services: boolean
+  calendar_feed_token: string
 }
 
 /** A worker's own work schedule - no rows means "follows business_hours",

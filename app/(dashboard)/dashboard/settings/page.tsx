@@ -210,6 +210,7 @@ function SettingsPageInner() {
   const [isSavingHours, setIsSavingHours] = useState(false)
   const [hoursSaveStatus, setHoursSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [linkCopied, setLinkCopied] = useState(false)
+  const [embedCodeCopied, setEmbedCodeCopied] = useState(false)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   // Which tier the modal should emphasize - unset from the free-plan CTA
   // (both cards shown equally), 'premium' when a Pro account clicks the
@@ -1016,6 +1017,29 @@ function SettingsPageInner() {
       console.error('[iplanit] Clipboard write failed, falling back to text selection:', err)
       bookingLinkInputRef.current?.select()
       bookingLinkInputRef.current?.setSelectionRange(0, bookingLink.length)
+    }
+  }
+
+  // ?embed=1 (app/reservar/[slug]/page.tsx) drops the page's own min-h-screen
+  // and language toggle so it sizes to its actual content instead of the
+  // full viewport - a fixed height here is a deliberate V1 simplification
+  // (internal scroll inside the iframe if the flow runs long) rather than
+  // the postMessage auto-resize some embed widgets do; revisit only if a
+  // business actually finds the scroll-in-scroll awkward in practice.
+  const embedCode = bookingLink
+    ? `<iframe src="${bookingLink}?embed=1" style="width:100%;height:800px;border:none;" title="${currentBusiness?.name || 'Reservar cita'}"></iframe>`
+    : ''
+  const embedCodeInputRef = useRef<HTMLTextAreaElement>(null)
+  const handleCopyEmbedCode = async () => {
+    if (!embedCode) return
+    try {
+      if (!navigator.clipboard) throw new Error('Clipboard API unavailable')
+      await navigator.clipboard.writeText(embedCode)
+      setEmbedCodeCopied(true)
+      setTimeout(() => setEmbedCodeCopied(false), 2000)
+    } catch (err) {
+      console.error('[iplanit] Clipboard write failed, falling back to text selection:', err)
+      embedCodeInputRef.current?.select()
     }
   }
 
@@ -1930,6 +1954,45 @@ function SettingsPageInner() {
                       </div>
                     </div>
                   ) : (
+                    <p className="text-sm text-muted-foreground">{t.settings.bookingLinkUnavailable}</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Link2 className="h-5 w-5 text-primary" />
+                    {t.settings.embedWidgetTitle}
+                  </CardTitle>
+                  <CardDescription>{t.settings.embedWidgetDesc}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {embedCode ? (
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Textarea
+                        ref={embedCodeInputRef}
+                        value={embedCode}
+                        readOnly
+                        rows={2}
+                        className="resize-none font-mono text-xs sm:text-sm"
+                        onClick={(e) => e.currentTarget.select()}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleCopyEmbedCode}
+                        className="gap-2 sm:self-start"
+                      >
+                        {embedCodeCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                        {embedCodeCopied ? t.settings.linkCopied : t.settings.copyLink}
+                      </Button>
+                    </div>
+                  ) : null}
+                  {embedCode && (
+                    <p className="mt-2 text-xs text-muted-foreground">{t.settings.embedWidgetHeightHint}</p>
+                  )}
+                  {!embedCode && (
                     <p className="text-sm text-muted-foreground">{t.settings.bookingLinkUnavailable}</p>
                   )}
                 </CardContent>
