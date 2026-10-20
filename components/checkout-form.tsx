@@ -22,12 +22,18 @@ export const stripePromise = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
 
 interface CheckoutFormProps {
   clientSecret: string
+  // From the same /api/stripe/setup-intent call as clientSecret - grants the
+  // PaymentElement read access to this customer's already-saved cards (e.g.
+  // after a cancel + resubscribe) so it can offer them instead of only ever
+  // rendering a blank "add a new card" form. Optional because older/failed
+  // responses may not include it; the element just falls back to blank.
+  customerSessionClientSecret?: string
   submitting: boolean
   onPaymentMethodReady: (paymentMethodId: string) => void
   onError: (message: string) => void
 }
 
-function InnerForm({ submitting, onPaymentMethodReady, onError }: Omit<CheckoutFormProps, 'clientSecret'>) {
+function InnerForm({ submitting, onPaymentMethodReady, onError }: Omit<CheckoutFormProps, 'clientSecret' | 'customerSessionClientSecret'>) {
   const stripe = useStripe()
   const elements = useElements()
   const { t } = useLanguage()
@@ -127,7 +133,13 @@ function InnerForm({ submitting, onPaymentMethodReady, onError }: Omit<CheckoutF
   )
 }
 
-export function CheckoutForm({ clientSecret, submitting, onPaymentMethodReady, onError }: CheckoutFormProps) {
+export function CheckoutForm({
+  clientSecret,
+  customerSessionClientSecret,
+  submitting,
+  onPaymentMethodReady,
+  onError,
+}: CheckoutFormProps) {
   const { language, t } = useLanguage()
 
   if (!stripePromise) {
@@ -135,7 +147,10 @@ export function CheckoutForm({ clientSecret, submitting, onPaymentMethodReady, o
   }
 
   return (
-    <Elements stripe={stripePromise} options={{ clientSecret, locale: language === 'es' ? 'es' : 'en' }}>
+    <Elements
+      stripe={stripePromise}
+      options={{ clientSecret, customerSessionClientSecret, locale: language === 'es' ? 'es' : 'en' }}
+    >
       <InnerForm submitting={submitting} onPaymentMethodReady={onPaymentMethodReady} onError={onError} />
     </Elements>
   )

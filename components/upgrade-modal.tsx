@@ -106,6 +106,7 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
   const [step, setStep] = useState<Step>('plans')
   const [selectedTier, setSelectedTier] = useState<'basic' | 'pro' | 'premium' | null>(null)
   const [clientSecret, setClientSecret] = useState('')
+  const [customerSessionClientSecret, setCustomerSessionClientSecret] = useState('')
   const [cardError, setCardError] = useState('')
   const [subscribing, setSubscribing] = useState(false)
   const [pendingPaymentMethodId, setPendingPaymentMethodId] = useState('')
@@ -115,6 +116,7 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
     setStep('plans')
     setSelectedTier(null)
     setClientSecret('')
+    setCustomerSessionClientSecret('')
     setCardError('')
     setPendingPaymentMethodId('')
     setConfirmPriceUsd(0)
@@ -190,6 +192,7 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
       if (data.clientSecret) {
         setSelectedTier(tier)
         setClientSecret(data.clientSecret)
+        setCustomerSessionClientSecret(data.customerSessionClientSecret || '')
         setStep('card')
       } else {
         setCheckoutError(m.checkoutError)
@@ -604,6 +607,7 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
 
               <CheckoutForm
                 clientSecret={clientSecret}
+                customerSessionClientSecret={customerSessionClientSecret || undefined}
                 submitting={subscribing}
                 onPaymentMethodReady={(pmId) => submitSubscription(pmId, false)}
                 onError={setCardError}

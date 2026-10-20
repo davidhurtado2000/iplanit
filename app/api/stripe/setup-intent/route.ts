@@ -45,6 +45,35 @@ export async function POST() {
     return customer.id
   }
 
+  // Lets the embedded PaymentElement show this customer's previously-saved
+  // cards (e.g. after a cancel + resubscribe) instead of always rendering a
+  // blank card form - the SetupIntent's own client secret only grants access
+  // to create a NEW payment method, not to list existing ones.
+  const createCustomerSession = async (customerId: string) => {
+    const session = await stripe.customerSessions.create({
+      customer: customerId,
+      components: {
+        payment_element: {
+          enabled: true,
+          features: {
+            payment_method_redisplay: 'enabled',
+            // Default is ['always'] only. Every card saved through this
+            // flow exists for exactly one purpose - reusable subscription
+            // billing - so there's no "unconsented one-off card" risk here;
+            // without this, cards saved before this feature shipped (which
+            // Stripe marked 'unspecified', not 'always') would stay hidden
+            // even for the right customer in the right mode.
+            payment_method_allow_redisplay_filters: ['always', 'limited', 'unspecified'],
+            payment_method_save: 'enabled',
+            payment_method_save_usage: 'off_session',
+            payment_method_remove: 'enabled',
+          },
+        },
+      },
+    })
+    return session.client_secret
+  }
+
   try {
     let customerId = profile?.stripe_customer_id ?? null
     if (!customerId) {
@@ -66,7 +95,8 @@ export async function POST() {
         // for.
         automatic_payment_methods: { enabled: false },
       })
-      return NextResponse.json({ clientSecret: setupIntent.client_secret })
+      const customerSessionClientSecret = await createCustomerSession(customerId)
+      return NextResponse.json({ clientSecret: setupIntent.client_secret, customerSessionClientSecret })
     } catch (err) {
       // A customer stored on our side can go stale if it's ever deleted
       // directly in the Stripe Dashboard (confirmed happening with test
@@ -83,7 +113,8 @@ export async function POST() {
         payment_method_types: ['card'],
         automatic_payment_methods: { enabled: false },
       })
-      return NextResponse.json({ clientSecret: setupIntent.client_secret })
+      const customerSessionClientSecret = await createCustomerSession(freshCustomerId)
+      return NextResponse.json({ clientSecret: setupIntent.client_secret, customerSessionClientSecret })
     }
   } catch (err) {
     console.error('[iplanit] Error creating SetupIntent:', err)
