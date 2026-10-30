@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getResendClient, NOTIFICATIONS_FROM_EMAIL } from '@/lib/email/resend'
+import { getResendClient, getBusinessEmailsById, NOTIFICATIONS_FROM_EMAIL } from '@/lib/email/resend'
 import { buildBirthdayEmail } from '@/lib/email/templates'
 import type { Database } from '@/lib/supabase/types'
 
@@ -28,6 +28,10 @@ export async function GET(request: Request) {
   }
 
   const rows = data || []
+  const replyToByBusiness = await getBusinessEmailsById(
+    supabase,
+    rows.map((r) => r.business_id)
+  )
   const currentYear = new Date().getFullYear()
   let sent = 0
   let failed = 0
@@ -44,6 +48,7 @@ export async function GET(request: Request) {
       await getResendClient().emails.send({
         from: NOTIFICATIONS_FROM_EMAIL,
         to: row.client_email,
+        replyTo: replyToByBusiness.get(row.business_id),
         subject,
         html,
       })

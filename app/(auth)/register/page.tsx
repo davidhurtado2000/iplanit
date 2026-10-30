@@ -4,6 +4,8 @@ import React from 'react'
 
 import { useRef, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -57,9 +59,15 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [step, setStep] = useState<1 | 2 | 'success'>(1)
+  // Arriving from a worker-access invite (scripts/104, the "Crear mi
+  // cuenta" email button): one step, no business to create - they're
+  // joining someone else's business, the same "skip business" signup path
+  // below, just without making them find the skip link.
+  const searchParams = useSearchParams()
+  const isStaffInvite = searchParams.get('invite') === 'staff'
   const [formData, setFormData] = useState({
     name: '',
-    email: '',
+    email: searchParams.get('email') ?? '',
     password: '',
     businessName: '',
     businessType: '',
@@ -189,6 +197,40 @@ export default function RegisterPage() {
     await submitSignUp(false)
   }
 
+  const handleInviteSubmit = async () => {
+    if (!formData.name || !formData.email || !formData.password) {
+      setError(tr.fillAllFields)
+      return
+    }
+    if (!isPasswordStrongEnough(passwordChecks)) {
+      setError(tr.passwordRequirements)
+      return
+    }
+    await handleSkipBusiness()
+  }
+
+  const termsCheckbox = (
+    <label className="flex items-start gap-2 text-sm text-muted-foreground">
+      <input
+        type="checkbox"
+        checked={acceptedTerms}
+        onChange={(e) => setAcceptedTerms(e.target.checked)}
+        disabled={isLoading}
+        className="mt-0.5 rounded"
+      />
+      <span>
+        {tr.acceptTermsLabel}{' '}
+        <Link href="/terms" target="_blank" className="text-primary hover:underline">
+          {tr.termsLinkText}
+        </Link>{' '}
+        {tr.acceptTermsAnd}{' '}
+        <Link href="/privacy" target="_blank" className="text-primary hover:underline">
+          {tr.privacyLinkText}
+        </Link>
+      </span>
+    </label>
+  )
+
   if (step === 'success') {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
@@ -222,8 +264,10 @@ export default function RegisterPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1 text-center">
           <CardTitle className="text-2xl font-bold">{tr.title}</CardTitle>
-          <CardDescription>{step === 1 ? tr.stepPersonal : tr.stepBusiness}</CardDescription>
-          <div className="flex items-center justify-center gap-2 pt-2">
+          <CardDescription>
+            {isStaffInvite ? tr.staffInviteDesc : step === 1 ? tr.stepPersonal : tr.stepBusiness}
+          </CardDescription>
+          <div className={cn('flex items-center justify-center gap-2 pt-2', isStaffInvite && 'hidden')}>
             <div
               className={`h-2 w-2 rounded-full ${step >= 1 ? 'bg-primary' : 'bg-muted'}`}
             />
@@ -292,9 +336,35 @@ export default function RegisterPage() {
                   />
                 </div>
 
-                <Button type="button" className="w-full" onClick={handleNext}>
-                  {tr.continueBtn}
-                </Button>
+                {isStaffInvite ? (
+                  <>
+                    {termsCheckbox}
+                    <TurnstileWidget
+                      ref={turnstileRef}
+                      onVerify={setTurnstileToken}
+                      onExpire={() => setTurnstileToken(null)}
+                    />
+                    <Button
+                      type="button"
+                      className="w-full"
+                      onClick={handleInviteSubmit}
+                      disabled={isLoading || !acceptedTerms}
+                    >
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          {tr.creating}
+                        </>
+                      ) : (
+                        tr.staffInviteCreateBtn
+                      )}
+                    </Button>
+                  </>
+                ) : (
+                  <Button type="button" className="w-full" onClick={handleNext}>
+                    {tr.continueBtn}
+                  </Button>
+                )}
               </>
             )}
 
@@ -391,25 +461,7 @@ export default function RegisterPage() {
                   </Select>
                 </div>
 
-                <label className="flex items-start gap-2 text-sm text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    checked={acceptedTerms}
-                    onChange={(e) => setAcceptedTerms(e.target.checked)}
-                    disabled={isLoading}
-                    className="mt-0.5 rounded"
-                  />
-                  <span>
-                    {tr.acceptTermsLabel}{' '}
-                    <Link href="/terms" target="_blank" className="text-primary hover:underline">
-                      {tr.termsLinkText}
-                    </Link>{' '}
-                    {tr.acceptTermsAnd}{' '}
-                    <Link href="/privacy" target="_blank" className="text-primary hover:underline">
-                      {tr.privacyLinkText}
-                    </Link>
-                  </span>
-                </label>
+                {termsCheckbox}
 
                 <TurnstileWidget ref={turnstileRef} onVerify={setTurnstileToken} onExpire={() => setTurnstileToken(null)} />
 

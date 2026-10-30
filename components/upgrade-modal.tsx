@@ -39,6 +39,7 @@ import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { CheckoutForm, stripePromise } from '@/components/checkout-form'
 import { playSuccessChime } from '@/lib/notification-sound'
+import { useHasWorkerAgenda } from '@/hooks/use-has-worker-agenda'
 
 // Provisional prices for every business regardless of country - David still
 // wants to discuss country-based pricing with his co-founder before
@@ -90,6 +91,7 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
   const { t, language } = useLanguage()
   const router = useRouter()
   const { user, refreshProfile, signOut } = useAuth()
+  const hasWorkerAgenda = useHasWorkerAgenda(isOnboarding ? user?.id : null)
   const { currentBusiness } = useBusinesses()
   const reduceMotion = useReducedMotion()
   const m = t.upgradeModal
@@ -304,13 +306,28 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
       <DialogContent className="sm:max-w-4xl" showCloseButton={!isOnboarding}>
         {isOnboarding && (
-          <button
-            type="button"
-            onClick={signOut}
-            className="absolute top-4 right-4 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-          >
-            {t.signOut}
-          </button>
+          <div className="absolute top-4 right-4 flex items-center gap-4 text-sm">
+            {/* Someone linked as a worker (scripts/104) who opened their own
+                business's activation from Mi agenda needs a way back - this
+                dialog covers the whole page, so it has to live inside it,
+                same as sign out. */}
+            {hasWorkerAgenda && (
+              <button
+                type="button"
+                onClick={() => router.push('/mi-agenda')}
+                className="text-primary underline-offset-4 hover:underline"
+              >
+                {t.workerPortal.backToAgenda}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={signOut}
+              className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            >
+              {t.signOut}
+            </button>
+          </div>
         )}
         {step === 'plans' && trialEligible === null && (
           <div className="flex min-h-[420px] items-center justify-center">

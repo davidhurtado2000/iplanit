@@ -28,6 +28,7 @@ import {
   UserCog,
   Newspaper,
   Sparkles,
+  CalendarCheck,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
@@ -50,6 +51,7 @@ import { NotificationBell } from '@/components/dashboard/notification-bell'
 import { useLanguage } from '@/context/language-context'
 import { getWorkerLabel } from '@/lib/worker-label'
 import { isAiAddonActive } from '@/lib/ai-usage-client'
+import { useHasWorkerAgenda } from '@/hooks/use-has-worker-agenda'
 
 interface SidebarProps {
   isCollapsed: boolean
@@ -74,6 +76,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [now, setNow] = useState<Date | null>(null)
   const { user, profile, loading: authLoading, signOut } = useAuth()
+  const hasWorkerAgenda = useHasWorkerAgenda(user?.id)
   const { businesses, currentBusiness, switchBusiness, loading: businessLoading, aiAddonStatus } = useBusinesses()
   const { t, locale } = useLanguage()
   const workerLabel = getWorkerLabel(currentBusiness, t)
@@ -345,6 +348,16 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
 
             return NavLink
           })}
+          {hasWorkerAgenda && (
+            <Link
+              href="/mi-agenda"
+              title={isCollapsed ? t.workerPortal.sidebarLink : undefined}
+              className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+            >
+              <CalendarCheck className="h-5 w-5 shrink-0" />
+              {!isCollapsed && <span>{t.workerPortal.sidebarLink}</span>}
+            </Link>
+          )}
         </nav>
 
         {/* Plan Badge */}

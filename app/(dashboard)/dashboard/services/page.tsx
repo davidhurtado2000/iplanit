@@ -59,6 +59,7 @@ import { sedeAbbr, sedeTint, buildBusinessColorIndex } from '@/lib/sede-colors'
 import { FormSection } from '@/components/dashboard/form-section'
 import { DurationInput } from '@/components/dashboard/duration-input'
 import { formatDuration } from '@/lib/duration'
+import { deleteStorageImage, resizeImageFile, storagePathFromPublicUrl, useStagedImage } from '@/lib/image-upload'
 import { cn } from '@/lib/utils'
 import {
   Plus,
@@ -209,58 +210,21 @@ export default function ServicesPage() {
   const [serviceImageError, setServiceImageError] = useState('')
   const serviceImageInputRef = useRef<HTMLInputElement>(null)
 
-  // Best-effort cleanup, never blocks the calling action on failure - a
-  // leftover file in storage is a cost/clutter problem, not a correctness
-  // one, so a delete that fails (network blip, already gone) just logs.
-  const deleteServiceImageFile = async (imageUrl: string) => {
-    const marker = '/service-images/'
-    const idx = imageUrl.indexOf(marker)
-    if (idx === -1) return
-    const path = imageUrl.slice(idx + marker.length).split('?')[0]
-    const { error } = await supabase.storage.from('service-images').remove([path])
-    if (error) console.error('[iplanit] Error deleting old service image:', error)
-  }
+  const deleteServiceImageFile = (imageUrl: string) => deleteStorageImage(supabase, 'service-images', imageUrl)
+  // Old/replaced files are only deleted once the service is actually saved
+  // (see lib/image-upload.ts) - deleting on pick broke the saved service's
+  // image whenever the form was then cancelled.
+  const stagedImage = useStagedImage(supabase, 'service-images')
 
-  // A phone photo straight off the camera is routinely 3-8MB at 3000px+ -
-  // shown nowhere bigger than a 56px thumbnail today. Downscaling to at
-  // most 1200px (generous headroom for a bigger display later) and
-  // re-encoding as JPEG typically lands under ~300KB, which is what
-  // actually matters for both storage cost and how fast the public
-  // booking page loads. createImageBitmap + canvas needs no dependency and
-  // is supported by every browser this app already targets.
-  const resizeImageFile = async (file: File, maxDimension = 1200, quality = 0.82): Promise<File> => {
-    try {
-      const bitmap = await createImageBitmap(file)
-      const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height))
-      const width = Math.round(bitmap.width * scale)
-      const height = Math.round(bitmap.height * scale)
-
-      const canvas = document.createElement('canvas')
-      canvas.width = width
-      canvas.height = height
-      const ctx = canvas.getContext('2d')
-      if (!ctx) return file
-
-      ctx.drawImage(bitmap, 0, 0, width, height)
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality))
-      if (!blob) return file
-
-      return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' })
-    } catch (err) {
-      // A file the browser can't decode as an image (rare, given the
-      // image/* check above) just uploads as-is rather than failing outright.
-      console.error('[iplanit] Error resizing service image, uploading original:', err)
-      return file
-    }
-  }
+  useEffect(() => {
+    if (!isServiceModalOpen) stagedImage.discard()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isServiceModalOpen])
 
   // {business_id}/{random}.jpg rather than {service_id}/... because a
   // brand-new service doesn't have an id yet at the moment its image is
   // picked here; the URL just gets saved as a normal form field like
-  // everything else once the service itself is created/updated. The old
-  // file (if this is a replace, not a first upload) is deleted right after
-  // the new one succeeds - the random name means nothing points at it
-  // anymore, and it would otherwise just sit in storage forever.
+  // everything else once the service itself is created/updated.
   const handleServiceImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = ''
@@ -280,8 +244,6 @@ export default function ServicesPage() {
     const businessId = targetBusinessId || currentBusiness?.id
     if (!businessId) return
 
-    const previousImageUrl = serviceForm.imageUrl
-
     setIsUploadingServiceImage(true)
     try {
       const resized = await resizeImageFile(file)
@@ -293,9 +255,8 @@ export default function ServicesPage() {
       if (uploadError) throw uploadError
 
       const { data: urlData } = supabase.storage.from('service-images').getPublicUrl(path)
+      stagedImage.track(urlData.publicUrl)
       setServiceForm((prev) => ({ ...prev, imageUrl: urlData.publicUrl }))
-
-      if (previousImageUrl) await deleteServiceImageFile(previousImageUrl)
     } catch (err) {
       console.error('[iplanit] Error uploading service image:', err)
       setServiceImageError(t.settings.photoUploadError)
@@ -438,6 +399,7 @@ export default function ServicesPage() {
       nextResourceIds = []
     }
 
+    stagedImage.begin(nextForm.imageUrl)
     setServiceForm(nextForm)
     setDurationOptions(nextDurationOptions)
     setSelectedResourceIds(nextResourceIds)
@@ -485,6 +447,10 @@ export default function ServicesPage() {
       .filter((sr) => sr.service_id === service.id)
       .map((sr) => sr.resource_id)
 
+    // Nothing saved yet for the new service - the source's file must never
+    // be treated as this form's "original", or saving the duplicate with a
+    // different image would delete the source service's photo.
+    stagedImage.begin(null)
     setServiceForm(nextForm)
     setDurationOptions(nextDurationOptions)
     setSelectedResourceIds(nextResourceIds)
@@ -501,16 +467,15 @@ export default function ServicesPage() {
     // delete the image the other one still uses.
     if (service.image_url) {
       const businessId = currentBusiness?.id
-      const marker = '/service-images/'
-      const idx = service.image_url.indexOf(marker)
-      if (businessId && idx !== -1) {
-        const sourcePath = service.image_url.slice(idx + marker.length).split('?')[0]
+      const sourcePath = storagePathFromPublicUrl('service-images', service.image_url)
+      if (businessId && sourcePath) {
         const newPath = `${businessId}/${crypto.randomUUID()}.jpg`
         const { error: copyError } = await supabase.storage.from('service-images').copy(sourcePath, newPath)
         if (copyError) {
           console.error('[iplanit] Error copying service image for duplicate:', copyError)
         } else {
           const { data: urlData } = supabase.storage.from('service-images').getPublicUrl(newPath)
+          stagedImage.track(urlData.publicUrl)
           setServiceForm((prev) => ({ ...prev, imageUrl: urlData.publicUrl }))
         }
       }
@@ -708,6 +673,7 @@ export default function ServicesPage() {
       }
 
       await Promise.all([refetchServicesAndResources(), refetchServiceResources(), refetchServiceDurationOptions()])
+      await stagedImage.commit(serviceForm.imageUrl)
       setIsServiceModalOpen(false)
       setDuplicateSourceId(null)
       toast.success(editingService ? t.services.updateSuccess : t.services.createSuccess)
@@ -1350,10 +1316,7 @@ export default function ServicesPage() {
                           variant="ghost"
                           size="sm"
                           disabled={isUploadingServiceImage}
-                          onClick={() => {
-                            if (serviceForm.imageUrl) deleteServiceImageFile(serviceForm.imageUrl)
-                            setServiceForm({ ...serviceForm, imageUrl: null })
-                          }}
+                          onClick={() => setServiceForm({ ...serviceForm, imageUrl: null })}
                         >
                           {t.services.removeImageBtn}
                         </Button>

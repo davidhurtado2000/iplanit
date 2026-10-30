@@ -183,6 +183,10 @@ export interface Worker {
   worker_group_id: string
   allows_concurrent_services: boolean
   calendar_feed_token: string
+  photo_url: string | null
+  /** Worker account link (scripts/104) - undefined until that script runs. */
+  user_id?: string | null
+  invite_email?: string | null
 }
 
 /** A worker's own work schedule - no rows means "follows business_hours",

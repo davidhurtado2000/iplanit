@@ -42,13 +42,54 @@ export function toWhatsappAddress(phone: string): string {
   return phone.startsWith('whatsapp:') ? phone : `whatsapp:${phone}`
 }
 
+export interface WhatsappReminderVars {
+  clientName: string
+  businessName: string
+  serviceName: string
+  date: string
+  time: string
+}
+
+// Meta rejects template variables containing newlines, tabs, or 4+
+// consecutive spaces - all possible in names typed into a free-text form.
+function cleanVar(value: string) {
+  return value.replace(/[\r\n\t]+/g, ' ').replace(/ {2,}/g, ' ').trim().slice(0, 200) || '-'
+}
+
+// Our own approved "recordatorio_cita" template (5 variables: client,
+// business, service, date, time - see the template text sent to Meta).
+// Set per language in Vercel once Meta approves it; until then this keeps
+// using Twilio's free sample template with no variables, so the existing
+// sandbox setup keeps working unchanged.
+function reminderTemplateSid(language: 'es' | 'en') {
+  return language === 'en'
+    ? process.env.TWILIO_REMINDER_TEMPLATE_SID_EN || process.env.TWILIO_REMINDER_TEMPLATE_SID
+    : process.env.TWILIO_REMINDER_TEMPLATE_SID
+}
+
 // normalizedPhone is a country-code-prefixed digit string with no leading
 // "+" (the shape public.normalize_phone_for_matching returns, e.g.
 // "51983720200") - see scripts/076-whatsapp-reminders.sql.
-export async function sendWhatsappReminder(normalizedPhone: string) {
+export async function sendWhatsappReminder(
+  normalizedPhone: string,
+  vars: WhatsappReminderVars,
+  language: 'es' | 'en'
+) {
+  const ownTemplateSid = reminderTemplateSid(language)
   return getTwilioClient().messages.create({
     from: getWhatsappFromNumber(),
     to: toWhatsappAddress(`+${normalizedPhone}`),
-    contentSid: REMINDER_TEMPLATE_SID,
+    ...(ownTemplateSid
+      ? {
+          contentSid: ownTemplateSid,
+          contentVariables: JSON.stringify({
+            1: cleanVar(vars.clientName),
+            2: cleanVar(vars.businessName),
+            3: cleanVar(vars.serviceName),
+            4: cleanVar(vars.date),
+            5: cleanVar(vars.time),
+          }),
+        }
+      : { contentSid: REMINDER_TEMPLATE_SID }),
   })
 }

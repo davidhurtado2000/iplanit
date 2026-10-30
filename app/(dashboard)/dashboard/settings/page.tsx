@@ -75,7 +75,10 @@ import {
   Link2,
   Gift,
   Plug,
+  Star,
+  Palette,
 } from 'lucide-react'
+import { BOOKING_ACCENT_SWATCHES, BOOKING_FONTS, accentForeground, fontFamilyFor } from '@/lib/booking-fonts'
 
 type DayOfWeek = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday'
 
@@ -626,6 +629,10 @@ function SettingsPageInner() {
     offers_parking: false,
     worker_label_singular: '',
     worker_label_plural: '',
+    google_review_url: '',
+    client_chooses_worker: false,
+    booking_font: null as string | null,
+    booking_accent_color: null as string | null,
   })
   const [slugError, setSlugError] = useState('')
 
@@ -703,6 +710,10 @@ function SettingsPageInner() {
         offers_parking: currentBusiness.offers_parking ?? false,
         worker_label_singular: currentBusiness.worker_label_singular || '',
         worker_label_plural: currentBusiness.worker_label_plural || '',
+        google_review_url: currentBusiness.google_review_url || '',
+        client_chooses_worker: currentBusiness.client_chooses_worker ?? false,
+        booking_font: currentBusiness.booking_font ?? null,
+        booking_accent_color: currentBusiness.booking_accent_color ?? null,
       })
       setNotifications({
         emailConfirmations: currentBusiness.notify_confirmations ?? true,
@@ -1086,6 +1097,18 @@ function SettingsPageInner() {
             offers_parking: business.offers_parking,
             worker_label_singular: business.worker_label_singular.trim() || null,
             worker_label_plural: business.worker_label_plural.trim() || null,
+            google_review_url: business.google_review_url.trim() || null,
+            // Only sent when changed, so saving Settings keeps working even
+            // if this deploys before scripts/102 adds the column.
+            ...(business.client_chooses_worker !== (currentBusiness.client_chooses_worker ?? false)
+              ? { client_chooses_worker: business.client_chooses_worker }
+              : {}),
+            ...(business.booking_font !== (currentBusiness.booking_font ?? null)
+              ? { booking_font: business.booking_font }
+              : {}),
+            ...(business.booking_accent_color !== (currentBusiness.booking_accent_color ?? null)
+              ? { booking_accent_color: business.booking_accent_color }
+              : {}),
           })
         } catch (businessErr: any) {
           if (businessErr?.code === '23505') {
@@ -1858,6 +1881,20 @@ function SettingsPageInner() {
                         }}
                       />
                     </div>
+
+                    <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                      <div>
+                        <Label htmlFor="business-client-chooses-worker" className="cursor-pointer">
+                          {t.settings.clientChoosesWorkerLabel}
+                        </Label>
+                        <p className="text-xs text-muted-foreground">{t.settings.clientChoosesWorkerDesc}</p>
+                      </div>
+                      <Switch
+                        id="business-client-chooses-worker"
+                        checked={business.client_chooses_worker}
+                        onCheckedChange={(checked) => setBusiness({ ...business, client_chooses_worker: checked })}
+                      />
+                    </div>
                   </FormSection>
 
                   <Separator />
@@ -1995,6 +2032,152 @@ function SettingsPageInner() {
                   {!embedCode && (
                     <p className="text-sm text-muted-foreground">{t.settings.bookingLinkUnavailable}</p>
                   )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Palette className="h-5 w-5 text-primary" />
+                    {t.settings.bookingStyleTitle}
+                  </CardTitle>
+                  <CardDescription>{t.settings.bookingStyleDesc}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="space-y-2">
+                    <Label>{t.settings.bookingFontLabel}</Label>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      {BOOKING_FONTS.map((font) => {
+                        const selected = (business.booking_font ?? 'sora') === font.key
+                        return (
+                          <button
+                            key={font.key}
+                            type="button"
+                            onClick={() =>
+                              setBusiness({ ...business, booking_font: font.key === 'sora' ? null : font.key })
+                            }
+                            className={cn(
+                              'flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50',
+                              selected && 'border-primary ring-2 ring-primary/30'
+                            )}
+                          >
+                            <span className="truncate text-lg leading-tight" style={{ fontFamily: font.fontFamily }}>
+                              {business.name || 'Aa'}
+                            </span>
+                            <span className="text-xs text-muted-foreground">{t.settings.bookingFonts[font.key]}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>{t.settings.bookingAccentLabel}</Label>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {BOOKING_ACCENT_SWATCHES.map((color, i) => {
+                        const selected = (business.booking_accent_color ?? BOOKING_ACCENT_SWATCHES[0]) === color
+                        return (
+                          <button
+                            key={color}
+                            type="button"
+                            title={i === 0 ? t.settings.bookingAccentDefault : color}
+                            aria-label={i === 0 ? t.settings.bookingAccentDefault : color}
+                            onClick={() => setBusiness({ ...business, booking_accent_color: i === 0 ? null : color })}
+                            className={cn(
+                              'h-8 w-8 rounded-full border-2 transition-transform',
+                              selected ? 'scale-110 border-foreground' : 'border-transparent hover:scale-105'
+                            )}
+                            style={{ backgroundColor: color }}
+                          />
+                        )
+                      })}
+                      <label
+                        className={cn(
+                          'relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-2 transition-transform',
+                          business.booking_accent_color && !BOOKING_ACCENT_SWATCHES.includes(business.booking_accent_color)
+                            ? 'scale-110 border-foreground'
+                            : 'border-transparent hover:scale-105'
+                        )}
+                        style={{
+                          background:
+                            business.booking_accent_color && !BOOKING_ACCENT_SWATCHES.includes(business.booking_accent_color)
+                              ? business.booking_accent_color
+                              : 'conic-gradient(from 0deg, #EF4444, #F59E0B, #84CC16, #10B981, #06B6D4, #3B82F6, #8B5CF6, #EC4899, #EF4444)',
+                        }}
+                        title={t.services.customColorLabel}
+                      >
+                        <input
+                          type="color"
+                          value={business.booking_accent_color ?? BOOKING_ACCENT_SWATCHES[0]}
+                          onChange={(e) => setBusiness({ ...business, booking_accent_color: e.target.value.toLowerCase() })}
+                          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                          aria-label={t.services.customColorLabel}
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Live preview with the same font/contrast logic the
+                      public page uses (lib/booking-fonts.ts). */}
+                  <div className="rounded-lg border bg-muted/30 p-4">
+                    <p className="mb-3 text-xs text-muted-foreground">{t.settings.bookingStylePreview}</p>
+                    <p
+                      className="text-2xl text-foreground"
+                      style={{ fontFamily: fontFamilyFor(business.booking_font) }}
+                    >
+                      {business.name || 'iPlanit'}
+                    </p>
+                    <p
+                      className="mt-1 text-base text-foreground"
+                      style={{ fontFamily: fontFamilyFor(business.booking_font) }}
+                    >
+                      {t.settings.bookingStylePreviewService}
+                    </p>
+                    <span
+                      className="mt-3 inline-flex rounded-md px-4 py-2 text-sm font-medium"
+                      style={{
+                        backgroundColor: business.booking_accent_color ?? BOOKING_ACCENT_SWATCHES[0],
+                        color: accentForeground(business.booking_accent_color ?? BOOKING_ACCENT_SWATCHES[0]),
+                      }}
+                    >
+                      {t.publicBooking.continueBtn}
+                    </span>
+                  </div>
+
+                  <SaveBar
+                    isSaving={isSaving}
+                    saveStatus={saveStatus}
+                    onSave={handleSave}
+                    label={t.saveChanges}
+                    savedLabel={t.changesSaved}
+                    errorLabel={t.saveError}
+                  />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Star className="h-5 w-5 text-primary" />
+                    {t.settings.googleReviewTitle}
+                  </CardTitle>
+                  <CardDescription>{t.settings.googleReviewDesc}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <Input
+                    value={business.google_review_url}
+                    onChange={(e) => setBusiness({ ...business, google_review_url: e.target.value })}
+                    placeholder={t.settings.googleReviewPlaceholder}
+                  />
+                  <p className="text-xs text-muted-foreground">{t.settings.googleReviewHint}</p>
+                  <SaveBar
+                    isSaving={isSaving}
+                    saveStatus={saveStatus}
+                    onSave={handleSave}
+                    label={t.saveChanges}
+                    savedLabel={t.changesSaved}
+                    errorLabel={t.saveError}
+                  />
                 </CardContent>
               </Card>
 

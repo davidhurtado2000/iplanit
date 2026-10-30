@@ -57,6 +57,21 @@ interface Business {
    * already implies. */
   reminder_email_message: string | null
   reminder_whatsapp_message: string | null
+  /** The business's own Google "write a review" link (Google Business
+   * Profile -> Get more reviews generates this for them - no Place ID
+   * lookup or Google API on our side). Null means the review-request email
+   * never fires for this business - presence of this field IS the on/off
+   * switch, see scripts/101-google-review-requests.sql. */
+  google_review_url: string | null
+  /** Public booking link shows a "who do you want?" step listing active
+   * workers - see scripts/102-client-chooses-worker.sql. Defaults on for
+   * salon/spa business types. */
+  client_chooses_worker: boolean
+  /** Public booking link look - scripts/103-booking-branding.sql. A key
+   * from lib/booking-fonts.ts (headings only) and a #rrggbb accent; null =
+   * default iPlanit booking look. */
+  booking_font: string | null
+  booking_accent_color: string | null
   /** Client birthday emails - see scripts/071-client-birthdays.sql. The
    * discount is informational only (mentioned in the email, applied
    * manually by the business) - nothing here touches pricing/checkout. */

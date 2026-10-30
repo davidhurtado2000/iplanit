@@ -9,7 +9,10 @@ import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -147,6 +150,16 @@ interface Resource { id: string; name: string; type: 'room' | 'person' | 'equipm
 interface Client   { id: string; name: string }
 interface Service  { id: string; name: string; duration_minutes: number; color: string; business_id?: string }
 
+export type CalendarGroupBy = 'resource' | 'worker'
+
+export interface CalendarWorker {
+  id: string
+  name: string
+  color: string
+  photo_url?: string | null
+  business_id?: string
+}
+
 interface CalendarViewProps {
   view: CalendarView
   onSelectReservation: (reservation: any) => void
@@ -206,7 +219,25 @@ interface CalendarViewProps {
    * previewService below) has a service selected at click time; the
    * modal's own duration/pricing logic takes it from there, so this never
    * needs an endDateTimeLocal to go with it. */
-  onCreateAtSlot?: (resourceId: string | null, dateTimeLocal: string, endDateTimeLocal?: string, serviceId?: string) => void
+  onCreateAtSlot?: (
+    resourceId: string | null,
+    dateTimeLocal: string,
+    endDateTimeLocal?: string,
+    serviceId?: string,
+    workerId?: string | null
+  ) => void
+  /** DayView columns can be one per worker instead of one per resource -
+   * what a barbershop/salon/clinic actually schedules around is the person,
+   * not a chair. Empty = resource columns only (today's behavior). */
+  workers?: CalendarWorker[]
+  /** Starting choice before the user picks one themselves. */
+  defaultGroupBy?: CalendarGroupBy
+  /** localStorage key for remembering the user's choice - per business, so
+   * a spa grouped by cabin and a barbershop grouped by barber don't fight. */
+  groupByStorageKey?: string
+  /** The business's own plural for its staff ("Barberos", "Terapeutas") -
+   * see lib/worker-label.ts. Falls back to a generic "Personal". */
+  workerGroupLabel?: string
   /** DayView only (vista Dia) - the service picked in the parent's own
    * "vista previa de servicio" card (see calendar/page.tsx's sidebar,
    * next to the "Hoy" card - deliberately its own card there, not folded
@@ -248,10 +279,64 @@ export function CalendarViewComponent({
   onCreateAtSlot,
   previewService,
   previewAllowedResourceIds,
+  workers = [],
+  defaultGroupBy = 'resource',
+  groupByStorageKey,
+  workerGroupLabel,
 }: CalendarViewProps) {
   const { t, locale } = useLanguage()
   const [currentDate, setCurrentDate] = useState(() => initialDate ?? new Date())
-  const [selectedResourceId, setSelectedResourceId] = useState<string>('all')
+  // One "Ver:" choice drives the whole day grid instead of a group-by
+  // toggle plus a filter whose options changed under it - both were really
+  // one question ("what do I want to see?"). Encoded as a string so it's
+  // trivially storable: 'all:worker' | 'all:resource' | 'worker:<id>' |
+  // 'resource:<id>'.
+  const [chosenSelection, setChosenSelection] = useState<string | null>(null)
+  // Read after mount (not in the useState initializer) so the server and
+  // client first render agree - localStorage only exists in the browser.
+  useEffect(() => {
+    if (!groupByStorageKey) return
+    try {
+      setChosenSelection(localStorage.getItem(groupByStorageKey))
+    } catch {
+      setChosenSelection(null)
+    }
+  }, [groupByStorageKey])
+  const changeSelection = (value: string) => {
+    setChosenSelection(value)
+    try {
+      if (groupByStorageKey) localStorage.setItem(groupByStorageKey, value)
+    } catch {
+      // Private mode / blocked storage - the choice just won't persist.
+    }
+  }
+
+  const canGroupByWorker = workers.length > 0
+  const canGroupByResource = resources.length > 0
+  // A remembered choice can go stale (that worker was deleted, the
+  // business removed its last resource) - anything that no longer exists
+  // falls back to the default instead of showing an empty grid.
+  const isValidSelection = (value: string | null): value is string => {
+    if (!value) return false
+    const [kind, id] = value.split(':')
+    if (kind === 'all') return id === 'worker' ? canGroupByWorker : id === 'resource' && canGroupByResource
+    if (kind === 'worker') return workers.some((w) => w.id === id)
+    if (kind === 'resource') return resources.some((r) => r.id === id)
+    return false
+  }
+  const fallbackGroupBy: CalendarGroupBy = !canGroupByWorker
+    ? 'resource'
+    : !canGroupByResource
+      ? 'worker'
+      : defaultGroupBy
+  const selection = isValidSelection(chosenSelection) ? chosenSelection : `all:${fallbackGroupBy}`
+  const [selectionKind, selectionId] = selection.split(':')
+  const groupBy: CalendarGroupBy =
+    selectionKind === 'worker' || (selectionKind === 'all' && selectionId === 'worker') ? 'worker' : 'resource'
+  const selectedWorkerId = selectionKind === 'worker' ? selectionId : 'all'
+  const selectedResourceId = selectionKind === 'resource' ? selectionId : 'all'
+  // Nothing to choose between with a single person/resource in total.
+  const showViewSelector = workers.length + resources.length > 1
   // Which way the content should animate on the next render: 1 = moved
   // forward in time (slides in from the right), -1 = moved back (slides in
   // from the left), 0 = not a time move at all - switching views, jumping
@@ -396,25 +481,51 @@ export function CalendarViewComponent({
         <h2 className="text-base font-semibold sm:text-lg">
           {view === 'list' ? t.calendar.listViewHeading : capitalizeFirst(formatHeader())}
         </h2>
-        <div className="flex items-center gap-2">
-          {view === 'day' && resources.length > 0 && (
-            <Select value={selectedResourceId} onValueChange={setSelectedResourceId}>
-              <SelectTrigger className="w-full bg-transparent sm:w-[200px]">
-                <SelectValue placeholder={t.calendar.filterByResourcePlaceholder} />
+        <div className="flex flex-wrap items-center gap-2">
+          {view === 'day' && showViewSelector && (
+            <Select value={selection} onValueChange={changeSelection}>
+              <SelectTrigger className="w-full bg-transparent sm:w-[220px]" aria-label={t.calendar.groupByLabel}>
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">{t.calendar.allResources}</SelectItem>
-                {resources.map(r => (
-                  <SelectItem key={r.id} value={r.id}>
-                    <span className="flex items-center gap-2">
-                      <span
-                        className="h-2 w-2 shrink-0 rounded-full"
-                        style={{ backgroundColor: r.color || '#3B82F6' }}
-                      />
-                      {r.name}
-                    </span>
-                  </SelectItem>
-                ))}
+                {canGroupByWorker && <SelectItem value="all:worker">{t.calendar.allWorkers}</SelectItem>}
+                {canGroupByResource && <SelectItem value="all:resource">{t.calendar.allResources}</SelectItem>}
+                {canGroupByWorker && (
+                  <>
+                    <SelectSeparator />
+                    <SelectGroup>
+                      <SelectLabel>{workerGroupLabel || t.calendar.groupByWorker}</SelectLabel>
+                      {workers.map(w => (
+                        <SelectItem key={w.id} value={`worker:${w.id}`}>
+                          <span className="flex items-center gap-2">
+                            {w.photo_url ? (
+                              <img src={w.photo_url} alt="" className="h-4 w-4 shrink-0 rounded-full object-cover" />
+                            ) : (
+                              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: w.color || '#3B82F6' }} />
+                            )}
+                            {w.name}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </>
+                )}
+                {canGroupByResource && (
+                  <>
+                    <SelectSeparator />
+                    <SelectGroup>
+                      <SelectLabel>{t.calendar.groupByResource}</SelectLabel>
+                      {resources.map(r => (
+                        <SelectItem key={r.id} value={`resource:${r.id}`}>
+                          <span className="flex items-center gap-2">
+                            <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: r.color || '#3B82F6' }} />
+                            {r.name}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </>
+                )}
               </SelectContent>
             </Select>
           )}
@@ -540,7 +651,7 @@ export function CalendarViewComponent({
           }}
           transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.2, 0.7, 0.3, 1] }}
         >
-          {view === 'day'   && <DayView   date={currentDate} reservations={reservations} resources={resources} selectedResourceId={selectedResourceId} clientsMap={clientsMap} servicesMap={servicesMap} resourcesMap={resourcesMap} attendeesCountMap={attendeesCountMap} onSelectReservation={onSelectReservation} startHour={startHour} endHour={endHour} timezone={timezone} t={t} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} businessHours={businessHours} onCreateAtSlot={onCreateAtSlot} previewService={previewService} previewAllowedResourceIds={previewAllowedResourceIds} />}
+          {view === 'day'   && <DayView   date={currentDate} reservations={reservations} resources={resources} selectedResourceId={selectedResourceId} groupBy={groupBy} workers={workers} selectedWorkerId={selectedWorkerId} clientsMap={clientsMap} servicesMap={servicesMap} resourcesMap={resourcesMap} attendeesCountMap={attendeesCountMap} onSelectReservation={onSelectReservation} startHour={startHour} endHour={endHour} timezone={timezone} t={t} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} businessHours={businessHours} onCreateAtSlot={onCreateAtSlot} previewService={previewService} previewAllowedResourceIds={previewAllowedResourceIds} />}
           {view === 'week'  && <WeekView  date={currentDate} reservations={reservations} clientsMap={clientsMap} servicesMap={servicesMap} attendeesCountMap={attendeesCountMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
           {view === 'month' && <MonthView date={currentDate} reservations={reservations} servicesMap={servicesMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
           {view === 'list'  && (
@@ -565,7 +676,7 @@ export function CalendarViewComponent({
 
 // ─── Day View — time grid × resource columns ───────────────────────────────
 function DayView({
-  date, reservations, resources, selectedResourceId,
+  date, reservations, resources, selectedResourceId, groupBy, workers, selectedWorkerId,
   clientsMap, servicesMap, resourcesMap, attendeesCountMap = {}, onSelectReservation,
   startHour, endHour, timezone, t, businessNameById, businessColorIndexById, businessHours, onCreateAtSlot,
   previewService, previewAllowedResourceIds,
@@ -574,6 +685,9 @@ function DayView({
   reservations: any[]
   resources: Resource[]
   selectedResourceId: string
+  groupBy: CalendarGroupBy
+  workers: CalendarWorker[]
+  selectedWorkerId: string
   clientsMap: Record<string, Client>
   servicesMap: Record<string, Service>
   resourcesMap: Record<string, Resource>
@@ -586,7 +700,13 @@ function DayView({
   businessNameById?: Record<string, string>
   businessColorIndexById?: Record<string, number>
   businessHours?: BusinessHourRow[]
-  onCreateAtSlot?: (resourceId: string | null, dateTimeLocal: string, endDateTimeLocal?: string, serviceId?: string) => void
+  onCreateAtSlot?: (
+    resourceId: string | null,
+    dateTimeLocal: string,
+    endDateTimeLocal?: string,
+    serviceId?: string,
+    workerId?: string | null
+  ) => void
   /** Toolbar's "preview a service" picker (see CalendarViewComponent) -
    * when set, hovering an empty part of the grid (mouse only - touch has
    * no hover event, but still benefits: a single tap opens the create
@@ -632,8 +752,31 @@ function DayView({
   const HOURS = Array.from({ length: effEndHour - effStartHour }, (_, i) => effStartHour + i)
 
   // Build columns
+  const knownWorkerIds = useMemo(() => new Set(workers.map(w => w.id)), [workers])
+  const workerNameById = useMemo(() => Object.fromEntries(workers.map(w => [w.id, w.name])), [workers])
+
   const columns = useMemo(() => {
-    let cols: Array<{ id: string | null; label: string; color?: string; sedeLabel?: string; sedeColorIndex?: number; businessId?: string }> = []
+    let cols: Array<{ id: string | null; label: string; color?: string; photoUrl?: string | null; sedeLabel?: string; sedeColorIndex?: number; businessId?: string }> = []
+
+    if (groupBy === 'worker') {
+      const shown = selectedWorkerId === 'all' ? workers : workers.filter(w => w.id === selectedWorkerId)
+      cols = shown.map(w => ({
+        id: w.id,
+        label: w.name,
+        color: w.color,
+        photoUrl: w.photo_url,
+        sedeLabel: w.business_id ? businessNameById?.[w.business_id] : undefined,
+        sedeColorIndex: w.business_id ? businessColorIndexById?.[w.business_id] : undefined,
+        businessId: w.business_id,
+      }))
+      // Bookings nobody has been assigned to yet (e.g. made before the
+      // public link let clients pick, or by staff who skipped the field)
+      // still need a home instead of silently disappearing.
+      if (selectedWorkerId === 'all' && dayRes.some(r => !r.worker_id || !knownWorkerIds.has(r.worker_id))) {
+        cols.push({ id: null, label: t.calendar.unassignedWorkerColumn })
+      }
+      return cols
+    }
 
     if (selectedResourceId !== 'all') {
       const res = resourcesMap[selectedResourceId]
@@ -663,7 +806,7 @@ function DayView({
       cols = [{ id: null, label: t.calendar.reservationsFallbackColumn }]
     }
     return cols
-  }, [resources, selectedResourceId, resourcesMap, dayRes, t, businessNameById, businessColorIndexById])
+  }, [groupBy, workers, selectedWorkerId, knownWorkerIds, resources, selectedResourceId, resourcesMap, dayRes, t, businessNameById, businessColorIndexById])
 
   // Groups consecutive columns that share the same sede into one spanning
   // header cell instead of repeating a (sometimes long) business name on
@@ -685,10 +828,16 @@ function DayView({
   }, [columns])
   const hasSedeGroups = columns.some(c => c.sedeLabel)
 
-  const getColRes = (colId: string | null) =>
-    colId === null && resources.length === 0
+  const getColRes = (colId: string | null) => {
+    if (groupBy === 'worker') {
+      return colId === null
+        ? dayRes.filter(r => !r.worker_id || !knownWorkerIds.has(r.worker_id))
+        : dayRes.filter(r => r.worker_id === colId)
+    }
+    return colId === null && resources.length === 0
       ? dayRes
       : dayRes.filter(r => r.resource_id === colId)
+  }
 
   // Columns grow to fill available width (so 1-2 resources fill the
   // screen instead of hugging the left edge) and only fall back to the
@@ -779,10 +928,23 @@ function DayView({
     if (col?.businessId && previewService.business_id && col.businessId !== previewService.business_id) {
       return 'sede'
     }
-    if (previewAllowedResourceIds?.length && colId !== null && !previewAllowedResourceIds.includes(colId)) {
+    if (
+      groupBy === 'resource' &&
+      previewAllowedResourceIds?.length &&
+      colId !== null &&
+      !previewAllowedResourceIds.includes(colId)
+    ) {
       return 'resource'
     }
     return null
+  }
+
+  // A click in a column means "this resource" or "this person" depending on
+  // how the grid is grouped - the modal gets whichever one it was.
+  const createAt = (colId: string | null, start: string, end?: string, serviceId?: string) => {
+    if (!onCreateAtSlot) return
+    if (groupBy === 'worker') onCreateAtSlot(null, start, end, serviceId, colId)
+    else onCreateAtSlot(colId, start, end, serviceId)
   }
 
   // Shared by both the drag finish and the plain-click fallback. Rejects
@@ -815,9 +977,9 @@ function DayView({
       endMin = Math.min(endMin, dayHoursRange.closeMinutes)
     }
     if (isDrag && endMin > startMin) {
-      onCreateAtSlot(colId, minutesToLocal(startMin), minutesToLocal(endMin))
+      createAt(colId, minutesToLocal(startMin), minutesToLocal(endMin))
     } else {
-      onCreateAtSlot(colId, minutesToLocal(startMin), undefined, previewService?.id)
+      createAt(colId, minutesToLocal(startMin), undefined, previewService?.id)
     }
   }
 
@@ -924,6 +1086,8 @@ function DayView({
                   >
                     {incompatible ? (
                       <Ban className="h-3 w-3 shrink-0 text-muted-foreground" />
+                    ) : col.photoUrl ? (
+                      <img src={col.photoUrl} alt="" className="h-5 w-5 shrink-0 rounded-full object-cover" />
                     ) : (
                       col.color && (
                         <span
@@ -1131,8 +1295,24 @@ function DayView({
                                 {r.type === 'visit' ? `${t.calendar.interestedInShortLabel} ` : ''}{service.name}
                               </p>
                             )}
-                            <p className="mt-0.5 flex items-center gap-1 text-[10px] leading-tight opacity-70">
-                              <span>{fmt(h, m)} – {fmt(endHM.h, endHM.m)}</span>
+                            <p className="mt-0.5 flex min-w-0 items-center gap-1 text-[10px] leading-tight opacity-70">
+                              <span className="shrink-0">{fmt(h, m)} – {fmt(endHM.h, endHM.m)}</span>
+                              {/* The other axis - grouped by person, show the
+                                  room/resource; grouped by resource, show the
+                                  person - so both are visible at once without
+                                  drawing the same booking in two columns. */}
+                              {(() => {
+                                const other =
+                                  groupBy === 'worker'
+                                    ? r.resource_id ? resourcesMap[r.resource_id]?.name : undefined
+                                    : r.worker_id ? workerNameById[r.worker_id] : undefined
+                                return other ? (
+                                  <>
+                                    <span aria-hidden>·</span>
+                                    <span className="truncate">{other}</span>
+                                  </>
+                                ) : null
+                              })()}
                               {r.parking_resource_id && (
                                 <span className="flex items-center gap-0.5" title={t.calendar.parkingAssigned}>
                                   <span aria-hidden>·</span>

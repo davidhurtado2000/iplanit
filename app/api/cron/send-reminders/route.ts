@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getResendClient, NOTIFICATIONS_FROM_EMAIL } from '@/lib/email/resend'
+import { getResendClient, getBusinessEmailsByReservation, NOTIFICATIONS_FROM_EMAIL } from '@/lib/email/resend'
 import { buildReminderEmail } from '@/lib/email/templates'
+import { formatReminderDate, formatReminderTime } from '@/lib/reminder-template'
 import { sendWhatsappReminder } from '@/lib/twilio'
 import type { Database } from '@/lib/supabase/types'
 
@@ -42,6 +43,10 @@ export async function GET(request: Request) {
   const whatsappEnabled = process.env.WHATSAPP_REMINDERS_ENABLED === 'true'
 
   const rows = data || []
+  const replyToByReservation = await getBusinessEmailsByReservation(
+    supabase,
+    rows.map((r) => r.reservation_id)
+  )
   let sent = 0
   let failed = 0
   let skipped = 0
@@ -84,6 +89,7 @@ export async function GET(request: Request) {
         await getResendClient().emails.send({
           from: NOTIFICATIONS_FROM_EMAIL,
           to: row.client_email,
+          replyTo: replyToByReservation.get(row.reservation_id),
           subject,
           html,
         })
@@ -92,7 +98,21 @@ export async function GET(request: Request) {
           skipped++
           continue
         }
-        await sendWhatsappReminder(row.client_phone)
+        const language = row.business_country === 'US' ? 'en' : 'es'
+        const date = formatReminderDate(row.start_time, row.business_timezone, language)
+        await sendWhatsappReminder(
+          row.client_phone,
+          {
+            clientName: row.client_name,
+            businessName: row.business_name,
+            serviceName: row.service_name ?? (language === 'en' ? 'your appointment' : 'tu cita'),
+            // Lowercased in Spanish: it lands mid-sentence ("el viernes, 30
+            // de octubre"), unlike the email where it's its own line.
+            date: language === 'es' ? date.toLowerCase() : date,
+            time: formatReminderTime(row.start_time, row.business_timezone, language),
+          },
+          language
+        )
       }
 
       // Marked right after a successful send, and only once per

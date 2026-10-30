@@ -15,6 +15,7 @@ import { NotificationsProvider } from '@/context/notifications-context'
 import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { cn } from '@/lib/utils'
+import { createClient } from '@/lib/supabase/client'
 
 // Phase 4 of the pricing overhaul (scripts/092-plan-onboarding-gate.sql):
 // a signup that hasn't picked a plan yet can't see any dashboard page
@@ -28,20 +29,38 @@ import { cn } from '@/lib/utils'
 // currentBusiness at all.
 function OnboardingGate({ children }: { children: React.ReactNode }) {
   const { profile, loading: authLoading } = useAuth()
-  const { currentBusiness, loading: businessLoading } = useBusinesses()
+  const { businesses, currentBusiness, loading: businessLoading } = useBusinesses()
   const router = useRouter()
 
-  const needsPlanSelection =
-    !authLoading &&
-    !businessLoading &&
-    profile?.requires_plan_selection === true &&
-    currentBusiness?.role === 'owner'
+  const loaded = !authLoading && !businessLoading
+  const needsPlanSelection = loaded && profile?.requires_plan_selection === true && currentBusiness?.role === 'owner'
+
+  // Worker accounts (scripts/104) go to their read-only portal instead of
+  // the dashboard when the dashboard has nothing usable for them: no
+  // business of their own, OR one that never picked a plan (e.g. a barber
+  // who once tried iPlanit on their own, then got invited by their shop -
+  // forcing them through plan selection to see their own agenda would be
+  // wrong). Checked only in those two cases, so active owners/admins/sales
+  // pay no extra query; an active owner who is ALSO someone's worker keeps
+  // the dashboard and reaches Mi agenda from the sidebar instead.
+  const needsWorkerCheck = loaded && (businesses.length === 0 || needsPlanSelection)
+  const [workerCheck, setWorkerCheck] = useState<'idle' | 'checking' | 'worker' | 'none'>('idle')
+  useEffect(() => {
+    if (!needsWorkerCheck || workerCheck !== 'idle') return
+    setWorkerCheck('checking')
+    createClient()
+      .rpc('get_my_worker_links')
+      .then(({ data }) => {
+        setWorkerCheck(Array.isArray(data) && data.length > 0 ? 'worker' : 'none')
+      })
+  }, [needsWorkerCheck, workerCheck])
 
   useEffect(() => {
-    if (needsPlanSelection) router.replace('/onboarding/plan')
-  }, [needsPlanSelection, router])
+    if (workerCheck === 'worker') router.replace('/mi-agenda')
+    else if (workerCheck === 'none' && needsPlanSelection) router.replace('/onboarding/plan')
+  }, [workerCheck, needsPlanSelection, router])
 
-  if (needsPlanSelection) {
+  if (needsPlanSelection || (needsWorkerCheck && workerCheck !== 'none')) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <LogoLoader />

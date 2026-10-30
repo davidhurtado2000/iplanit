@@ -25,6 +25,7 @@ import {
   Check,
   X,
   ParkingSquare,
+  Users,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Confetti } from '@/components/confetti'
@@ -32,11 +33,12 @@ import { LanguageToggle } from '@/components/language-toggle'
 import { useLanguage } from '@/context/language-context'
 import { capitalizeFirst, cn } from '@/lib/utils'
 import { parseInTimezone } from '@/lib/timezone'
-import { generateAvailableSlots, isDayClosed } from '@/lib/availability'
+import { generateAvailableSlots, intersectSlots, isDayClosed } from '@/lib/availability'
 import { sendReservationNotification } from '@/lib/email/notify'
 import { syncReservationToKommo } from '@/lib/kommo/sync'
 import { TurnstileWidget, type TurnstileWidgetHandle } from '@/components/turnstile-widget'
 import { LogoLoader } from '@/components/logo-loader'
+import { bookingBrandStyle } from '@/lib/booking-fonts'
 
 interface PublicBusiness {
   id: string
@@ -49,6 +51,21 @@ interface PublicBusiness {
   offers_parking: boolean
   notify_confirmations: boolean
   country: 'PE' | 'US'
+  /** Undefined until scripts/102 runs - treated as off. */
+  client_chooses_worker?: boolean
+  /** scripts/103 - null/undefined = default booking look. */
+  booking_font?: string | null
+  booking_accent_color?: string | null
+}
+
+interface PublicWorker {
+  id: string
+  name: string
+  photo_url: string | null
+  /** Empty = does every service (dashboard convention). */
+  service_ids: string[]
+  /** Empty = follows business hours. */
+  hours: PublicBusinessHour[]
 }
 
 interface PublicResource {
@@ -92,7 +109,7 @@ interface PublicBusinessHour {
   is_closed: boolean
 }
 
-type Step = 'service' | 'duration' | 'hours' | 'resource' | 'datetime' | 'contact' | 'success'
+type Step = 'service' | 'duration' | 'hours' | 'resource' | 'worker' | 'datetime' | 'contact' | 'success'
 
 function todayInTz(tz: string) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date())
@@ -117,13 +134,23 @@ function needsResourceStep(svc: PublicService) {
 // resource are each conditional on how that service is configured) - this
 // mirrors the exact same branching handleSelectService/goToResourceOrDatetime
 // already use, just to know what to show in the progress indicator.
-function getStepSequence(svc: PublicService): Step[] {
+function getStepSequence(svc: PublicService, showWorkerStep: boolean): Step[] {
   const steps: Step[] = []
   if (svc.pricing_mode === 'preset') steps.push('duration')
   if (svc.pricing_mode === 'hourly') steps.push('hours')
   if (needsResourceStep(svc)) steps.push('resource')
+  if (showWorkerStep) steps.push('worker')
   steps.push('datetime', 'contact')
   return steps
+}
+
+function workerInitials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('')
 }
 
 export default function PublicBookingPage() {
@@ -150,6 +177,23 @@ export default function PublicBookingPage() {
   const [selectedDurationOptionId, setSelectedDurationOptionId] = useState<string | null>(null)
   const [selectedHours, setSelectedHours] = useState<number | ''>('')
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null)
+  const [workers, setWorkers] = useState<PublicWorker[]>([])
+  // null = "Sin preferencia" (the server auto-assigns a free worker).
+  const [selectedWorkerId, setSelectedWorkerId] = useState<string | null>(null)
+
+  // Workers who do this service. Empty when the business hasn't turned on
+  // client_chooses_worker (get_public_workers returns nothing then), which
+  // keeps the whole flow exactly as it was before scripts/102.
+  const eligibleWorkersFor = (svc: PublicService) =>
+    workers.filter((w) => w.service_ids.length === 0 || w.service_ids.includes(svc.id))
+  // With a single eligible worker there's nothing to choose - they're
+  // preselected silently and the step is skipped.
+  const needsWorkerStep = (svc: PublicService) => eligibleWorkersFor(svc).length > 1
+  const selectedWorker = workers.find((w) => w.id === selectedWorkerId) ?? null
+  // "Sin preferencia": the server picks the barber, so who they got is only
+  // known after booking - read back for the confirmation screen.
+  const [assignedWorker, setAssignedWorker] = useState<{ name: string; photo_url: string | null } | null>(null)
+  const confirmedWorker = selectedWorker ?? assignedWorker
 
   const selectedDurationOption = selectedService?.duration_options.find((o) => o.id === selectedDurationOptionId) ?? null
   const effectiveDurationMinutes =
@@ -161,6 +205,9 @@ export default function PublicBookingPage() {
 
   const [selectedDate, setSelectedDate] = useState('')
   const [slots, setSlots] = useState<Date[]>([])
+  // Today's hours are simply over (e.g. checking at night) - not the same
+  // as "fully booked", which would wrongly tell a client the shop is full.
+  const [dayIsOver, setDayIsOver] = useState(false)
   const [loadingSlots, setLoadingSlots] = useState(false)
   const [selectedSlot, setSelectedSlot] = useState<Date | null>(null)
 
@@ -206,10 +253,14 @@ export default function PublicBookingPage() {
       }
       setBusiness(biz)
 
-      const [{ data: servicesData }, { data: hoursData }] = await Promise.all([
+      const [{ data: servicesData }, { data: hoursData }, { data: workersData }] = await Promise.all([
         supabase.rpc('get_public_services', { p_business_id: biz.id }),
         supabase.rpc('get_public_business_hours', { p_business_id: biz.id }),
+        biz.client_chooses_worker
+          ? supabase.rpc('get_public_workers', { p_business_id: biz.id })
+          : Promise.resolve({ data: [] }),
       ])
+      setWorkers((workersData as PublicWorker[] | null) || [])
       // A 'preset' service with no options, or an 'hourly' service with no
       // rate configured, can't actually be booked (no way to resolve a
       // duration/price) - never show either to a real client here, even
@@ -234,6 +285,14 @@ export default function PublicBookingPage() {
   // Distinguishes "the business doesn't open this day" from "open but fully
   // booked" for the empty-slots message below - both show 0 slots otherwise.
   const dayClosed = !!selectedDate && isDayClosed(selectedDate, businessHours, tz)
+  // The chosen barber doesn't work this day even though the business is
+  // open - worth saying so instead of a generic "no times available".
+  const workerDayOff =
+    !dayClosed &&
+    !!selectedDate &&
+    !!selectedWorker &&
+    selectedWorker.hours.length > 0 &&
+    isDayClosed(selectedDate, selectedWorker.hours, tz)
 
   useEffect(() => {
     if (step !== 'datetime' || !business || !selectedService || !selectedDate || !effectiveDurationMinutes) return
@@ -275,21 +334,66 @@ export default function PublicBookingPage() {
         })
       )
 
-      const seenTimes = new Set<number>()
-      const unionedSlots = slotSets
-        .flat()
-        .filter((slot) => {
-          if (seenTimes.has(slot.getTime())) return false
-          seenTimes.add(slot.getTime())
-          return true
-        })
-        .sort((a, b) => a.getTime() - b.getTime())
+      const unionSlots = (sets: Date[][]) => {
+        const seen = new Set<number>()
+        return sets
+          .flat()
+          .filter((slot) => {
+            if (seen.has(slot.getTime())) return false
+            seen.add(slot.getTime())
+            return true
+          })
+          .sort((a, b) => a.getTime() - b.getTime())
+      }
 
-      setSlots(unionedSlots)
+      let available = unionSlots(slotSets)
+
+      // Worker constraint (scripts/102), layered on top of the resource one:
+      // a time works if a resource is free AND the chosen worker (or, for
+      // "Sin preferencia", at least one eligible worker) is working and
+      // free then. Each worker's slots honor both business hours and their
+      // own schedule - same intersectSlots approach the dashboard uses.
+      const eligible = eligibleWorkersFor(selectedService)
+      if (eligible.length > 0) {
+        const candidates = selectedWorkerId ? eligible.filter((w) => w.id === selectedWorkerId) : eligible
+        const workerSlotSets = await Promise.all(
+          candidates.map(async (worker) => {
+            const { data } = await supabase.rpc('get_public_worker_busy_times', {
+              p_business_id: business.id,
+              p_worker_id: worker.id,
+              p_from: dayStart.toISOString(),
+              p_to: dayEnd.toISOString(),
+            })
+            const busy = (data as { start_time: string; end_time: string }[] | null) || []
+            const slotsFor = (hours: PublicBusinessHour[]) =>
+              generateAvailableSlots(
+                selectedDate,
+                hours,
+                effectiveDurationMinutes,
+                busy,
+                tz,
+                selectedService.buffer_before_min || 0,
+                selectedService.buffer_after_min || 0
+              )
+            const businessSlots = slotsFor(businessHours)
+            return worker.hours.length > 0 ? intersectSlots(businessSlots, slotsFor(worker.hours)) : businessSlots
+          })
+        )
+        available = intersectSlots(available, unionSlots(workerSlotSets))
+      }
+
+      setSlots(available)
+      setDayIsOver(
+        available.length === 0 &&
+          selectedDate === todayInTz(tz) &&
+          generateAvailableSlots(selectedDate, businessHours, effectiveDurationMinutes, [], tz).length === 0 &&
+          generateAvailableSlots(selectedDate, businessHours, effectiveDurationMinutes, [], tz, 0, 0, true).length > 0
+      )
       setLoadingSlots(false)
     }
     loadSlots()
-  }, [step, business, selectedService, selectedResourceId, selectedDate, businessHours, effectiveDurationMinutes])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, business, selectedService, selectedResourceId, selectedWorkerId, workers, selectedDate, businessHours, effectiveDurationMinutes])
 
   // "Option A" from the client-accounts conversation (no login, no
   // accounts) - create_public_reservation already recognizes a returning
@@ -394,9 +498,23 @@ export default function PublicBookingPage() {
       // slot search below then checks every linked resource instead of
       // just one, and the server auto-assigns whichever is free.
       setSelectedResourceId(svc.resources.length <= 1 ? svc.resources[0]?.id ?? null : null)
+      goToWorkerOrDatetime(svc)
+    }
+  }
+
+  const goToWorkerOrDatetime = (svc: PublicService) => {
+    const eligible = eligibleWorkersFor(svc)
+    if (eligible.length > 1) {
+      setSelectedWorkerId(null)
+      setStep('worker')
+    } else {
+      setSelectedWorkerId(eligible[0]?.id ?? null)
       setStep('datetime')
     }
   }
+
+  const stepBeforeDatetime = (svc: PublicService): Step =>
+    needsWorkerStep(svc) ? 'worker' : needsResourceStep(svc) ? 'resource' : stepBeforeResource(svc)
 
   // Which step comes right before the resource/datetime steps, for back
   // buttons - depends on how this service resolves its duration.
@@ -447,6 +565,7 @@ export default function PublicBookingPage() {
           p_needs_parking: needsParking,
           p_hours: selectedHours || null,
           p_document_number: contactForm.documentNumber || null,
+          p_worker_id: selectedWorkerId,
           turnstileToken,
         }),
       })
@@ -468,12 +587,21 @@ export default function PublicBookingPage() {
           notes_too_long: tr.errorNotesTooLong,
           document_number_too_long: tr.errorDocumentNumberTooLong,
           bot_verification_failed: tr.errorBotVerification,
+          worker_unavailable: tr.errorWorkerUnavailable,
         }
         setSubmitError(messages[result.error || ''] || tr.errorGeneric)
         resetTurnstile()
         return
       }
       setManageReservationId(result.reservation_id || null)
+      setAssignedWorker(null)
+      if (result.reservation_id && !selectedWorkerId && workers.length > 0) {
+        const { data: status } = await supabase.rpc('get_public_reservation_status', {
+          p_reservation_id: result.reservation_id,
+        })
+        const s = status as { worker_name?: string | null; worker_photo_url?: string | null } | null
+        if (s?.worker_name) setAssignedWorker({ name: s.worker_name, photo_url: s.worker_photo_url ?? null })
+      }
       if (result.reservation_id && business.notify_confirmations && contactForm.email) {
         sendReservationNotification('confirmation', result.reservation_id, language)
       }
@@ -542,7 +670,7 @@ export default function PublicBookingPage() {
     )
   }
 
-  const stepSequence = selectedService ? getStepSequence(selectedService) : []
+  const stepSequence = selectedService ? getStepSequence(selectedService, needsWorkerStep(selectedService)) : []
   const stepIndex = stepSequence.indexOf(step)
 
   return (
@@ -551,6 +679,7 @@ export default function PublicBookingPage() {
         'booking-shell flex flex-col items-center bg-background px-4',
         isEmbed ? 'py-6' : 'min-h-screen py-10'
       )}
+      style={bookingBrandStyle(business.booking_font, business.booking_accent_color)}
     >
       {!isEmbed && <LanguageToggle className="max-w-md" />}
 
@@ -607,6 +736,17 @@ export default function PublicBookingPage() {
                   {selectedSlot.toLocaleTimeString(locale, { timeZone: tz, hour: '2-digit', minute: '2-digit' })}
                 </p>
                 <p className="mt-1 font-display text-lg text-foreground">{selectedService.name}</p>
+                {confirmedWorker && (
+                  <p className="mt-1 flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
+                    <Avatar className="h-6 w-6">
+                      <AvatarImage src={confirmedWorker.photo_url || undefined} alt="" className="object-cover" />
+                      <AvatarFallback className="bg-primary/10 text-[10px] text-primary">
+                        {workerInitials(confirmedWorker.name)}
+                      </AvatarFallback>
+                    </Avatar>
+                    {tr.withWorker.replace('{name}', confirmedWorker.name)}
+                  </p>
+                )}
                 <p className="text-xs text-muted-foreground">{business.name}</p>
               </div>
             )}
@@ -680,6 +820,7 @@ export default function PublicBookingPage() {
                 {step === 'duration' && tr.stepDuration}
                 {step === 'hours' && tr.stepHours}
                 {step === 'resource' && tr.stepResource}
+                {step === 'worker' && tr.stepWorker}
                 {step === 'datetime' && tr.stepDatetime}
                 {step === 'contact' && tr.stepContact}
               </CardTitle>
@@ -688,6 +829,7 @@ export default function PublicBookingPage() {
                 {step === 'duration' && tr.stepDurationDesc}
                 {step === 'hours' && tr.stepHoursDesc}
                 {step === 'resource' && tr.stepResourceDesc}
+                {step === 'worker' && tr.stepWorkerDesc}
                 {step === 'datetime' && tr.stepDatetimeDesc}
                 {step === 'contact' && tr.stepContactDesc}
               </CardDescription>
@@ -835,12 +977,70 @@ export default function PublicBookingPage() {
                         type="button"
                         onClick={() => {
                           setSelectedResourceId(res.id)
-                          setStep('datetime')
+                          goToWorkerOrDatetime(selectedService)
                         }}
                         className="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50"
                       >
                         <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: res.color }} />
                         <span className="font-display flex-1 text-base text-foreground">{res.name}</span>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {step === 'worker' && selectedService && (
+                <div className="space-y-4">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="-ml-3 gap-1 text-muted-foreground hover:text-foreground"
+                    onClick={() =>
+                      setStep(needsResourceStep(selectedService) ? 'resource' : stepBeforeResource(selectedService))
+                    }
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    {tr.back}
+                  </Button>
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedWorkerId(null)
+                        setStep('datetime')
+                      }}
+                      className="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50"
+                    >
+                      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted">
+                        <Users className="h-5 w-5 text-muted-foreground" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-display text-base text-foreground">{tr.anyWorker}</span>
+                        <span className="block text-xs text-muted-foreground">{tr.anyWorkerDesc}</span>
+                      </span>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    </button>
+                    {eligibleWorkersFor(selectedService).map((worker) => (
+                      <button
+                        key={worker.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedWorkerId(worker.id)
+                          setStep('datetime')
+                        }}
+                        className="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50"
+                      >
+                        <Avatar className="h-12 w-12 shrink-0">
+                          <AvatarImage src={worker.photo_url || undefined} alt={worker.name} className="object-cover" />
+                          <AvatarFallback className="bg-primary/10 text-sm font-medium text-primary">
+                            {workerInitials(worker.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="font-display min-w-0 flex-1 truncate text-base text-foreground">
+                          {worker.name}
+                        </span>
                         <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                       </button>
                     ))}
@@ -855,9 +1055,7 @@ export default function PublicBookingPage() {
                     variant="ghost"
                     size="sm"
                     className="-ml-3 gap-1 text-muted-foreground hover:text-foreground"
-                    onClick={() =>
-                      setStep(needsResourceStep(selectedService) ? 'resource' : stepBeforeResource(selectedService))
-                    }
+                    onClick={() => setStep(stepBeforeDatetime(selectedService))}
                   >
                     <ChevronLeft className="h-4 w-4" />
                     {tr.back}
@@ -899,9 +1097,29 @@ export default function PublicBookingPage() {
                       <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                     </div>
                   ) : slots.length === 0 ? (
-                    <p className="py-8 text-center text-sm text-muted-foreground">
-                      {dayClosed ? tr.dayClosed : tr.noSlots}
-                    </p>
+                    <div className="flex flex-col items-center gap-3 py-8 text-center">
+                      <p className="text-sm text-muted-foreground">
+                        {dayClosed
+                          ? tr.dayClosed
+                          : workerDayOff && selectedWorker
+                            ? tr.workerDayOff.replace('{name}', selectedWorker.name)
+                            : dayIsOver
+                              ? tr.dayIsOver
+                              : tr.noSlots}
+                      </p>
+                      {/* One tap to the next day beats hunting for the tiny
+                          arrow above - the common case after "nothing today". */}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-1"
+                        onClick={() => setSelectedDate((d) => addDays(d, 1))}
+                      >
+                        {tr.tryNextDay}
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
                   ) : (
                     <div className="grid grid-cols-3 gap-2">
                       {slots.map((slot) => (
@@ -963,6 +1181,17 @@ export default function PublicBookingPage() {
                         })
                       )}
                     </p>
+                    {selectedWorker && (
+                      <p className="mt-1 flex items-center gap-1.5 text-muted-foreground">
+                        <Avatar className="h-5 w-5">
+                          <AvatarImage src={selectedWorker.photo_url || undefined} alt="" className="object-cover" />
+                          <AvatarFallback className="bg-primary/10 text-[9px] text-primary">
+                            {workerInitials(selectedWorker.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        {tr.withWorker.replace('{name}', selectedWorker.name)}
+                      </p>
+                    )}
                   </div>
 
                   {submitError && (

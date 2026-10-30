@@ -28,6 +28,7 @@ import {
   UserCog,
   Newspaper,
   Sparkles,
+  CalendarCheck,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
@@ -35,6 +36,7 @@ import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/s
 import { UpgradeModal } from '@/components/upgrade-modal'
 import { PremiumBadge } from '@/components/premium-feature'
 import { NotificationBell } from '@/components/dashboard/notification-bell'
+import { useHasWorkerAgenda } from '@/hooks/use-has-worker-agenda'
 
 interface MobileNavProps {
   isOpen: boolean
@@ -67,6 +69,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
   const pathname = usePathname()
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const { user, profile, signOut } = useAuth()
+  const hasWorkerAgenda = useHasWorkerAgenda(user?.id)
   const { currentBusiness, loading: businessLoading, aiAddonStatus } = useBusinesses()
   const { t } = useLanguage()
   const workerLabel = getWorkerLabel(currentBusiness, t)
@@ -211,6 +214,16 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
                     </Link>
                   )
                 })}
+                {hasWorkerAgenda && (
+                  <Link
+                    href="/mi-agenda"
+                    onClick={onToggle}
+                    className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <CalendarCheck className="h-5 w-5 shrink-0" />
+                    <span>{t.workerPortal.sidebarLink}</span>
+                  </Link>
+                )}
               </nav>
 
               {/* Plan Badge / Upgrade CTA */}

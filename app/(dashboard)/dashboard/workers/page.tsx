@@ -46,6 +46,8 @@ import { TimeSelect } from '@/components/dashboard/time-select'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { sedeAbbr, sedeTint, buildBusinessColorIndex } from '@/lib/sede-colors'
+import { deleteStorageImage, resizeImageFile, useStagedImage } from '@/lib/image-upload'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   Plus,
   MoreHorizontal,
@@ -60,6 +62,8 @@ import {
   CalendarDays,
   Copy,
   Check,
+  KeyRound,
+  X,
 } from 'lucide-react'
 
 const WORKER_COLORS = [
@@ -93,11 +97,14 @@ interface Worker {
   worker_group_id: string
   allows_concurrent_services: boolean
   calendar_feed_token: string
+  photo_url: string | null
+  user_id?: string | null
+  invite_email?: string | null
 }
 
 export default function WorkersPage() {
   const { currentBusiness, businesses } = useBusinesses()
-  const { t } = useLanguage()
+  const { t, language } = useLanguage()
   const workerLabel = getWorkerLabel(currentBusiness, t)
   const {
     workers,
@@ -180,7 +187,52 @@ export default function WorkersPage() {
     color: WORKER_COLORS[0],
     isActive: true,
     allowsConcurrentServices: false,
+    photoUrl: null as string | null,
   })
+  // Shown to clients on the public link's "¿Con quién?" step
+  // (scripts/102) so they can recognize their barber.
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
+  const [photoError, setPhotoError] = useState('')
+  const photoInputRef = useRef<HTMLInputElement>(null)
+  const stagedPhoto = useStagedImage(supabase, 'worker-photos')
+
+  useEffect(() => {
+    if (!isWorkerModalOpen) stagedPhoto.discard()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isWorkerModalOpen])
+
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !currentBusiness) return
+    setPhotoError('')
+    if (!file.type.startsWith('image/')) {
+      setPhotoError(t.settings.photoInvalidType)
+      return
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setPhotoError(t.settings.photoTooLarge)
+      return
+    }
+    setIsUploadingPhoto(true)
+    try {
+      // Square-ish avatar shown at most ~48px - 600px is plenty.
+      const resized = await resizeImageFile(file, 600)
+      const path = `${currentBusiness.id}/${crypto.randomUUID()}.jpg`
+      const { error } = await supabase.storage
+        .from('worker-photos')
+        .upload(path, resized, { upsert: true, cacheControl: '3600' })
+      if (error) throw error
+      const { data } = supabase.storage.from('worker-photos').getPublicUrl(path)
+      stagedPhoto.track(data.publicUrl)
+      setWorkerForm((prev) => ({ ...prev, photoUrl: data.publicUrl }))
+    } catch (err) {
+      console.error('[iplanit] Error uploading worker photo:', err)
+      setPhotoError(t.settings.photoUploadError)
+    } finally {
+      setIsUploadingPhoto(false)
+    }
+  }
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([])
   const [useCustomHours, setUseCustomHours] = useState(false)
   const [hoursForm, setHoursForm] = useState(DEFAULT_WORKER_HOURS)
@@ -228,6 +280,111 @@ export default function WorkersPage() {
     }
   }
 
+  // Worker accounts (scripts/104): free, read-only, own agenda only. The
+  // dialog reads the worker fresh from `workers` (not a stale copy) so its
+  // state flips from "invitado" to "con acceso" after a refetch.
+  const [accessWorkerId, setAccessWorkerId] = useState<string | null>(null)
+  const accessWorker = workers.find((w) => w.id === accessWorkerId) ?? null
+  const [accessEmail, setAccessEmail] = useState('')
+  const [accessBusy, setAccessBusy] = useState(false)
+  const [accessError, setAccessError] = useState('')
+  const [accessCopied, setAccessCopied] = useState(false)
+
+  const openAccessDialog = (worker: Worker) => {
+    setAccessWorkerId(worker.id)
+    setAccessEmail(worker.invite_email ?? '')
+    setAccessError('')
+    setAccessCopied(false)
+  }
+
+  const accessUrl = (worker: Worker) => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://www.iplanit.io'
+    return worker.user_id || !worker.invite_email
+      ? `${origin}/login`
+      : `${origin}/register?invite=staff&email=${encodeURIComponent(worker.invite_email)}`
+  }
+
+  const sendAccessEmail = async (workerId: string) => {
+    const res = await fetch('/api/workers/invite-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workerId, language }),
+    })
+    return res.ok
+  }
+
+  const handleGiveAccess = async () => {
+    if (!accessWorker) return
+    setAccessBusy(true)
+    setAccessError('')
+    try {
+      const { data, error } = await supabase.rpc('invite_worker_access', {
+        p_worker_id: accessWorker.id,
+        p_email: accessEmail,
+      })
+      const result = data as { success?: boolean; error?: string } | null
+      if (error || !result?.success) {
+        const messages: Record<string, string> = {
+          invalid_email: t.workers.accessErrorInvalidEmail,
+          email_in_use: t.workers.accessErrorEmailInUse,
+        }
+        setAccessError(messages[result?.error || ''] || t.saveError)
+        return
+      }
+      await refetchWorkers()
+      const emailed = await sendAccessEmail(accessWorker.id)
+      if (emailed) toast.success(t.workers.accessInviteSent)
+      else toast.error(t.workers.accessEmailFailed)
+    } finally {
+      setAccessBusy(false)
+    }
+  }
+
+  const handleResendAccess = async () => {
+    if (!accessWorker) return
+    setAccessBusy(true)
+    const emailed = await sendAccessEmail(accessWorker.id)
+    setAccessBusy(false)
+    if (emailed) toast.success(t.workers.accessInviteSent)
+    else toast.error(t.workers.accessEmailFailed)
+  }
+
+  const handleRevokeAccess = async () => {
+    if (!accessWorker) return
+    setAccessBusy(true)
+    try {
+      const { data, error } = await supabase.rpc('revoke_worker_access', { p_worker_id: accessWorker.id })
+      if (error || !(data as { success?: boolean } | null)?.success) {
+        toast.error(t.saveError)
+        return
+      }
+      await refetchWorkers()
+      setAccessEmail('')
+      toast.success(t.workers.accessRevoked)
+    } finally {
+      setAccessBusy(false)
+    }
+  }
+
+  // WhatsApp is how most owners actually reach their barbers - a ready
+  // message is friendlier than "check your email".
+  const handleCopyAccessMessage = async () => {
+    if (!accessWorker) return
+    const message = t.workers.accessWhatsappMessage
+      .replace('{name}', accessWorker.name.split(' ')[0])
+      .replace('{business}', currentBusiness?.name || '')
+      .replace('{url}', accessUrl(accessWorker))
+    try {
+      if (!navigator.clipboard) throw new Error('Clipboard API unavailable')
+      await navigator.clipboard.writeText(message)
+      setAccessCopied(true)
+      setTimeout(() => setAccessCopied(false), 2000)
+    } catch (err) {
+      console.error('[iplanit] Clipboard write failed:', err)
+      toast.error(t.saveError)
+    }
+  }
+
   const [togglingWorkerId, setTogglingWorkerId] = useState<string | null>(null)
   const handleQuickToggleActive = async (worker: Worker) => {
     setTogglingWorkerId(worker.id)
@@ -255,7 +412,9 @@ export default function WorkersPage() {
         color: worker.color || WORKER_COLORS[0],
         isActive: worker.is_active,
         allowsConcurrentServices: worker.allows_concurrent_services,
+        photoUrl: worker.photo_url,
       })
+      stagedPhoto.begin(worker.photo_url)
       setSelectedServiceIds(workerServices.filter((ws) => ws.worker_id === worker.id).map((ws) => ws.service_id))
       const existingHours = workerHours.filter((h) => h.worker_id === worker.id)
       if (existingHours.length > 0) {
@@ -274,12 +433,14 @@ export default function WorkersPage() {
       }
     } else {
       setEditingWorker(null)
-      setWorkerForm({ name: '', color: WORKER_COLORS[0], isActive: true, allowsConcurrentServices: false })
+      setWorkerForm({ name: '', color: WORKER_COLORS[0], isActive: true, allowsConcurrentServices: false, photoUrl: null })
+      stagedPhoto.begin(null)
       setSelectedServiceIds([])
       setUseCustomHours(false)
       setHoursForm(DEFAULT_WORKER_HOURS)
     }
     setSaveError('')
+    setPhotoError('')
     setIsWorkerModalOpen(true)
   }
 
@@ -295,6 +456,9 @@ export default function WorkersPage() {
         color: workerForm.color,
         is_active: workerForm.isActive,
         allows_concurrent_services: workerForm.allowsConcurrentServices,
+        // Only sent when it changed, so saving a worker keeps working even
+        // if this deploys before scripts/102 adds the column.
+        ...(workerForm.photoUrl !== (editingWorker?.photo_url ?? null) ? { photo_url: workerForm.photoUrl } : {}),
       }
 
       let workerId: string
@@ -348,6 +512,7 @@ export default function WorkersPage() {
 
       await refetchWorkers()
       await refetchOrgWorkers()
+      await stagedPhoto.commit(workerForm.photoUrl)
       setIsWorkerModalOpen(false)
       toast.success(editingWorker ? t.workers.updateSuccess : t.workers.createSuccess)
     } catch (err: any) {
@@ -365,6 +530,7 @@ export default function WorkersPage() {
     try {
       const { error } = await supabase.from('workers').delete().eq('id', deletingWorker.id)
       if (error) throw error
+      if (deletingWorker.photo_url) await deleteStorageImage(supabase, 'worker-photos', deletingWorker.photo_url)
       await refetchWorkers()
       await refetchWorkerHours()
       await refetchWorkerServices()
@@ -470,13 +636,31 @@ export default function WorkersPage() {
                   <div className="space-y-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex min-w-0 items-center gap-3">
-                        <CatalogItemIcon icon={UserCog} color={workerColor} />
+                        {worker.photo_url ? (
+                          <Avatar className="h-10 w-10 shrink-0">
+                            <AvatarImage src={worker.photo_url} alt={worker.name} className="object-cover" />
+                            <AvatarFallback>{worker.name.slice(0, 1).toUpperCase()}</AvatarFallback>
+                          </Avatar>
+                        ) : (
+                          <CatalogItemIcon icon={UserCog} color={workerColor} />
+                        )}
                         <div className="min-w-0">
                           <h3 className="truncate font-semibold text-foreground">{worker.name}</h3>
                           {hasCustomHours && (
                             <p className="flex items-center gap-1 text-xs text-muted-foreground">
                               <Clock className="h-3 w-3" />
                               {t.workers.customScheduleBadge}
+                            </p>
+                          )}
+                          {(worker.user_id || worker.invite_email) && (
+                            <p
+                              className={cn(
+                                'flex items-center gap-1 text-xs',
+                                worker.user_id ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
+                              )}
+                            >
+                              <KeyRound className="h-3 w-3" />
+                              {worker.user_id ? t.workers.accessBadgeLinked : t.workers.accessBadgeInvited}
                             </p>
                           )}
                         </div>
@@ -496,6 +680,10 @@ export default function WorkersPage() {
                           <DropdownMenuItem onClick={() => handleOpenWorkerModal(worker)}>
                             <Pencil className="mr-2 h-4 w-4" />
                             {t.services.edit}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => openAccessDialog(worker)}>
+                            <KeyRound className="mr-2 h-4 w-4" />
+                            {t.workers.accessMenuItem}
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => setCalendarLinkWorker(worker)}>
                             <CalendarDays className="mr-2 h-4 w-4" />
@@ -595,6 +783,58 @@ export default function WorkersPage() {
                 placeholder={t.workers.namePlaceholder}
                 required
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label>{t.workers.photoLabel}</Label>
+              <div className="flex items-center gap-4">
+                <div className="relative">
+                  <Avatar className="h-16 w-16">
+                    <AvatarImage src={workerForm.photoUrl || undefined} alt="" className="object-cover" />
+                    <AvatarFallback className="text-lg" style={{ backgroundColor: `${workerForm.color}22`, color: workerForm.color }}>
+                      {workerForm.name.trim().slice(0, 1).toUpperCase() || <UserCog className="h-6 w-6" />}
+                    </AvatarFallback>
+                  </Avatar>
+                  {isUploadingPhoto && (
+                    <div className="absolute inset-0 flex items-center justify-center rounded-full bg-background/70">
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      ref={photoInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handlePhotoChange}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={isUploadingPhoto}
+                      onClick={() => photoInputRef.current?.click()}
+                    >
+                      {workerForm.photoUrl ? t.services.changeImageBtn : t.services.uploadImageBtn}
+                    </Button>
+                    {workerForm.photoUrl && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={isUploadingPhoto}
+                        onClick={() => setWorkerForm({ ...workerForm, photoUrl: null })}
+                      >
+                        {t.services.removeImageBtn}
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{t.workers.photoHint}</p>
+                  {photoError && <p className="text-xs text-destructive">{photoError}</p>}
+                </div>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -772,6 +1012,110 @@ export default function WorkersPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={!!accessWorker} onOpenChange={(open) => !open && setAccessWorkerId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t.workers.accessTitle.replace('{name}', accessWorker?.name ?? '')}</DialogTitle>
+            <DialogDescription>{t.workers.accessDesc}</DialogDescription>
+          </DialogHeader>
+
+          {accessWorker && (accessWorker.user_id || accessWorker.invite_email) ? (
+            <div className="space-y-4">
+              <div
+                className={cn(
+                  'flex items-start gap-3 rounded-lg border p-3 text-sm',
+                  accessWorker.user_id ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5'
+                )}
+              >
+                <KeyRound
+                  className={cn(
+                    'mt-0.5 h-4 w-4 shrink-0',
+                    accessWorker.user_id ? 'text-emerald-600' : 'text-amber-600'
+                  )}
+                />
+                <div className="min-w-0">
+                  <p className="font-medium">
+                    {accessWorker.user_id ? t.workers.accessStateLinked : t.workers.accessStateInvited}
+                  </p>
+                  <p className="truncate text-muted-foreground">{accessWorker.invite_email}</p>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button type="button" variant="outline" className="gap-2" onClick={handleCopyAccessMessage}>
+                  {accessCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  {accessCopied ? t.settings.linkCopied : t.workers.accessCopyWhatsapp}
+                </Button>
+                {!accessWorker.user_id && (
+                  <Button type="button" variant="outline" disabled={accessBusy} onClick={handleResendAccess}>
+                    {t.workers.accessResend}
+                  </Button>
+                )}
+              </div>
+
+              <DialogFooter className="sm:justify-between">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  disabled={accessBusy}
+                  onClick={handleRevokeAccess}
+                >
+                  {t.workers.accessRevoke}
+                </Button>
+                <Button type="button" onClick={() => setAccessWorkerId(null)}>
+                  {t.workers.accessDone}
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <form
+              className="space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault()
+                handleGiveAccess()
+              }}
+            >
+              <ul className="space-y-1.5 text-sm text-muted-foreground">
+                <li className="flex gap-2">
+                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                  {t.workers.accessCanSee}
+                </li>
+                <li className="flex gap-2">
+                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                  {t.workers.accessCanSeeStats}
+                </li>
+                <li className="flex gap-2">
+                  <X className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  {t.workers.accessCannot}
+                </li>
+              </ul>
+              <div className="space-y-2">
+                <Label htmlFor="worker-access-email">{t.workers.accessEmailLabel}</Label>
+                <Input
+                  id="worker-access-email"
+                  type="email"
+                  value={accessEmail}
+                  onChange={(e) => setAccessEmail(e.target.value)}
+                  placeholder="barbero@gmail.com"
+                  required
+                />
+                {accessError && <p className="text-sm text-destructive">{accessError}</p>}
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setAccessWorkerId(null)}>
+                  {t.services.cancelBtn}
+                </Button>
+                <Button type="submit" disabled={accessBusy || !accessEmail.trim()}>
+                  {accessBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {t.workers.accessGiveBtn}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!calendarLinkWorker} onOpenChange={(open) => !open && setCalendarLinkWorker(null)}>
         <DialogContent>

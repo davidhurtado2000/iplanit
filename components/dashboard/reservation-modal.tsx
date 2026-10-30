@@ -146,6 +146,9 @@ interface ReservationModalProps {
    * empty slot in the calendar grid (calendar-view.tsx's DayView) instead
    * of the "Nueva reserva" toolbar button. */
   prefillResourceId?: string | null
+  /** Same as prefillResourceId, for a click in a worker column (calendar
+   * grouped by worker). */
+  prefillWorkerId?: string | null
   /** "YYYY-MM-DDTHH:MM" in business-local time, same shape as
    * formData.start_time - the exact slot that was clicked. Deliberately
    * NOT written to formData.start_time directly (start_time depends on a
@@ -201,6 +204,7 @@ export function ReservationModal({
   followUpOfReservationId,
   onCreateFollowUp,
   prefillResourceId,
+  prefillWorkerId,
   prefillStartHint,
   prefillEndHint,
   backdated = false,
@@ -491,7 +495,7 @@ export function ReservationModal({
         client_id: prefillClientId || '',
         service_id: prefillServiceId || '',
         resource_id: prefillResourceId || '',
-        worker_id: '',
+        worker_id: prefillWorkerId || '',
         // Left empty on purpose - the slot grid below forces an explicit
         // pick instead of defaulting to a guessed time that might not even
         // be available. (prefillStartHint auto-selects it once it's
@@ -520,7 +524,7 @@ export function ReservationModal({
     // from context instead) - cleared on every open so switching from one
     // reservation/create flow to another never carries stale picks over.
     setAdditionalAttendeeIds([])
-  }, [reservation, selectedDate, mode, tz, initialType, serviceDurationOptions, isUSD, services, prefillClientId, prefillServiceId, prefillResourceId])
+  }, [reservation, selectedDate, mode, tz, initialType, serviceDurationOptions, isUSD, services, prefillClientId, prefillServiceId, prefillResourceId, prefillWorkerId])
 
   // Fetch how many future sessions remain in this reservation's series (if
   // any), so the view can show "quedan N sesiones" and offer to cancel them.
@@ -874,33 +878,85 @@ export function ReservationModal({
     ? workerHours.filter((h) => h.worker_id === formData.worker_id)
     : []
 
-  const availableSlots =
-    slotDate && effectiveDurationMinutes
-      ? (() => {
-          const businessSlots = generateAvailableSlots(
-            slotDate,
-            businessHours,
-            effectiveDurationMinutes,
-            busyRanges,
-            tz,
-            selectedService?.buffer_before_min || 0,
-            selectedService?.buffer_after_min || 0,
-            backdated
-          )
-          if (selectedWorkerHours.length === 0) return businessSlots
-          const workerSlots = generateAvailableSlots(
-            slotDate,
-            selectedWorkerHours,
-            effectiveDurationMinutes,
-            busyRanges,
-            tz,
-            selectedService?.buffer_before_min || 0,
-            selectedService?.buffer_after_min || 0,
-            backdated
-          )
-          return intersectSlots(businessSlots, workerSlots)
-        })()
-      : []
+  // Editing an appointment that already exists (as opposed to creating
+  // one). Its own time has to stay pickable even when it no longer
+  // "fits" - it already happened, or the person now assigned works
+  // different hours - otherwise assigning who did a past cut shows "no
+  // times available" and pushes staff into moving it to a fake time.
+  const editingExisting = !!reservation?.id && (mode === 'edit' || (mode === 'view' && isEditing))
+  const originalLocalStart = editingExisting && reservation ? toTzLocalInput(reservation.start_time, tz) : null
+  const editingPastReservation = editingExisting && !!reservation && new Date(reservation.start_time) < new Date()
+  const allowPastSlots = backdated || editingPastReservation
+
+  const computeSlots = (allowPast: boolean) => {
+    if (!slotDate || !effectiveDurationMinutes) return []
+    const businessSlots = generateAvailableSlots(
+      slotDate,
+      businessHours,
+      effectiveDurationMinutes,
+      busyRanges,
+      tz,
+      selectedService?.buffer_before_min || 0,
+      selectedService?.buffer_after_min || 0,
+      allowPast
+    )
+    if (selectedWorkerHours.length === 0) return businessSlots
+    const workerSlots = generateAvailableSlots(
+      slotDate,
+      selectedWorkerHours,
+      effectiveDurationMinutes,
+      busyRanges,
+      tz,
+      selectedService?.buffer_before_min || 0,
+      selectedService?.buffer_after_min || 0,
+      allowPast
+    )
+    return intersectSlots(businessSlots, workerSlots)
+  }
+
+  const availableSlots = computeSlots(allowPastSlots)
+
+  // "YYYY-MM-DDTHH:MM" (business-local) or a bare "HH:MM" on slotDate,
+  // shown the same way as every slot chip (12h/24h per the UI language).
+  const formatLocalTime = (local: string) => {
+    const full = local.includes('T') ? local : `${slotDate}T${local.slice(0, 5)}`
+    return parseInTimezone(full, tz).toLocaleTimeString(locale, { timeZone: tz, hour: '2-digit', minute: '2-digit' })
+  }
+
+  // The appointment's current time, offered as its own chip whenever the
+  // grid above doesn't already include it.
+  const showOriginalSlot =
+    !!originalLocalStart &&
+    originalLocalStart.startsWith(`${slotDate}T`) &&
+    !availableSlots.some((s) => toTzLocalInput(s.toISOString(), tz) === originalLocalStart)
+
+  // "No times" for the real reason: today's times are simply over (late
+  // evening) vs. genuinely booked solid.
+  const onlyPastSlotsLeft =
+    availableSlots.length === 0 && !allowPastSlots && slotDate === toDateStr(new Date(), tz) && computeSlots(true).length > 0
+
+  // Non-blocking: the chosen person's own schedule doesn't cover this
+  // appointment's time. Staff often record what actually happened, so
+  // this informs instead of preventing the save.
+  const workerHoursWarning = (() => {
+    if (!formData.worker_id || !formData.start_time || selectedWorkerHours.length === 0) return null
+    const [datePart, timePart] = formData.start_time.split('T')
+    const dayNum = new Date(`${datePart}T12:00:00Z`).getUTCDay()
+    const row = selectedWorkerHours.find((h) => h.day_of_week === dayNum)
+    const workerName = selectedWorker?.name ?? ''
+    if (!row || row.is_closed) return t.reservation.workerOffThatDay.replace('{name}', workerName)
+    const toMin = (v: string) => {
+      const [hh, mm] = v.split(':').map(Number)
+      return hh * 60 + mm
+    }
+    const start = toMin(timePart)
+    const end = start + (effectiveDurationMinutes || 0)
+    if (start >= toMin(row.open_time) && end <= toMin(row.close_time)) return null
+    return t.reservation.workerOutsideHours
+      .replace('{name}', workerName)
+      .replace('{open}', formatLocalTime(row.open_time))
+      .replace('{close}', formatLocalTime(row.close_time))
+  })()
 
   // Distinguishes "the business doesn't open this day" from "open but fully
   // booked" - both show 0 slots, but staff need different next steps for each.
@@ -2456,8 +2512,14 @@ export function ReservationModal({
                 value={formData.resource_id || (allowedResourceIds.length === 0 ? '_none' : undefined)}
                 onValueChange={(val) =>
                   // Changing the resource changes which bookings count as
-                  // "busy", which can invalidate whatever slot was picked.
-                  setFormData({ ...formData, resource_id: val === '_none' ? '' : val, start_time: '' })
+                  // "busy", which can invalidate whatever slot was picked -
+                  // except on an existing appointment, where the time is a
+                  // fact to keep; a real clash is still caught on save.
+                  setFormData({
+                    ...formData,
+                    resource_id: val === '_none' ? '' : val,
+                    start_time: editingExisting ? formData.start_time : '',
+                  })
                 }
               >
                 <SelectTrigger id="resource">
@@ -2505,8 +2567,13 @@ export function ReservationModal({
                   onValueChange={(val) =>
                     // Changing the worker changes which bookings count as
                     // "busy" for them, which can invalidate whatever slot
-                    // was picked.
-                    setFormData({ ...formData, worker_id: val === '_none' ? '' : val, start_time: '' })
+                    // was picked - except on an existing appointment
+                    // ("who did this cut"), where the time stays as is.
+                    setFormData({
+                      ...formData,
+                      worker_id: val === '_none' ? '' : val,
+                      start_time: editingExisting ? formData.start_time : '',
+                    })
                   }
                 >
                   <SelectTrigger id="worker">
@@ -2548,13 +2615,32 @@ export function ReservationModal({
               />
               {!effectiveDurationMinutes ? (
                 <p className="text-xs text-muted-foreground">{t.reservation.pickDurationFirst}</p>
-              ) : availableSlots.length === 0 ? (
+              ) : availableSlots.length === 0 && !showOriginalSlot ? (
                 <p className="flex items-center gap-1.5 text-xs text-destructive">
                   <Clock className="h-3.5 w-3.5 shrink-0" />
-                  {dayClosed ? t.reservation.dayClosed : t.reservation.noSlotsAvailable}
+                  {dayClosed
+                    ? t.reservation.dayClosed
+                    : onlyPastSlotsLeft
+                      ? t.reservation.noSlotsLeftToday
+                      : t.reservation.noSlotsAvailable}
                 </p>
               ) : (
                 <div className="grid grid-cols-4 gap-1.5">
+                  {showOriginalSlot && originalLocalStart && (
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, start_time: originalLocalStart })}
+                      className={cn(
+                        'flex flex-col items-center rounded-md border px-2 py-1 text-xs font-medium transition-colors',
+                        formData.start_time === originalLocalStart
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'hover:bg-muted'
+                      )}
+                    >
+                      {formatLocalTime(originalLocalStart)}
+                      <span className="text-[9px] font-normal opacity-80">{t.reservation.currentSlotTag}</span>
+                    </button>
+                  )}
                   {availableSlots.map((slot) => {
                     const value = toTzLocalInput(slot.toISOString(), tz)
                     return (
@@ -2576,11 +2662,18 @@ export function ReservationModal({
                 </div>
               )}
               {formData.start_time &&
+                formData.start_time !== originalLocalStart &&
                 !availableSlots.some((s) => toTzLocalInput(s.toISOString(), tz) === formData.start_time) && (
                   <p className="text-xs text-muted-foreground">
-                    {t.reservation.currentTimeLabel}: {formData.start_time.split('T')[1]}
+                    {t.reservation.currentTimeLabel}: {formatLocalTime(formData.start_time)}
                   </p>
                 )}
+              {workerHoursWarning && (
+                <p className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+                  <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  {workerHoursWarning}
+                </p>
+              )}
               {hoursError && (
                 <p className="flex items-center gap-1.5 text-xs text-destructive">
                   <Clock className="h-3.5 w-3.5 shrink-0" />

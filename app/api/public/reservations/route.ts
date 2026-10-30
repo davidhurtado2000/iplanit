@@ -75,6 +75,10 @@ export async function POST(request: Request) {
       p_needs_parking: body?.p_needs_parking ?? false,
       p_hours: body?.p_hours ?? null,
       p_document_number: body?.p_document_number ?? null,
+      // Only sent when set: PostgREST matches RPCs by parameter names, so
+      // including p_worker_id at all would fail against the pre-102
+      // function signature if this deploys before the script is run.
+      ...(body?.p_worker_id ? { p_worker_id: body.p_worker_id } : {}),
     })
 
     if (error) {

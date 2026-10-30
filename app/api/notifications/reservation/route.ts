@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getResendClient, NOTIFICATIONS_FROM_EMAIL } from '@/lib/email/resend'
+import { getResendClient, getBusinessEmailsByReservation, NOTIFICATIONS_FROM_EMAIL } from '@/lib/email/resend'
 import { buildConfirmationEmail, buildCancellationEmail, buildApprovedEmail, type EmailLanguage } from '@/lib/email/templates'
 import type { Database } from '@/lib/supabase/types'
 
@@ -110,6 +110,8 @@ export async function POST(request: Request) {
           : buildCancellationEmail(emailData)
     }
 
+    const replyTo = (await getBusinessEmailsByReservation(supabase, [reservationId])).get(reservationId)
+
     const primaryEmail = buildEmail(
       reservation.client_name,
       `${process.env.NEXT_PUBLIC_APP_URL || 'https://www.iplanit.io'}/reservar/cita/${reservationId}`
@@ -117,6 +119,7 @@ export async function POST(request: Request) {
     await getResendClient().emails.send({
       from: NOTIFICATIONS_FROM_EMAIL,
       to: reservation.client_email,
+      replyTo,
       subject: primaryEmail.subject,
       html: primaryEmail.html,
     })
@@ -133,6 +136,7 @@ export async function POST(request: Request) {
         await getResendClient().emails.send({
           from: NOTIFICATIONS_FROM_EMAIL,
           to: attendee.email,
+          replyTo,
           subject: attendeeEmail.subject,
           html: attendeeEmail.html,
         })

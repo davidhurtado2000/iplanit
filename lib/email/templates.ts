@@ -329,6 +329,93 @@ export function buildReminderEmail(
   }
 }
 
+export interface ReviewRequestEmailData {
+  clientName: string
+  businessName: string
+  googleReviewUrl: string
+  language: EmailLanguage
+}
+
+// Fires ~3 hours after a reservation's end_time (scripts/101-google-review-
+// requests.sql) - a simple thanks + one button to the business's own Google
+// review link. Deliberately has no "how was it?" internal rating step
+// before the Google ask - gating the ask behind a private rating first
+// risks reading as review-gating, which several review platforms'
+// policies explicitly disallow. Everyone who shows up gets asked the same
+// way.
+export function buildReviewRequestEmail(data: ReviewRequestEmailData): { subject: string; html: string } {
+  const { clientName, businessName, googleReviewUrl, language } = data
+  const name = escapeHtml(clientName)
+  const business = escapeHtml(businessName)
+  const button = (label: string) =>
+    `<a href="${googleReviewUrl}" style="display: inline-block; margin-top: 16px; padding: 10px 18px; background-color: #2563eb; color: #ffffff; font-size: 14px; font-weight: 500; text-decoration: none; border-radius: 6px;">${label}</a>`
+
+  if (language === 'es') {
+    return {
+      subject: `¿Como estuvo tu visita a ${businessName}?`,
+      html: emailLayout(
+        'es',
+        'Gracias por tu visita',
+        `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hola ${name},</p>
+         <p style="font-size: 14px; color: #374151; margin: 0;">Gracias por visitar <strong>${business}</strong>. Si tienes un minuto, nos ayudaria muchisimo que dejes tu opinion en Google.</p>
+         ${button('Dejar una resena en Google')}`
+      ),
+    }
+  }
+  return {
+    subject: `How was your visit to ${businessName}?`,
+    html: emailLayout(
+      'en',
+      'Thanks for visiting',
+      `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hi ${name},</p>
+       <p style="font-size: 14px; color: #374151; margin: 0;">Thanks for visiting <strong>${business}</strong>. If you have a minute, it would mean a lot if you left us a review on Google.</p>
+       ${button('Leave a review on Google')}`
+    ),
+  }
+}
+
+export interface WorkerInviteEmailData {
+  workerName: string
+  businessName: string
+  url: string
+  /** true = account already exists and is linked, so "sign in" not "create". */
+  alreadyHasAccount: boolean
+  language: EmailLanguage
+}
+
+// Sent when an owner/admin gives a worker access to their own read-only
+// agenda (scripts/104-worker-accounts.sql).
+export function buildWorkerInviteEmail(data: WorkerInviteEmailData): { subject: string; html: string } {
+  const { workerName, businessName, url, alreadyHasAccount, language } = data
+  const name = escapeHtml(workerName)
+  const business = escapeHtml(businessName)
+  const button = (label: string) =>
+    `<a href="${url}" style="display: inline-block; margin-top: 16px; padding: 10px 18px; background-color: #2563eb; color: #ffffff; font-size: 14px; font-weight: 500; text-decoration: none; border-radius: 6px;">${label}</a>`
+
+  if (language === 'es') {
+    return {
+      subject: `${businessName} te dio acceso a tu agenda en iPlanit`,
+      html: emailLayout(
+        'es',
+        'Tu agenda, en tu celular',
+        `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hola ${name},</p>
+         <p style="font-size: 14px; color: #374151; margin: 0;"><strong>${business}</strong> te dio acceso a iPlanit para que veas tus citas del día y de la semana, y tus números del mes.</p>
+         ${button(alreadyHasAccount ? 'Entrar a mi agenda' : 'Crear mi cuenta')}`
+      ),
+    }
+  }
+  return {
+    subject: `${businessName} gave you access to your schedule on iPlanit`,
+    html: emailLayout(
+      'en',
+      'Your schedule, on your phone',
+      `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hi ${name},</p>
+       <p style="font-size: 14px; color: #374151; margin: 0;"><strong>${business}</strong> gave you access to iPlanit so you can see your appointments for the day and week, and your numbers for the month.</p>
+       ${button(alreadyHasAccount ? 'Open my schedule' : 'Create my account')}`
+    ),
+  }
+}
+
 export interface TrialEndingEmailData {
   language: EmailLanguage
   priceUsd: number

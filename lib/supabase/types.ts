@@ -314,6 +314,10 @@ export interface Database {
           reminder_hours: number
           reminder_email_message: string | null
           reminder_whatsapp_message: string | null
+          google_review_url: string | null
+          client_chooses_worker: boolean
+          booking_font: string | null
+          booking_accent_color: string | null
           birthday_emails_enabled: boolean
           birthday_discount_percent: number | null
           birthday_window: 'day' | 'week' | 'month'
@@ -349,6 +353,10 @@ export interface Database {
           reminder_hours?: number
           reminder_email_message?: string | null
           reminder_whatsapp_message?: string | null
+          google_review_url?: string | null
+          client_chooses_worker?: boolean
+          booking_font?: string | null
+          booking_accent_color?: string | null
           birthday_emails_enabled?: boolean
           birthday_discount_percent?: number | null
           birthday_window?: 'day' | 'week' | 'month'
@@ -384,6 +392,10 @@ export interface Database {
           reminder_hours?: number
           reminder_email_message?: string | null
           reminder_whatsapp_message?: string | null
+          google_review_url?: string | null
+          client_chooses_worker?: boolean
+          booking_font?: string | null
+          booking_accent_color?: string | null
           birthday_emails_enabled?: boolean
           birthday_discount_percent?: number | null
           birthday_window?: 'day' | 'week' | 'month'
@@ -623,6 +635,7 @@ export interface Database {
           cancelled_at: string | null
           reminder_sent_at: string | null
           day_of_reminder_sent_at: string | null
+          review_requested_at: string | null
           notes: string | null
           kommo_contact_id: string | null
           kommo_lead_id: string | null
@@ -650,6 +663,7 @@ export interface Database {
           cancelled_at?: string | null
           reminder_sent_at?: string | null
           day_of_reminder_sent_at?: string | null
+          review_requested_at?: string | null
           notes?: string | null
           kommo_contact_id?: string | null
           kommo_lead_id?: string | null
@@ -677,6 +691,7 @@ export interface Database {
           cancelled_at?: string | null
           reminder_sent_at?: string | null
           day_of_reminder_sent_at?: string | null
+          review_requested_at?: string | null
           notes?: string | null
           kommo_contact_id?: string | null
           kommo_lead_id?: string | null
@@ -983,6 +998,10 @@ export interface Database {
           worker_group_id: string
           allows_concurrent_services: boolean
           calendar_feed_token: string
+          photo_url: string | null
+          user_id: string | null
+          invite_email: string | null
+          invited_at: string | null
           created_at: string
           updated_at: string
         }
@@ -995,6 +1014,10 @@ export interface Database {
           worker_group_id?: string
           allows_concurrent_services?: boolean
           calendar_feed_token?: string
+          photo_url?: string | null
+          user_id?: string | null
+          invite_email?: string | null
+          invited_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -1007,6 +1030,10 @@ export interface Database {
           worker_group_id?: string
           allows_concurrent_services?: boolean
           calendar_feed_token?: string
+          photo_url?: string | null
+          user_id?: string | null
+          invite_email?: string | null
+          invited_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -1195,6 +1222,30 @@ export interface Database {
         Args: { p_business_id: string; p_resource_id: string | null; p_from: string; p_to: string }
         Returns: Json
       }
+      get_public_workers: {
+        Args: { p_business_id: string }
+        Returns: Json
+      }
+      invite_worker_access: {
+        Args: { p_worker_id: string; p_email: string }
+        Returns: Json
+      }
+      revoke_worker_access: {
+        Args: { p_worker_id: string }
+        Returns: Json
+      }
+      get_my_worker_links: {
+        Args: Record<string, never>
+        Returns: Json
+      }
+      get_my_worker_agenda: {
+        Args: { p_worker_id: string; p_from: string; p_to: string }
+        Returns: Json
+      }
+      get_public_worker_busy_times: {
+        Args: { p_business_id: string; p_worker_id: string; p_from: string; p_to: string }
+        Returns: Json
+      }
       find_public_client_match: {
         Args: { p_slug: string; p_email?: string | null; p_phone?: string | null; p_document_number?: string | null }
         Returns: Json
@@ -1213,6 +1264,7 @@ export interface Database {
           p_needs_parking?: boolean
           p_hours?: number | null
           p_document_number?: string | null
+          p_worker_id?: string | null
         }
         Returns: Json
       }
@@ -1244,6 +1296,16 @@ export interface Database {
           is_primary: boolean
           reminder_email_message: string | null
           reminder_kind: 'main' | 'day_of'
+        }[]
+      }
+      get_reservations_needing_review_request: {
+        Args: Record<string, never>
+        Returns: {
+          reservation_id: string
+          client_email: string
+          client_name: string
+          business_name: string
+          google_review_url: string
         }[]
       }
       get_clients_needing_birthday_email: {

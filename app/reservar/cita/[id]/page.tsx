@@ -23,6 +23,8 @@ import { StatusBadge } from '@/components/dashboard/status-badge'
 import { LogoLoader } from '@/components/logo-loader'
 import { sendReservationNotification } from '@/lib/email/notify'
 import { LanguageToggle } from '@/components/language-toggle'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { bookingBrandStyle } from '@/lib/booking-fonts'
 
 interface PublicReservationStatus {
   id: string
@@ -36,6 +38,11 @@ interface PublicReservationStatus {
   cancellation_policy_hours: number
   has_parking: boolean
   notify_cancellations: boolean
+  /** scripts/105 - undefined until it runs, then null when unassigned. */
+  worker_name?: string | null
+  worker_photo_url?: string | null
+  booking_font?: string | null
+  booking_accent_color?: string | null
 }
 
 export default function ManageReservationPage() {
@@ -122,7 +129,10 @@ export default function ManageReservationPage() {
   const canCancel = reservation.status === 'pending' || reservation.status === 'confirmed'
 
   return (
-    <div className="booking-shell flex min-h-screen flex-col items-center bg-background px-4 py-10">
+    <div
+      className="booking-shell flex min-h-screen flex-col items-center bg-background px-4 py-10"
+      style={bookingBrandStyle(reservation.booking_font, reservation.booking_accent_color)}
+    >
       <LanguageToggle className="max-w-md" />
 
       <Card className="w-full max-w-md border-none shadow-lg shadow-foreground/5">
@@ -145,6 +155,17 @@ export default function ManageReservationPage() {
             })}
           </p>
           <p className="mt-1 font-display text-lg text-foreground">{reservation.service_name}</p>
+          {reservation.worker_name && (
+            <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Avatar className="h-5 w-5">
+                <AvatarImage src={reservation.worker_photo_url || undefined} alt="" className="object-cover" />
+                <AvatarFallback className="bg-primary/10 text-[9px] text-primary">
+                  {reservation.worker_name.slice(0, 1).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              {tr.withWorker.replace('{name}', reservation.worker_name)}
+            </p>
+          )}
           <p className="text-xs text-muted-foreground">{reservation.business_name}</p>
 
           <div className="mt-5 flex items-center gap-2 text-sm">

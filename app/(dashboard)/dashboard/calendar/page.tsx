@@ -19,6 +19,7 @@ import { StatusBadge } from '@/components/dashboard/status-badge'
 import { capitalizeFirst, cn } from '@/lib/utils'
 import { sedeAbbr, sedeTint } from '@/lib/sede-colors'
 import { createClient } from '@/lib/supabase/client'
+import { getWorkerLabel } from '@/lib/worker-label'
 import type { CalendarView } from '@/lib/types'
 import { Plus, CalendarDays, Clock, Building2, Eye, Loader2, History } from 'lucide-react'
 
@@ -95,6 +96,7 @@ function CalendarPageInner() {
     reservations,
     clients,
     services,
+    workers,
     resources: allResources,
     serviceResources,
     reservationAttendees,
@@ -230,6 +232,7 @@ function CalendarPageInner() {
   // opens on. endHint is only set for a real drag.
   const [createPrefill, setCreatePrefill] = useState<{
     resourceId: string | null
+    workerId?: string | null
     startHint: string
     endHint?: string
     date: string
@@ -288,7 +291,13 @@ function CalendarPageInner() {
   // form's visitDurationMinutes regardless, so it's already there and
   // correct if the user switches to "Visita" inside the modal, harmless
   // otherwise since that field goes unused for a real booking.
-  const handleCreateAtSlot = (resourceId: string | null, dateTimeLocal: string, endDateTimeLocal?: string, serviceId?: string) => {
+  const handleCreateAtSlot = (
+    resourceId: string | null,
+    dateTimeLocal: string,
+    endDateTimeLocal?: string,
+    serviceId?: string,
+    workerId?: string | null
+  ) => {
     // In vista expandida, a clicked column can belong to a sede other than
     // the currently active one - same switch-first reasoning as
     // handleSelectReservation, so the reservation actually gets created
@@ -303,7 +312,14 @@ function CalendarPageInner() {
     setModalInitialType('booking')
     setModalBackdated(false)
     setFollowUpPrefill(null)
-    setCreatePrefill({ resourceId, startHint: dateTimeLocal, endHint: endDateTimeLocal, date: dateTimeLocal.split('T')[0], serviceId })
+    setCreatePrefill({
+      resourceId,
+      workerId,
+      startHint: dateTimeLocal,
+      endHint: endDateTimeLocal,
+      date: dateTimeLocal.split('T')[0],
+      serviceId,
+    })
     setIsModalOpen(true)
   }
 
@@ -397,6 +413,19 @@ function CalendarPageInner() {
   const isExpanded = expandedMode && hasMultipleSedes && orgData !== null
   const effectiveReservations = isExpanded ? orgData!.reservations : reservations
   const effectiveResources = isExpanded ? orgData!.resources : resources
+
+  // Day view can lay columns out per staff member instead of per resource.
+  // Defaults to staff for businesses whose clients pick who serves them
+  // (barbershops, salons, spas - scripts/102) or that have staff but no
+  // resources at all, where resource columns would collapse every booking
+  // into one overlapping column. Each user can switch it either way.
+  const calendarWorkers = workers
+    .filter((w) => w.is_active)
+    .map((w) => ({ id: w.id, name: w.name, color: w.color, photo_url: w.photo_url, business_id: w.business_id }))
+  const defaultGroupBy: 'worker' | 'resource' =
+    currentBusiness?.client_chooses_worker || (resources.length === 0 && calendarWorkers.length > 0)
+      ? 'worker'
+      : 'resource'
   const effectiveServices = isExpanded ? orgData!.services : services
   const effectiveClients = isExpanded ? orgData!.clients : clients
   // Same "can this actually be booked" bar reservation-modal.tsx's own
@@ -541,6 +570,13 @@ function CalendarPageInner() {
             initialDate={initialDate}
             previewService={previewService}
             previewAllowedResourceIds={previewAllowedResourceIds}
+            // Vista expandida mixes other sedes' bookings in, but `workers`
+            // is only the active sede's roster - worker columns there would
+            // misfile everyone else's bookings, so it keeps resource columns.
+            workers={isExpanded ? [] : calendarWorkers}
+            defaultGroupBy={defaultGroupBy}
+            groupByStorageKey={currentBusiness ? `iplanit.calendar.groupBy.${currentBusiness.id}` : undefined}
+            workerGroupLabel={getWorkerLabel(currentBusiness, t).plural}
           />
         </div>
 
@@ -709,6 +745,7 @@ function CalendarPageInner() {
         followUpOfReservationId={followUpPrefill?.reservationId}
         onCreateFollowUp={handleCreateFollowUp}
         prefillResourceId={createPrefill?.resourceId ?? undefined}
+        prefillWorkerId={createPrefill?.workerId ?? undefined}
         prefillStartHint={createPrefill?.startHint}
         prefillEndHint={createPrefill?.endHint}
         backdated={modalBackdated}
