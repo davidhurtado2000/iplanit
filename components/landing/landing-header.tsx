@@ -37,6 +37,7 @@ export function LandingHeader() {
   const { t } = useLanguage()
   const { user, loading } = useAuth()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [industriesOpen, setIndustriesOpen] = useState(false)
   const l = t.landing
 
   // While auth is still resolving, default to the logged-out CTAs rather
@@ -109,15 +110,25 @@ export function LandingHeader() {
           )}
         </div>
 
-        <Button
-          variant="ghost"
-          size="icon"
-          className="md:hidden"
-          onClick={() => setMobileOpen((v) => !v)}
-          aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
-        >
-          {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </Button>
+        {/* Mobile: getting in is one tap from the bar itself - no need to
+            open the menu (and scroll past the industry list) to log in. */}
+        <div className="flex items-center gap-1 md:hidden">
+          {!loading && !mobileOpen && (
+            <Button asChild size="sm" variant={isLoggedIn ? 'default' : 'outline'} className="h-9">
+              <Link href={isLoggedIn ? '/dashboard' : '/login'}>{isLoggedIn ? l.goToDashboardShort : l.loginCta}</Link>
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-11 w-11"
+            onClick={() => setMobileOpen((v) => !v)}
+            aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={mobileOpen}
+          >
+            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </Button>
+        </div>
       </div>
 
       <div
@@ -155,27 +166,32 @@ export function LandingHeader() {
             {l.navFeatures}
           </Link>
 
-          {/* Flattened instead of a nested dropdown - easier to tap through
-              on a touch screen than a menu-inside-a-slide-down-panel. */}
-          <p className="px-2 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {/* Collapsed by default - the six industries used to push
+              Planes/Preguntas far down the panel. One tap expands them. */}
+          <button
+            type="button"
+            onClick={() => setIndustriesOpen((v) => !v)}
+            aria-expanded={industriesOpen}
+            className="flex items-center justify-between rounded-md px-2 py-2.5 text-sm font-medium text-foreground hover:bg-muted"
+          >
             {l.navIndustries}
-          </p>
-          {VERTICALS.map((v) => {
-            const label = l.verticals[v.slug as keyof typeof l.verticals]?.navLabel
-            return (
-              <Link
-                key={v.slug}
-                href={`/negocios/${v.slug}`}
-                onClick={() => setMobileOpen(false)}
-                className="flex items-center gap-2 rounded-md px-2 py-2.5 text-sm font-medium text-foreground hover:bg-muted"
-              >
-                <v.icon className="h-4 w-4 text-primary" />
-                {label}
-              </Link>
-            )
-          })}
-
-          <div className="my-1" />
+            <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', industriesOpen && 'rotate-180')} />
+          </button>
+          {industriesOpen &&
+            VERTICALS.map((v) => {
+              const label = l.verticals[v.slug as keyof typeof l.verticals]?.navLabel
+              return (
+                <Link
+                  key={v.slug}
+                  href={`/negocios/${v.slug}`}
+                  onClick={() => setMobileOpen(false)}
+                  className="flex items-center gap-2 rounded-md py-2.5 pl-5 pr-2 text-sm text-foreground hover:bg-muted"
+                >
+                  <v.icon className="h-4 w-4 text-primary" />
+                  {label}
+                </Link>
+              )
+            })}
           {NAV_LINKS.filter((link) => link.key !== 'navFeatures').map((link) => (
             <Link
               key={link.href}

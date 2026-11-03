@@ -33,6 +33,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
+import { SmartAvatarImage } from '@/components/ui/smart-avatar-image'
 import {
   Tooltip,
   TooltipContent,
@@ -52,24 +53,13 @@ import { useLanguage } from '@/context/language-context'
 import { getWorkerLabel } from '@/lib/worker-label'
 import { isAiAddonActive } from '@/lib/ai-usage-client'
 import { useHasWorkerAgenda } from '@/hooks/use-has-worker-agenda'
+import { visibleNavItemsFor } from '@/lib/dashboard-nav'
 
 interface SidebarProps {
   isCollapsed: boolean
   onToggle: () => void
 }
 
-const NAV_ITEMS = [
-  { key: 'dashboard' as const, href: '/dashboard', icon: LayoutDashboard },
-  { key: 'calendar' as const, href: '/dashboard/calendar', icon: Calendar },
-  { key: 'services' as const, href: '/dashboard/services', icon: Briefcase },
-  { key: 'resources' as const, href: '/dashboard/resources', icon: Layers },
-  { key: 'workers' as const, href: '/dashboard/workers', icon: UserCog },
-  { key: 'clients' as const, href: '/dashboard/clients', icon: Users },
-  { key: 'parking' as const, href: '/dashboard/parking', icon: ParkingSquare },
-  { key: 'analytics' as const, href: '/dashboard/analytics', icon: BarChart3 },
-  { key: 'activity' as const, href: '/dashboard/activity', icon: History },
-  { key: 'settings' as const, href: '/dashboard/settings', icon: Settings },
-]
 
 export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
   const pathname = usePathname()
@@ -116,14 +106,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
   // no Reportes (kept for Admin/Owner focus, not a hard data boundary).
   // Cochera only shows once the business has actually turned it on
   // (Configuracion > Negocio) - otherwise it's just an empty section.
-  const visibleNavItems = NAV_ITEMS.filter((item) => {
-    if (currentBusiness?.role === 'sales' && (item.key === 'services' || item.key === 'resources' || item.key === 'workers' || item.key === 'analytics')) return false
-    if (item.key === 'parking' && !currentBusiness?.offers_parking) return false
-    // Actividad is an accountability trail of what the team did - only the
-    // owner sees it, same reasoning as activity_log's RLS (scripts/056).
-    if (item.key === 'activity' && currentBusiness?.role !== 'owner') return false
-    return true
-  })
+  const visibleNavItems = visibleNavItemsFor(currentBusiness)
 
   const roleLabel = (role: 'owner' | 'admin' | 'sales') => {
     if (role === 'owner') return t.sidebar.roleOwner
@@ -191,7 +174,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
                       className="-m-1 flex w-[calc(100%+0.5rem)] items-center gap-3 rounded-lg p-1 text-left transition-colors hover:bg-sidebar-accent/50"
                     >
                       <Avatar className="h-10 w-10 shrink-0 rounded-lg">
-                        <AvatarImage src={currentBusiness.logo_url || undefined} alt={currentBusiness.name} className="object-cover" />
+                        <SmartAvatarImage src={currentBusiness.logo_url || undefined} alt={currentBusiness.name} className="object-cover" />
                         <AvatarFallback className="rounded-lg bg-sidebar-accent">
                           <Building2 className="h-5 w-5 text-sidebar-accent-foreground" />
                         </AvatarFallback>
@@ -211,7 +194,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
                     {businesses.map((b) => (
                       <DropdownMenuItem key={b.id} onClick={() => switchBusiness(b.id)} className="gap-2">
                         <Avatar className="h-6 w-6 shrink-0 rounded-md">
-                          <AvatarImage src={b.logo_url || undefined} alt={b.name} className="object-cover" />
+                          <SmartAvatarImage src={b.logo_url || undefined} alt={b.name} className="object-cover" />
                           <AvatarFallback className="rounded-md">
                             <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
                           </AvatarFallback>
@@ -232,7 +215,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
               ) : (
                 <div className="flex items-center gap-3">
                   <Avatar className="h-10 w-10 shrink-0 rounded-lg">
-                    <AvatarImage src={currentBusiness.logo_url || undefined} alt={currentBusiness.name} className="object-cover" />
+                    <SmartAvatarImage src={currentBusiness.logo_url || undefined} alt={currentBusiness.name} className="object-cover" />
                     <AvatarFallback className="rounded-lg bg-sidebar-accent">
                       <Building2 className="h-5 w-5 text-sidebar-accent-foreground" />
                     </AvatarFallback>
@@ -429,7 +412,7 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
                   )}
                 >
                   <Avatar className="h-9 w-9 shrink-0">
-                    <AvatarImage src={profile?.avatar_url || undefined} alt={userName} />
+                    <SmartAvatarImage src={profile?.avatar_url || undefined} alt={userName} />
                     <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground">
                       {getInitials(userName)}
                     </AvatarFallback>

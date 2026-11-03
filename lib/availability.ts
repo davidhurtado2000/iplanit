@@ -5,6 +5,29 @@ export interface BusinessHourRow {
   open_time: string
   close_time: string
   is_closed: boolean
+  /** Worker schedules only (scripts/108): null/undefined = every week,
+   * 0 = only "Semanas A", 1 = only "Semanas B". */
+  week_rotation?: number | null
+}
+
+/**
+ * 0 = "Semanas A", 1 = "Semanas B" for a 'YYYY-MM-DD' date. Weeks run
+ * Monday-Sunday counted from Monday 2024-01-01 - must match
+ * public.week_parity() in scripts/108.
+ */
+export function weekParity(dateStr: string): number {
+  const days = Math.round((Date.parse(dateStr + 'T00:00:00Z') - Date.UTC(2024, 0, 1)) / 86400000)
+  return ((Math.floor(days / 7) % 2) + 2) % 2
+}
+
+// The row for this date's weekday, or null when it doesn't apply this week
+// (an alternating-week row on the other group's week counts as no row).
+function rowForDate(dateStr: string, hours: BusinessHourRow[], tz: string): BusinessHourRow | null {
+  const dayOfWeek = getTzDayOfWeek(dateStr, tz)
+  const row = hours.find((h) => h.day_of_week === dayOfWeek)
+  if (!row) return null
+  if (row.week_rotation != null && weekParity(dateStr) !== row.week_rotation) return null
+  return row
 }
 
 export interface BusyRange {
@@ -23,8 +46,7 @@ export const SLOT_INTERVAL_MINUTES = 30
  */
 export function isDayClosed(dateStr: string, hours: BusinessHourRow[], tz: string): boolean {
   if (hours.length === 0) return false
-  const dayOfWeek = getTzDayOfWeek(dateStr, tz)
-  const bh = hours.find((h) => h.day_of_week === dayOfWeek)
+  const bh = rowForDate(dateStr, hours, tz)
   return !bh || bh.is_closed
 }
 
@@ -46,8 +68,7 @@ export function getDayHoursRange(
   tz: string
 ): { openMinutes: number; closeMinutes: number } | null {
   if (hours.length === 0) return null
-  const dayOfWeek = getTzDayOfWeek(dateStr, tz)
-  const bh = hours.find((h) => h.day_of_week === dayOfWeek)
+  const bh = rowForDate(dateStr, hours, tz)
   if (!bh || bh.is_closed) return null
   return { openMinutes: toMinutes(bh.open_time), closeMinutes: toMinutes(bh.close_time) }
 }
@@ -74,8 +95,7 @@ export function generateAvailableSlots(
 ): Date[] {
   if (durationMinutes <= 0) return []
 
-  const dayOfWeek = getTzDayOfWeek(dateStr, tz)
-  const bh = hours.find((h) => h.day_of_week === dayOfWeek)
+  const bh = rowForDate(dateStr, hours, tz)
 
   let openMinutes: number
   let closeMinutes: number

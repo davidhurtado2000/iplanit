@@ -32,19 +32,22 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
+import { SmartAvatarImage } from '@/components/ui/smart-avatar-image'
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet'
 import { UpgradeModal } from '@/components/upgrade-modal'
 import { PremiumBadge } from '@/components/premium-feature'
 import { NotificationBell } from '@/components/dashboard/notification-bell'
 import { useHasWorkerAgenda } from '@/hooks/use-has-worker-agenda'
+import { BOTTOM_BAR_KEYS, visibleNavItemsFor } from '@/lib/dashboard-nav'
 
 interface MobileNavProps {
   isOpen: boolean
   onToggle: () => void
 }
 
-// Order matters: the bottom tab bar only shows the first 5 (see
-// NAV_ITEMS.slice(0, 5) below). Dashboard/Calendar/Clients are daily
+// The drawer menu uses the same order as the desktop sidebar
+// (lib/dashboard-nav.ts). The bottom tab bar picks its own 5 (BOTTOM_BAR_KEYS)
+// - why those five: Dashboard/Calendar/Clients are daily
 // actions no matter the business; Services is where pricing/offerings
 // actually change, so it earns a slot Resources/Workers don't (those are
 // roster setup, touched far less often once configured). Settings and
@@ -52,18 +55,6 @@ interface MobileNavProps {
 // occasional visits, and Settings is still one tap away in the full menu -
 // so Analytics (checking today's/this week's numbers, something an
 // engaged owner actually opens often) takes the 5th slot instead.
-const NAV_ITEMS = [
-  { key: 'dashboard' as const, href: '/dashboard', icon: LayoutDashboard },
-  { key: 'calendar' as const, href: '/dashboard/calendar', icon: Calendar },
-  { key: 'clients' as const, href: '/dashboard/clients', icon: Users },
-  { key: 'services' as const, href: '/dashboard/services', icon: Briefcase },
-  { key: 'analytics' as const, href: '/dashboard/analytics', icon: BarChart3 },
-  { key: 'settings' as const, href: '/dashboard/settings', icon: Settings },
-  { key: 'parking' as const, href: '/dashboard/parking', icon: ParkingSquare },
-  { key: 'resources' as const, href: '/dashboard/resources', icon: Layers },
-  { key: 'workers' as const, href: '/dashboard/workers', icon: UserCog },
-  { key: 'activity' as const, href: '/dashboard/activity', icon: History },
-]
 
 export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
   const pathname = usePathname()
@@ -90,12 +81,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
 
   // Sales/Cochera filtering - see sidebar.tsx for the same filter and the
   // reasoning behind it.
-  const visibleNavItems = NAV_ITEMS.filter((item) => {
-    if (currentBusiness?.role === 'sales' && (item.key === 'services' || item.key === 'resources' || item.key === 'workers' || item.key === 'analytics')) return false
-    if (item.key === 'parking' && !currentBusiness?.offers_parking) return false
-    if (item.key === 'activity' && currentBusiness?.role !== 'owner') return false
-    return true
-  })
+  const visibleNavItems = visibleNavItemsFor(currentBusiness)
 
   const getInitials = (name: string) => {
     return name
@@ -141,7 +127,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
               <div className="border-b p-4">
                 <div className="flex items-center gap-3">
                   <Avatar className="h-10 w-10">
-                    <AvatarImage src={profile?.avatar_url || undefined} alt={userName} />
+                    <SmartAvatarImage src={profile?.avatar_url || undefined} alt={userName} />
                     <AvatarFallback className="bg-primary/10 text-primary">
                       {getInitials(userName)}
                     </AvatarFallback>
@@ -162,7 +148,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
                 ) : currentBusiness ? (
                   <div className="flex items-center gap-3">
                     <Avatar className="h-10 w-10 shrink-0 rounded-lg">
-                      <AvatarImage src={currentBusiness.logo_url || undefined} alt={currentBusiness.name} className="object-cover" />
+                      <SmartAvatarImage src={currentBusiness.logo_url || undefined} alt={currentBusiness.name} className="object-cover" />
                       <AvatarFallback className="rounded-lg bg-muted">
                         <Building2 className="h-5 w-5 text-muted-foreground" />
                       </AvatarFallback>
@@ -313,7 +299,7 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
       {/* Bottom Navigation Bar for quick access on mobile */}
       <div className="fixed inset-x-0 bottom-0 z-50 border-t bg-background lg:hidden">
         <nav className="flex items-center justify-around py-2">
-          {visibleNavItems.slice(0, 5).map((item) => {
+          {BOTTOM_BAR_KEYS.flatMap((key) => visibleNavItems.filter((item) => item.key === key)).map((item) => {
             const isActive = pathname === item.href
             return (
               <Link

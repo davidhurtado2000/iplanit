@@ -9,6 +9,7 @@ import { useBusinessContext } from './business-context'
 import { useLanguage } from './language-context'
 import { playNotificationChime, playLostDealChime } from '@/lib/notification-sound'
 import { toDateStr } from '@/lib/timezone'
+import type { TimeBlock } from '@/lib/time-blocks'
 
 // ---- Shared types used across all dashboard pages ----
 
@@ -51,6 +52,10 @@ export interface Reservation {
    * services.price live. Null for visits. */
   price: number | null
   price_usd: number | null
+  /** How the client paid, recorded when marked completed (scripts/106,
+   * lib/payment-methods.ts). Undefined until that script runs. */
+  payment_method?: string | null
+  paid_at?: string | null
   /** 'kommo' = the Kommo integration's webhook cancelled this after its
    * matching lead was marked Lost (see app/api/integrations/kommo/webhook) -
    * distinct from 'business' (staff cancelled it themselves in iPlanit) so
@@ -197,6 +202,9 @@ export interface WorkerHour {
   open_time: string
   close_time: string
   is_closed: boolean
+  /** scripts/108 - null = every week, 0 = "Semanas A", 1 = "Semanas B".
+   * Undefined until that script runs. */
+  week_rotation?: number | null
 }
 
 /** Many-to-many: which services a worker is assigned to perform - same
@@ -249,6 +257,10 @@ type DashboardDataContextType = {
   refetchWorkerHours: () => Promise<void>
   refetchWorkerServices: () => Promise<void>
   refetchReservationAttendees: () => Promise<void>
+  /** Lunch breaks / closures / days off (scripts/107). Raw rows - expand
+   * with lib/time-blocks.ts for a date range. */
+  timeBlocks: TimeBlock[]
+  refetchTimeBlocks: () => Promise<void>
   /**
    * Reservations are only loaded ±RESERVATION_WINDOW_DAYS from when this
    * provider mounted - fetching a business's entire history on every
@@ -361,7 +373,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
             .order('name'),
           supabase
             .from('worker_hours')
-            .select('worker_id, day_of_week, open_time, close_time, is_closed')
+            .select('*')
             .eq('business_id', currentBusiness.id),
           supabase
             .from('worker_services')
@@ -773,7 +785,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
     if (!currentBusiness) return
     const { data } = await supabase
       .from('worker_hours')
-      .select('worker_id, day_of_week, open_time, close_time, is_closed')
+      .select('*')
       .eq('business_id', currentBusiness.id)
     setWorkerHours(data || [])
   }, [currentBusiness?.id])
@@ -789,6 +801,20 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
     const { data } = await supabase.from('reservation_attendees').select('*').eq('business_id', currentBusiness.id)
     setReservationAttendees(data || [])
   }, [currentBusiness?.id])
+
+  // Loaded on its own (not in the main Promise.all) so a missing table
+  // before scripts/107 runs just means "no blocks" instead of touching the
+  // rest of the dashboard's initial load.
+  const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([])
+  const refetchTimeBlocks = useCallback(async () => {
+    if (!currentBusiness) return
+    const { data, error } = await supabase.from('time_blocks').select('*').eq('business_id', currentBusiness.id)
+    setTimeBlocks(error ? [] : data || [])
+  }, [currentBusiness?.id])
+  useEffect(() => {
+    setTimeBlocks([])
+    refetchTimeBlocks()
+  }, [refetchTimeBlocks])
 
   return (
     <DashboardDataContext.Provider
@@ -818,6 +844,8 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         refetchWorkerHours,
         refetchWorkerServices,
         refetchReservationAttendees,
+        timeBlocks,
+        refetchTimeBlocks,
         ensureReservationsInRange,
       }}
     >

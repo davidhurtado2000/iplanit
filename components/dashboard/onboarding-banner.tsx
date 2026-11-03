@@ -20,6 +20,11 @@ import { useLanguage } from '@/context/language-context'
 interface OnboardingBannerProps {
   hasBusiness: boolean
   hasResources: boolean
+  hasWorkers: boolean
+  /** Point the "team" step at Trabajadores instead of Recursos. */
+  preferWorkers: boolean
+  /** The business's own word for its staff ("Barberos", "Terapeutas"). */
+  workerLabelPlural: string
   hasServices: boolean
   hasClients: boolean
   hasReservations: boolean
@@ -28,6 +33,9 @@ interface OnboardingBannerProps {
 export function OnboardingBanner({
   hasBusiness,
   hasResources,
+  hasWorkers,
+  preferWorkers,
+  workerLabelPlural,
   hasServices,
   hasClients,
   hasReservations,
@@ -48,14 +56,26 @@ export function OnboardingBanner({
       href: '/dashboard/settings',
       completed: hasBusiness,
     },
-    {
-      id: 'resources',
-      title: t.onboarding.steps.resources.title,
-      description: t.onboarding.steps.resources.desc,
-      icon: Wrench,
-      href: '/dashboard/resources',
-      completed: hasResources,
-    },
+    // Either people or resources count as "you have something to book
+    // against" - a barbershop with barbers and zero resources is fully set
+    // up, and a coworking with rooms and no staff is too.
+    preferWorkers
+      ? {
+          id: 'resources',
+          title: t.onboarding.steps.team.title.replace('{workers}', workerLabelPlural.toLowerCase()),
+          description: t.onboarding.steps.team.desc,
+          icon: Users,
+          href: '/dashboard/workers',
+          completed: hasWorkers || hasResources,
+        }
+      : {
+          id: 'resources',
+          title: t.onboarding.steps.resources.title,
+          description: t.onboarding.steps.resources.desc,
+          icon: Wrench,
+          href: '/dashboard/resources',
+          completed: hasResources || hasWorkers,
+        },
     {
       id: 'services',
       title: t.onboarding.steps.services.title,

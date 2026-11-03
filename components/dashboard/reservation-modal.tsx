@@ -39,8 +39,10 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Loader2 } from 'lucide-react'
-import { Calendar, Clock, User, Briefcase, Trash2, MapPin, Repeat, DollarSign, ParkingSquare, ChevronDown, ChevronsUpDown, Check, Eye, UserPlus, Bold, List, UserCog, History, Plus, X, Users, MessageCircle, Copy } from 'lucide-react'
+import { Calendar, Clock, User, Briefcase, Trash2, MapPin, Repeat, DollarSign, ParkingSquare, ChevronDown, ChevronsUpDown, Check, Eye, UserPlus, Bold, List, UserCog, History, Plus, X, Users, MessageCircle, Copy, Wallet } from 'lucide-react'
 import { toast } from 'sonner'
+import { paymentMethodLabel, paymentMethodsFor } from '@/lib/payment-methods'
+import { expandTimeBlocks } from '@/lib/time-blocks'
 import { renderSimpleMarkdown } from '@/lib/simple-markdown'
 import {
   DropdownMenu,
@@ -67,7 +69,7 @@ import { useDashboardData, type ClientDocumentType, type Reservation } from '@/c
 import { StatusBadge } from '@/components/dashboard/status-badge'
 import { capitalizeFirst, cn } from '@/lib/utils'
 import { toTzLocalInput, parseInTimezone, toDateStr } from '@/lib/timezone'
-import { generateAvailableSlots, isDayClosed, intersectSlots } from '@/lib/availability'
+import { generateAvailableSlots, isDayClosed, intersectSlots, weekParity } from '@/lib/availability'
 import { sendReservationNotification } from '@/lib/email/notify'
 import { syncReservationToKommo } from '@/lib/kommo/sync'
 import { isPlanLimitReached, meetsPlan } from '@/lib/plan-limits'
@@ -226,6 +228,7 @@ export function ReservationModal({
     workerServices,
     reservations,
     reservationAttendees,
+    timeBlocks,
     refetchClients,
     refetchReservationAttendees,
   } = useDashboardData()
@@ -868,7 +871,24 @@ export function ReservationModal({
           .filter((r) => r.worker_id === formData.worker_id && r.status !== 'cancelled' && r.id !== reservation?.id)
           .map(expandByBuffer)
       : []
-  const busyRanges = [...resourceBusyRanges, ...workerBusyRanges]
+  // Time blocks (scripts/107) for the chosen day: business-wide ones plus
+  // the selected person's / resource's own. Only steers the suggested
+  // slots - staff can still type a booking into a blocked time on
+  // purpose, unlike the public link where the server rejects it.
+  const blockBusyRanges = (() => {
+    if (!slotDate || timeBlocks.length === 0) return []
+    const dayStart = parseInTimezone(`${slotDate}T00:00`, tz)
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000)
+    return expandTimeBlocks(timeBlocks, dayStart, dayEnd, tz)
+      .filter(
+        (o) =>
+          (!o.workerId && !o.resourceId) ||
+          (!!formData.worker_id && o.workerId === formData.worker_id) ||
+          (!!formData.resource_id && o.resourceId === formData.resource_id)
+      )
+      .map((o) => ({ start_time: o.start.toISOString(), end_time: o.end.toISOString() }))
+  })()
+  const busyRanges = [...resourceBusyRanges, ...workerBusyRanges, ...blockBusyRanges]
 
   // A worker can have their own work schedule (scripts/057-staff-module.sql)
   // on top of the business's general hours - no rows means "follows
@@ -942,7 +962,12 @@ export function ReservationModal({
     if (!formData.worker_id || !formData.start_time || selectedWorkerHours.length === 0) return null
     const [datePart, timePart] = formData.start_time.split('T')
     const dayNum = new Date(`${datePart}T12:00:00Z`).getUTCDay()
-    const row = selectedWorkerHours.find((h) => h.day_of_week === dayNum)
+    const sameWeekday = selectedWorkerHours.find((h) => h.day_of_week === dayNum)
+    // An alternating-week row (scripts/108) on the other group's week = off.
+    const row =
+      sameWeekday && (sameWeekday.week_rotation == null || weekParity(datePart) === sameWeekday.week_rotation)
+        ? sameWeekday
+        : null
     const workerName = selectedWorker?.name ?? ''
     if (!row || row.is_closed) return t.reservation.workerOffThatDay.replace('{name}', workerName)
     const toMin = (v: string) => {
@@ -1405,6 +1430,41 @@ export function ReservationModal({
   // realtime subscription, not here - that fires for this exact DB change
   // regardless of who made it, so showing a second toast here would just
   // duplicate it every time (confusing, and two chimes back to back).
+  // "¿Cómo pagó?" step shown when marking completed (scripts/106) - record-
+  // keeping only. Skippable on purpose so it never slows down the front
+  // desk; also reachable later from the menu to fill in or fix it.
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false)
+  const [paymentChoice, setPaymentChoice] = useState<string | null>(null)
+  const openPaymentDialog = () => {
+    setPaymentChoice(reservation?.payment_method ?? null)
+    setPaymentDialogOpen(true)
+  }
+  const handleSavePayment = async (method: string | null) => {
+    if (!reservation?.id) return
+    try {
+      setIsLoading(true)
+      const { error } = await supabase
+        .from('reservations')
+        .update({
+          status: 'completed',
+          // Only touch the payment columns when a method was actually
+          // picked - completing "sin registrar pago" keeps working even
+          // before scripts/106 adds them.
+          ...(method ? { payment_method: method, paid_at: reservation.paid_at ?? new Date().toISOString() } : {}),
+        })
+        .eq('id', reservation.id)
+      if (error) throw error
+      setPaymentDialogOpen(false)
+      onSave?.()
+      onClose()
+    } catch (error) {
+      console.error('[iplanit] Error saving payment method:', error)
+      toast.error(t.saveError)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const handleUpdateStatus = async (newStatus: 'pending' | 'confirmed' | 'completed' | 'no_show') => {
     if (!reservation?.id) return
 
@@ -1706,6 +1766,13 @@ export function ReservationModal({
                   <span>{isUSD ? '$' : 'S/'} {reservation.price_usd || reservation.price}</span>
                 </div>
               )}
+              {reservation.payment_method && (
+                <div className="flex items-center gap-3 text-sm">
+                  <Wallet className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-medium">{t.reservation.paymentLabel}</span>
+                  <span>{paymentMethodLabel(reservation.payment_method, t.reservation.paymentGeneric)}</span>
+                </div>
+              )}
               {reservation.parking_resource_id && (
                 <div className="flex items-center gap-3 text-sm">
                   <ParkingSquare className="h-4 w-4 text-muted-foreground" />
@@ -1805,8 +1872,18 @@ export function ReservationModal({
                     </DropdownMenuItem>
                   )}
                   {reservation.status !== 'completed' && (
-                    <DropdownMenuItem onClick={() => handleUpdateStatus('completed')}>
+                    <DropdownMenuItem
+                      onClick={() =>
+                        // A visit has nothing to pay for - complete it directly.
+                        reservation.type === 'visit' ? handleUpdateStatus('completed') : openPaymentDialog()
+                      }
+                    >
                       {t.reservation.markCompleted}
+                    </DropdownMenuItem>
+                  )}
+                  {reservation.status === 'completed' && reservation.type !== 'visit' && (
+                    <DropdownMenuItem onClick={openPaymentDialog}>
+                      {reservation.payment_method ? t.reservation.changePaymentMethod : t.reservation.recordPaymentMethod}
                     </DropdownMenuItem>
                   )}
                   {reservation.status !== 'no_show' && new Date(reservation.start_time).getTime() < Date.now() && (
@@ -2913,6 +2990,53 @@ export function ReservationModal({
       feature={t.upgradeModal.featureUnlimitedRecordsTitle}
       requiredPlan="pro"
     />
+    <AlertDialog open={paymentDialogOpen} onOpenChange={(open) => !isLoading && setPaymentDialogOpen(open)}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t.reservation.paymentDialogTitle}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {reservation && (reservation.price || reservation.price_usd)
+              ? t.reservation.paymentDialogDescWithPrice.replace(
+                  '{price}',
+                  `${isUSD ? '$' : 'S/'} ${reservation.price_usd || reservation.price}`
+                )
+              : t.reservation.paymentDialogDesc}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3" role="radiogroup" aria-label={t.reservation.paymentLabel}>
+          {paymentMethodsFor(currentBusiness?.country).map((method) => (
+            <button
+              key={method}
+              type="button"
+              role="radio"
+              aria-checked={paymentChoice === method}
+              onClick={() => setPaymentChoice(method)}
+              className={cn(
+                'min-h-11 rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+                paymentChoice === method
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'hover:bg-muted'
+              )}
+            >
+              {paymentMethodLabel(method, t.reservation.paymentGeneric)}
+            </button>
+          ))}
+        </div>
+        <AlertDialogFooter className="gap-2 sm:justify-between">
+          {reservation?.status !== 'completed' ? (
+            <Button type="button" variant="ghost" disabled={isLoading} onClick={() => handleSavePayment(null)}>
+              {t.reservation.completeWithoutPayment}
+            </Button>
+          ) : (
+            <AlertDialogCancel disabled={isLoading}>{t.services.cancelBtn}</AlertDialogCancel>
+          )}
+          <Button type="button" disabled={isLoading || !paymentChoice} onClick={() => handleSavePayment(paymentChoice)}>
+            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {reservation?.status === 'completed' ? t.reservation.savePaymentBtn : t.reservation.completeWithPaymentBtn}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     <AlertDialog open={cancelConfirmType !== null} onOpenChange={(open) => !open && setCancelConfirmType(null)}>
       <AlertDialogContent>
         <AlertDialogHeader>

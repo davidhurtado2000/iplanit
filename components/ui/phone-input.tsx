@@ -1,13 +1,14 @@
 'use client'
 
 import * as React from 'react'
+import { ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export type PhoneCountry = 'US' | 'PE'
 
-const COUNTRIES: { code: PhoneCountry; flag: string; dialCode: string; nationalLength: number }[] = [
-  { code: 'US', flag: '🇺🇸', dialCode: '1', nationalLength: 10 },
-  { code: 'PE', flag: '🇵🇪', dialCode: '51', nationalLength: 9 },
+const COUNTRIES: { code: PhoneCountry; name: string; dialCode: string; nationalLength: number; example: string }[] = [
+  { code: 'PE', name: 'Perú', dialCode: '51', nationalLength: 9, example: '987 654 321' },
+  { code: 'US', name: 'United States', dialCode: '1', nationalLength: 10, example: '(555) 123-4567' },
 ]
 
 function meta(code: PhoneCountry) {
@@ -80,6 +81,8 @@ interface PhoneInputProps {
   placeholder?: string
   className?: string
   disabled?: boolean
+  /** Accessible name for the country picker. */
+  countryLabel?: string
 }
 
 export function PhoneInput({
@@ -90,6 +93,7 @@ export function PhoneInput({
   placeholder,
   className,
   disabled,
+  countryLabel = 'País / Country',
 }: PhoneInputProps) {
   const lastEmitted = React.useRef<string | null>(null)
   const initial = resolveValue(value, defaultCountry)
@@ -159,35 +163,37 @@ export function PhoneInput({
         className,
       )}
     >
-      <div className="flex items-center gap-0.5 border-r border-input pl-1.5 pr-1">
-        {COUNTRIES.map((c) => (
-          <button
-            key={c.code}
-            type="button"
-            disabled={disabled}
-            onClick={() => handleCountryClick(c.code)}
-            aria-pressed={mode === 'masked' && country === c.code}
-            aria-label={`${c.code} +${c.dialCode}`}
-            className={cn(
-              'flex items-center gap-1 rounded px-1.5 py-0.5 text-sm transition-colors',
-              mode === 'masked' && country === c.code
-                ? 'bg-muted font-medium'
-                : 'text-muted-foreground hover:bg-muted/50',
-            )}
-          >
-            <span>{c.flag}</span>
-            <span>+{c.dialCode}</span>
-          </button>
-        ))}
-      </div>
+      {/* One compact country picker instead of every country as an inline
+          chip: those crowded the field, and Windows renders flag emoji as
+          bare letters ("US", "PE"), so they read as noise. A native
+          <select> stretched invisibly over the visible label gives the
+          phone's own picker on mobile and keyboard support for free. */}
+      <label className="relative flex shrink-0 items-center gap-1 border-r border-input pl-3 pr-2 text-sm text-foreground hover:bg-muted/50">
+        <span className="font-medium">+{meta(country).dialCode}</span>
+        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+        <select
+          value={country}
+          disabled={disabled}
+          onChange={(e) => handleCountryClick(e.target.value as PhoneCountry)}
+          aria-label={countryLabel}
+          className="absolute inset-0 cursor-pointer opacity-0"
+        >
+          {COUNTRIES.map((c) => (
+            <option key={c.code} value={c.code}>
+              {c.name} (+{c.dialCode})
+            </option>
+          ))}
+        </select>
+      </label>
       <input
         id={id}
         type="tel"
         inputMode="tel"
+        autoComplete="tel-national"
         disabled={disabled}
         value={mode === 'masked' ? formatNational(country, digits) : raw}
         onChange={mode === 'masked' ? handleMaskedChange : handleRawChange}
-        placeholder={placeholder}
+        placeholder={placeholder ?? meta(country).example}
         className="min-w-0 flex-1 bg-transparent px-3 py-1 text-base outline-none placeholder:text-muted-foreground md:text-sm"
       />
     </div>

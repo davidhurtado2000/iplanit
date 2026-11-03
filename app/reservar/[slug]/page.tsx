@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
+import { SmartAvatarImage } from '@/components/ui/smart-avatar-image'
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -39,6 +40,7 @@ import { syncReservationToKommo } from '@/lib/kommo/sync'
 import { TurnstileWidget, type TurnstileWidgetHandle } from '@/components/turnstile-widget'
 import { LogoLoader } from '@/components/logo-loader'
 import { bookingBrandStyle } from '@/lib/booking-fonts'
+import { BookingMonthCalendar } from '@/components/booking-month-calendar'
 
 interface PublicBusiness {
   id: string
@@ -107,6 +109,8 @@ interface PublicBusinessHour {
   open_time: string
   close_time: string
   is_closed: boolean
+  /** Worker rows only (scripts/108): alternating-week group, null = every week. */
+  week_rotation?: number | null
 }
 
 type Step = 'service' | 'duration' | 'hours' | 'resource' | 'worker' | 'datetime' | 'contact' | 'success'
@@ -118,6 +122,12 @@ function todayInTz(tz: string) {
 function addDays(dateStr: string, days: number) {
   const d = new Date(dateStr + 'T12:00:00Z')
   d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+function addMonths(dateStr: string, months: number) {
+  const d = new Date(dateStr.slice(0, 8) + '01T12:00:00Z')
+  d.setUTCMonth(d.getUTCMonth() + months)
   return d.toISOString().slice(0, 10)
 }
 
@@ -203,13 +213,16 @@ export default function PublicBookingPage() {
         ? (selectedHours || 0) * 60
         : selectedService?.duration_minutes ?? 0
 
+  // Empty until the client picks a day on the month calendar - no
+  // assuming "as soon as possible" for them.
   const [selectedDate, setSelectedDate] = useState('')
-  const [slots, setSlots] = useState<Date[]>([])
-  // Today's hours are simply over (e.g. checking at night) - not the same
-  // as "fully booked", which would wrongly tell a client the shop is full.
-  const [dayIsOver, setDayIsOver] = useState(false)
+  // 'YYYY-MM-01' of the month the calendar shows. Availability is computed
+  // for the whole month at once so every day can show whether it has room.
+  const [visibleMonth, setVisibleMonth] = useState('')
+  const [slotsByDay, setSlotsByDay] = useState<Record<string, Date[]>>({})
   const [loadingSlots, setLoadingSlots] = useState(false)
   const [selectedSlot, setSelectedSlot] = useState<Date | null>(null)
+  const slots = (selectedDate && slotsByDay[selectedDate]) || []
 
   const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '', documentNumber: '', notes: '' })
   // "Option A" from the client-accounts conversation - no login, just
@@ -274,7 +287,7 @@ export default function PublicBookingPage() {
         })
       )
       setBusinessHours((hoursData as PublicBusinessHour[] | null) || [])
-      setSelectedDate(todayInTz(biz.timezone))
+      setVisibleMonth(todayInTz(biz.timezone).slice(0, 8) + '01')
       setLoading(false)
     }
     load()
@@ -294,13 +307,29 @@ export default function PublicBookingPage() {
     selectedWorker.hours.length > 0 &&
     isDayClosed(selectedDate, selectedWorker.hours, tz)
 
+  // Today's hours are simply over (e.g. checking at night) - not the same
+  // as "fully booked", which would wrongly tell a client the shop is full.
+  const dayIsOver =
+    !!selectedDate &&
+    slots.length === 0 &&
+    selectedDate === todayInTz(tz) &&
+    generateAvailableSlots(selectedDate, businessHours, effectiveDurationMinutes, [], tz).length === 0 &&
+    generateAvailableSlots(selectedDate, businessHours, effectiveDurationMinutes, [], tz, 0, 0, true).length > 0
+
   useEffect(() => {
-    if (step !== 'datetime' || !business || !selectedService || !selectedDate || !effectiveDurationMinutes) return
-    const loadSlots = async () => {
+    if (step !== 'datetime' || !business || !selectedService || !visibleMonth || !effectiveDurationMinutes) return
+    let cancelled = false
+    const loadMonth = async () => {
       setLoadingSlots(true)
       setSelectedSlot(null)
-      const dayStart = parseInTimezone(`${selectedDate}T00:00`, tz)
-      const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000)
+      const monthEndStr = addMonths(visibleMonth, 1)
+      const dayStart = parseInTimezone(`${visibleMonth}T00:00`, tz)
+      const dayEnd = parseInTimezone(`${monthEndStr}T00:00`, tz)
+      const today = todayInTz(tz)
+      const days: string[] = []
+      for (let d = visibleMonth; d < monthEndStr; d = addDays(d, 1)) {
+        if (d >= today) days.push(d)
+      }
 
       // No resource picked because this service has several and
       // client_chooses_resource is off (scripts/096) - a time is only
@@ -313,7 +342,10 @@ export default function PublicBookingPage() {
           ? selectedService.resources.map((r) => r.id)
           : [selectedResourceId]
 
-      const slotSets = await Promise.all(
+      type Busy = { start_time: string; end_time: string }[]
+      // One request per resource/worker for the whole month, then every
+      // day is computed locally from those - not 30 requests per month.
+      const resourceBusy = await Promise.all(
         candidateResourceIds.map(async (resourceId) => {
           const { data } = await supabase.rpc('get_public_busy_times', {
             p_business_id: business.id,
@@ -321,18 +353,24 @@ export default function PublicBookingPage() {
             p_from: dayStart.toISOString(),
             p_to: dayEnd.toISOString(),
           })
-          const busy = (data as { start_time: string; end_time: string }[] | null) || []
-          return generateAvailableSlots(
-            selectedDate,
-            businessHours,
-            effectiveDurationMinutes,
-            busy,
-            tz,
-            selectedService.buffer_before_min || 0,
-            selectedService.buffer_after_min || 0
-          )
+          return (data as Busy | null) || []
         })
       )
+
+      const eligible = eligibleWorkersFor(selectedService)
+      const candidates = selectedWorkerId ? eligible.filter((w) => w.id === selectedWorkerId) : eligible
+      const workerBusy = await Promise.all(
+        candidates.map(async (worker) => {
+          const { data } = await supabase.rpc('get_public_worker_busy_times', {
+            p_business_id: business.id,
+            p_worker_id: worker.id,
+            p_from: dayStart.toISOString(),
+            p_to: dayEnd.toISOString(),
+          })
+          return (data as Busy | null) || []
+        })
+      )
+      if (cancelled) return
 
       const unionSlots = (sets: Date[][]) => {
         const seen = new Set<number>()
@@ -346,54 +384,46 @@ export default function PublicBookingPage() {
           .sort((a, b) => a.getTime() - b.getTime())
       }
 
-      let available = unionSlots(slotSets)
-
-      // Worker constraint (scripts/102), layered on top of the resource one:
-      // a time works if a resource is free AND the chosen worker (or, for
-      // "Sin preferencia", at least one eligible worker) is working and
-      // free then. Each worker's slots honor both business hours and their
-      // own schedule - same intersectSlots approach the dashboard uses.
-      const eligible = eligibleWorkersFor(selectedService)
-      if (eligible.length > 0) {
-        const candidates = selectedWorkerId ? eligible.filter((w) => w.id === selectedWorkerId) : eligible
-        const workerSlotSets = await Promise.all(
-          candidates.map(async (worker) => {
-            const { data } = await supabase.rpc('get_public_worker_busy_times', {
-              p_business_id: business.id,
-              p_worker_id: worker.id,
-              p_from: dayStart.toISOString(),
-              p_to: dayEnd.toISOString(),
-            })
-            const busy = (data as { start_time: string; end_time: string }[] | null) || []
-            const slotsFor = (hours: PublicBusinessHour[]) =>
-              generateAvailableSlots(
-                selectedDate,
-                hours,
-                effectiveDurationMinutes,
-                busy,
-                tz,
-                selectedService.buffer_before_min || 0,
-                selectedService.buffer_after_min || 0
-              )
-            const businessSlots = slotsFor(businessHours)
-            return worker.hours.length > 0 ? intersectSlots(businessSlots, slotsFor(worker.hours)) : businessSlots
-          })
+      const slotsOn = (date: string, hours: PublicBusinessHour[], busy: Busy) =>
+        generateAvailableSlots(
+          date,
+          hours,
+          effectiveDurationMinutes,
+          busy,
+          tz,
+          selectedService.buffer_before_min || 0,
+          selectedService.buffer_after_min || 0
         )
-        available = intersectSlots(available, unionSlots(workerSlotSets))
+
+      const byDay: Record<string, Date[]> = {}
+      for (const date of days) {
+        let available = unionSlots(resourceBusy.map((busy) => slotsOn(date, businessHours, busy)))
+        // Worker constraint (scripts/102), layered on top of the resource
+        // one: a time works if a resource is free AND the chosen worker
+        // (or, for "Sin preferencia", at least one eligible worker) is
+        // working and free then - same intersectSlots approach the
+        // dashboard uses for business hours vs. a worker's own schedule.
+        if (eligible.length > 0) {
+          const perWorker = candidates.map((worker, i) => {
+            const businessSlots = slotsOn(date, businessHours, workerBusy[i])
+            return worker.hours.length > 0
+              ? intersectSlots(businessSlots, slotsOn(date, worker.hours, workerBusy[i]))
+              : businessSlots
+          })
+          available = intersectSlots(available, unionSlots(perWorker))
+        }
+        byDay[date] = available
       }
 
-      setSlots(available)
-      setDayIsOver(
-        available.length === 0 &&
-          selectedDate === todayInTz(tz) &&
-          generateAvailableSlots(selectedDate, businessHours, effectiveDurationMinutes, [], tz).length === 0 &&
-          generateAvailableSlots(selectedDate, businessHours, effectiveDurationMinutes, [], tz, 0, 0, true).length > 0
-      )
+      setSlotsByDay(byDay)
       setLoadingSlots(false)
     }
-    loadSlots()
+    loadMonth()
+    return () => {
+      cancelled = true
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, business, selectedService, selectedResourceId, selectedWorkerId, workers, selectedDate, businessHours, effectiveDurationMinutes])
+  }, [step, business, selectedService, selectedResourceId, selectedWorkerId, workers, visibleMonth, businessHours, effectiveDurationMinutes])
 
   // "Option A" from the client-accounts conversation (no login, no
   // accounts) - create_public_reservation already recognizes a returning
@@ -588,6 +618,7 @@ export default function PublicBookingPage() {
           document_number_too_long: tr.errorDocumentNumberTooLong,
           bot_verification_failed: tr.errorBotVerification,
           worker_unavailable: tr.errorWorkerUnavailable,
+          time_blocked: tr.errorTimeBlocked,
         }
         setSubmitError(messages[result.error || ''] || tr.errorGeneric)
         resetTurnstile()
@@ -685,7 +716,7 @@ export default function PublicBookingPage() {
 
       <div className="mb-6 flex w-full max-w-md flex-col items-center text-center">
         <Avatar className="h-16 w-16 rounded-2xl shadow-sm">
-          <AvatarImage src={business.logo_url || undefined} alt={business.name} className="object-cover" />
+          <SmartAvatarImage src={business.logo_url || undefined} alt={business.name} className="object-cover" />
           <AvatarFallback className="rounded-2xl bg-primary/10">
             <Building2 className="h-8 w-8 text-primary" />
           </AvatarFallback>
@@ -1061,77 +1092,70 @@ export default function PublicBookingPage() {
                     {tr.back}
                   </Button>
 
-                  <div className="flex items-center justify-between gap-2 rounded-lg border p-2">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setSelectedDate((d) => addDays(d, -1))}
-                      disabled={selectedDate <= todayInTz(tz)}
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                    <span className="flex items-center gap-2 text-sm font-medium">
-                      <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-                      {capitalizeFirst(
-                        new Date(selectedDate + 'T12:00:00Z').toLocaleDateString(locale, {
-                          timeZone: 'UTC',
-                          weekday: 'short',
-                          day: 'numeric',
-                          month: 'short',
-                        })
-                      )}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setSelectedDate((d) => addDays(d, 1))}
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  <BookingMonthCalendar
+                    month={visibleMonth}
+                    today={todayInTz(tz)}
+                    slotsByDay={slotsByDay}
+                    loading={loadingSlots}
+                    selectedDate={selectedDate}
+                    weekStartsMonday={business.country !== 'US'}
+                    locale={locale}
+                    onSelectDate={(date) => {
+                      setSelectedDate(date)
+                      setSelectedSlot(null)
+                    }}
+                    onMonthChange={(month) => {
+                      setVisibleMonth(month)
+                      setSelectedDate('')
+                      setSelectedSlot(null)
+                    }}
+                    labels={{ previousMonth: tr.previousMonth, nextMonth: tr.nextMonth, noAvailability: tr.dayNoAvailability }}
+                  />
 
-                  {loadingSlots ? (
-                    <div className="flex justify-center py-8">
-                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                    </div>
-                  ) : slots.length === 0 ? (
-                    <div className="flex flex-col items-center gap-3 py-8 text-center">
-                      <p className="text-sm text-muted-foreground">
-                        {dayClosed
-                          ? tr.dayClosed
-                          : workerDayOff && selectedWorker
-                            ? tr.workerDayOff.replace('{name}', selectedWorker.name)
-                            : dayIsOver
-                              ? tr.dayIsOver
-                              : tr.noSlots}
-                      </p>
-                      {/* One tap to the next day beats hunting for the tiny
-                          arrow above - the common case after "nothing today". */}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="gap-1"
-                        onClick={() => setSelectedDate((d) => addDays(d, 1))}
-                      >
-                        {tr.tryNextDay}
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                    </div>
+                  {!selectedDate ? (
+                    <p className="py-4 text-center text-sm text-muted-foreground">
+                      {loadingSlots
+                        ? tr.loadingAvailability
+                        : Object.values(slotsByDay).some((d) => d.length > 0)
+                          ? tr.pickDayPrompt
+                          : tr.noAvailabilityThisMonth}
+                    </p>
                   ) : (
-                    <div className="grid grid-cols-3 gap-2">
-                      {slots.map((slot) => (
-                        <Button
-                          key={slot.toISOString()}
-                          type="button"
-                          variant={selectedSlot?.getTime() === slot.getTime() ? 'default' : 'outline'}
-                          onClick={() => setSelectedSlot(slot)}
-                        >
-                          {slot.toLocaleTimeString(locale, { timeZone: tz, hour: '2-digit', minute: '2-digit' })}
-                        </Button>
-                      ))}
+                    <div className="space-y-3">
+                      <p className="text-sm font-medium text-foreground">
+                        {capitalizeFirst(
+                          new Date(selectedDate + 'T12:00:00Z').toLocaleDateString(locale, {
+                            timeZone: 'UTC',
+                            weekday: 'long',
+                            day: 'numeric',
+                            month: 'long',
+                          })
+                        )}
+                      </p>
+                      {slots.length === 0 ? (
+                        <p className="py-4 text-center text-sm text-muted-foreground">
+                          {dayClosed
+                            ? tr.dayClosed
+                            : workerDayOff && selectedWorker
+                              ? tr.workerDayOff.replace('{name}', selectedWorker.name)
+                              : dayIsOver
+                                ? tr.dayIsOver
+                                : tr.noSlots}
+                        </p>
+                      ) : (
+                        <div className="grid grid-cols-3 gap-2">
+                          {slots.map((slot) => (
+                            <Button
+                              key={slot.toISOString()}
+                              type="button"
+                              variant={selectedSlot?.getTime() === slot.getTime() ? 'default' : 'outline'}
+                              onClick={() => setSelectedSlot(slot)}
+                            >
+                              {slot.toLocaleTimeString(locale, { timeZone: tz, hour: '2-digit', minute: '2-digit' })}
+                            </Button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
 

@@ -13,6 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
+import { SmartAvatarImage } from '@/components/ui/smart-avatar-image'
 import { LogoLoader } from '@/components/logo-loader'
 import {
   Select,
@@ -1532,7 +1533,7 @@ function SettingsPageInner() {
                 <div className="flex items-center gap-4">
                   <div className="relative">
                     <Avatar className="h-20 w-20">
-                      <AvatarImage src={authProfile?.avatar_url || undefined} alt={profileForm.name} />
+                      <SmartAvatarImage src={authProfile?.avatar_url || undefined} alt={profileForm.name} />
                       <AvatarFallback className="text-xl">
                         {getInitials(profileForm.name)}
                       </AvatarFallback>
@@ -1694,7 +1695,7 @@ function SettingsPageInner() {
                     <div className="flex items-center gap-4">
                       <div className="relative">
                         <Avatar className="h-20 w-20 rounded-lg">
-                          <AvatarImage src={currentBusiness.logo_url || undefined} alt={business.name} />
+                          <SmartAvatarImage src={currentBusiness.logo_url || undefined} alt={business.name} />
                           <AvatarFallback className="rounded-lg text-xl">
                             <Building2 className="h-8 w-8 text-muted-foreground" />
                           </AvatarFallback>

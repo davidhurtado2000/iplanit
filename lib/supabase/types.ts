@@ -636,6 +636,8 @@ export interface Database {
           reminder_sent_at: string | null
           day_of_reminder_sent_at: string | null
           review_requested_at: string | null
+          payment_method: string | null
+          paid_at: string | null
           notes: string | null
           kommo_contact_id: string | null
           kommo_lead_id: string | null
@@ -664,6 +666,8 @@ export interface Database {
           reminder_sent_at?: string | null
           day_of_reminder_sent_at?: string | null
           review_requested_at?: string | null
+          payment_method?: string | null
+          paid_at?: string | null
           notes?: string | null
           kommo_contact_id?: string | null
           kommo_lead_id?: string | null
@@ -692,6 +696,8 @@ export interface Database {
           reminder_sent_at?: string | null
           day_of_reminder_sent_at?: string | null
           review_requested_at?: string | null
+          payment_method?: string | null
+          paid_at?: string | null
           notes?: string | null
           kommo_contact_id?: string | null
           kommo_lead_id?: string | null
@@ -1039,6 +1045,57 @@ export interface Database {
         }
         Relationships: []
       }
+      time_blocks: {
+        Row: {
+          id: string
+          business_id: string
+          worker_id: string | null
+          resource_id: string | null
+          starts_at: string | null
+          ends_at: string | null
+          repeat_weekdays: number[] | null
+          start_time: string | null
+          end_time: string | null
+          repeat_from: string | null
+          repeat_until: string | null
+          reason: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          business_id: string
+          worker_id?: string | null
+          resource_id?: string | null
+          starts_at?: string | null
+          ends_at?: string | null
+          repeat_weekdays?: number[] | null
+          start_time?: string | null
+          end_time?: string | null
+          repeat_from?: string | null
+          repeat_until?: string | null
+          reason?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          business_id?: string
+          worker_id?: string | null
+          resource_id?: string | null
+          starts_at?: string | null
+          ends_at?: string | null
+          repeat_weekdays?: number[] | null
+          start_time?: string | null
+          end_time?: string | null
+          repeat_from?: string | null
+          repeat_until?: string | null
+          reason?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       worker_hours: {
         Row: {
           id: string
@@ -1048,6 +1105,7 @@ export interface Database {
           open_time: string
           close_time: string
           is_closed: boolean
+          week_rotation: number | null
           created_at: string
           updated_at: string
         }
@@ -1059,6 +1117,7 @@ export interface Database {
           open_time: string
           close_time: string
           is_closed?: boolean
+          week_rotation?: number | null
           created_at?: string
           updated_at?: string
         }
@@ -1070,6 +1129,7 @@ export interface Database {
           open_time?: string
           close_time?: string
           is_closed?: boolean
+          week_rotation?: number | null
           created_at?: string
           updated_at?: string
         }

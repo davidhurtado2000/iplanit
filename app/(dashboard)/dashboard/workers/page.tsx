@@ -47,6 +47,7 @@ import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { sedeAbbr, sedeTint, buildBusinessColorIndex } from '@/lib/sede-colors'
 import { deleteStorageImage, resizeImageFile, useStagedImage } from '@/lib/image-upload'
+import { weekParity } from '@/lib/availability'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   Plus,
@@ -78,14 +79,21 @@ const DAY_KEY_TO_NUMBER: Record<DayOfWeek, number> = {
   sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6,
 }
 
-const DEFAULT_WORKER_HOURS: { dayOfWeek: DayOfWeek; startTime: string; endTime: string; isOpen: boolean }[] = [
-  { dayOfWeek: 'monday', startTime: '09:00', endTime: '18:00', isOpen: true },
-  { dayOfWeek: 'tuesday', startTime: '09:00', endTime: '18:00', isOpen: true },
-  { dayOfWeek: 'wednesday', startTime: '09:00', endTime: '18:00', isOpen: true },
-  { dayOfWeek: 'thursday', startTime: '09:00', endTime: '18:00', isOpen: true },
-  { dayOfWeek: 'friday', startTime: '09:00', endTime: '18:00', isOpen: true },
-  { dayOfWeek: 'saturday', startTime: '09:00', endTime: '14:00', isOpen: true },
-  { dayOfWeek: 'sunday', startTime: '09:00', endTime: '14:00', isOpen: false },
+const DEFAULT_WORKER_HOURS: {
+  dayOfWeek: DayOfWeek
+  startTime: string
+  endTime: string
+  isOpen: boolean
+  /** scripts/108: null = every week, 0 = "Semanas A", 1 = "Semanas B". */
+  rotation: number | null
+}[] = [
+  { dayOfWeek: 'monday', startTime: '09:00', endTime: '18:00', isOpen: true, rotation: null },
+  { dayOfWeek: 'tuesday', startTime: '09:00', endTime: '18:00', isOpen: true, rotation: null },
+  { dayOfWeek: 'wednesday', startTime: '09:00', endTime: '18:00', isOpen: true, rotation: null },
+  { dayOfWeek: 'thursday', startTime: '09:00', endTime: '18:00', isOpen: true, rotation: null },
+  { dayOfWeek: 'friday', startTime: '09:00', endTime: '18:00', isOpen: true, rotation: null },
+  { dayOfWeek: 'saturday', startTime: '09:00', endTime: '14:00', isOpen: true, rotation: null },
+  { dayOfWeek: 'sunday', startTime: '09:00', endTime: '14:00', isOpen: false, rotation: null },
 ]
 
 interface Worker {
@@ -104,7 +112,7 @@ interface Worker {
 
 export default function WorkersPage() {
   const { currentBusiness, businesses } = useBusinesses()
-  const { t, language } = useLanguage()
+  const { t, language, locale } = useLanguage()
   const workerLabel = getWorkerLabel(currentBusiness, t)
   const {
     workers,
@@ -400,7 +408,24 @@ export default function WorkersPage() {
     }
   }
 
-  const updateWorkerHour = (dayOfWeek: DayOfWeek, field: 'startTime' | 'endTime' | 'isOpen', value: string | boolean) => {
+  // Next three dates of this weekday that fall on the given group's weeks,
+  // e.g. "dom 8 nov, dom 22 nov, dom 6 dic" for Semanas A.
+  const upcomingRotationDates = (dayNumber: number, rotation: number) => {
+    const tz = currentBusiness?.timezone || 'America/Lima'
+    let date = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date())
+    const out: string[] = []
+    for (let i = 0; i < 28 && out.length < 3; i++) {
+      const d = new Date(date + 'T12:00:00Z')
+      if (d.getUTCDay() === dayNumber && weekParity(date) === rotation) {
+        out.push(d.toLocaleDateString(locale, { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short' }))
+      }
+      d.setUTCDate(d.getUTCDate() + 1)
+      date = d.toISOString().slice(0, 10)
+    }
+    return out
+  }
+
+  const updateWorkerHour = (dayOfWeek: DayOfWeek, field: 'startTime' | 'endTime' | 'isOpen' | 'rotation', value: string | boolean | number | null) => {
     setHoursForm((prev) => prev.map((h) => (h.dayOfWeek === dayOfWeek ? { ...h, [field]: value } : h)))
   }
 
@@ -423,7 +448,7 @@ export default function WorkersPage() {
           DEFAULT_WORKER_HOURS.map((def) => {
             const row = existingHours.find((h) => h.day_of_week === DAY_KEY_TO_NUMBER[def.dayOfWeek])
             return row
-              ? { dayOfWeek: def.dayOfWeek, startTime: row.open_time.slice(0, 5), endTime: row.close_time.slice(0, 5), isOpen: !row.is_closed }
+              ? { dayOfWeek: def.dayOfWeek, startTime: row.open_time.slice(0, 5), endTime: row.close_time.slice(0, 5), isOpen: !row.is_closed, rotation: row.week_rotation ?? null }
               : def
           })
         )
@@ -480,6 +505,12 @@ export default function WorkersPage() {
       // "follows business hours", so any previously-saved custom rows are
       // cleared.
       if (useCustomHours) {
+        // week_rotation only sent when this worker uses (or used to use)
+        // alternating weeks, so saving schedules keeps working even before
+        // scripts/108 adds the column.
+        const usesRotation =
+          hoursForm.some((h) => h.rotation !== null) ||
+          workerHours.some((h) => h.worker_id === workerId && h.week_rotation != null)
         const hoursRows = hoursForm.map((h) => ({
           business_id: currentBusiness.id,
           worker_id: workerId,
@@ -487,6 +518,7 @@ export default function WorkersPage() {
           open_time: h.startTime,
           close_time: h.endTime,
           is_closed: !h.isOpen,
+          ...(usesRotation ? { week_rotation: h.isOpen ? h.rotation : null } : {}),
         }))
         const { error: hoursError } = await supabase.from('worker_hours').upsert(hoursRows, { onConflict: 'worker_id,day_of_week' })
         if (hoursError) throw hoursError
@@ -940,32 +972,63 @@ export default function WorkersPage() {
                     const hours = hoursForm.find((h) => h.dayOfWeek === day.value)
                     if (!hours) return null
                     return (
-                      <div key={day.value} className="flex flex-col gap-2 p-2 sm:h-14 sm:flex-row sm:items-center">
-                        <div className="flex h-8 w-28 shrink-0 items-center justify-between">
-                          <span className="text-xs font-medium">{day.label}</span>
-                          <Switch
-                            checked={hours.isOpen}
-                            onCheckedChange={(checked) => updateWorkerHour(day.value, 'isOpen', checked)}
-                            className="shrink-0"
-                          />
-                        </div>
-                        {hours.isOpen ? (
-                          <div className="flex h-8 flex-1 items-center gap-1.5">
-                            <TimeSelect
-                              value={hours.startTime}
-                              onChange={(value) => updateWorkerHour(day.value, 'startTime', value)}
-                              className="h-8 w-full text-xs"
-                            />
-                            <span className="text-xs text-muted-foreground">{t.settings.to}</span>
-                            <TimeSelect
-                              value={hours.endTime}
-                              onChange={(value) => updateWorkerHour(day.value, 'endTime', value)}
-                              className="h-8 w-full text-xs"
+                      <div key={day.value} className="space-y-2 p-2">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                          <div className="flex h-8 w-28 shrink-0 items-center justify-between">
+                            <span className="text-xs font-medium">{day.label}</span>
+                            <Switch
+                              checked={hours.isOpen}
+                              onCheckedChange={(checked) => updateWorkerHour(day.value, 'isOpen', checked)}
+                              className="shrink-0"
                             />
                           </div>
-                        ) : (
-                          <div className="flex h-8 flex-1 items-center">
-                            <span className="text-xs text-muted-foreground">{t.settings.closed}</span>
+                          {hours.isOpen ? (
+                            <div className="flex h-8 flex-1 items-center gap-1.5">
+                              <TimeSelect
+                                value={hours.startTime}
+                                onChange={(value) => updateWorkerHour(day.value, 'startTime', value)}
+                                className="h-8 w-full text-xs"
+                              />
+                              <span className="text-xs text-muted-foreground">{t.settings.to}</span>
+                              <TimeSelect
+                                value={hours.endTime}
+                                onChange={(value) => updateWorkerHour(day.value, 'endTime', value)}
+                                className="h-8 w-full text-xs"
+                              />
+                            </div>
+                          ) : (
+                            <div className="flex h-8 flex-1 items-center">
+                              <span className="text-xs text-muted-foreground">{t.settings.closed}</span>
+                            </div>
+                          )}
+                        </div>
+                        {/* Alternating weeks (scripts/108) - e.g. half the
+                            barbers work Sundays on "Semanas A", the other
+                            half on "Semanas B". The next dates are spelled
+                            out so the owner can check they started each
+                            group on the right Sunday. */}
+                        {hours.isOpen && (
+                          <div className="flex flex-col gap-1 sm:ml-[7.5rem] sm:flex-row sm:items-center sm:gap-2">
+                            <select
+                              value={hours.rotation === null ? 'every' : String(hours.rotation)}
+                              onChange={(e) =>
+                                updateWorkerHour(day.value, 'rotation', e.target.value === 'every' ? null : Number(e.target.value))
+                              }
+                              aria-label={t.workers.rotationLabel}
+                              className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                            >
+                              <option value="every">{t.workers.rotationEvery}</option>
+                              <option value="0">{t.workers.rotationA}</option>
+                              <option value="1">{t.workers.rotationB}</option>
+                            </select>
+                            {hours.rotation !== null && (
+                              <span className="text-[11px] text-muted-foreground">
+                                {t.workers.rotationNextDates.replace(
+                                  '{dates}',
+                                  upcomingRotationDates(DAY_KEY_TO_NUMBER[day.value], hours.rotation).join(', ')
+                                )}
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>

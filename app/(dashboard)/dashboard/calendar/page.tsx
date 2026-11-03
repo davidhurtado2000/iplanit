@@ -20,8 +20,10 @@ import { capitalizeFirst, cn } from '@/lib/utils'
 import { sedeAbbr, sedeTint } from '@/lib/sede-colors'
 import { createClient } from '@/lib/supabase/client'
 import { getWorkerLabel } from '@/lib/worker-label'
+import { expandTimeBlocks } from '@/lib/time-blocks'
+import { TimeBlockDialog } from '@/components/dashboard/time-block-dialog'
 import type { CalendarView } from '@/lib/types'
-import { Plus, CalendarDays, Clock, Building2, Eye, Loader2, History } from 'lucide-react'
+import { Plus, CalendarDays, Clock, Building2, Eye, Loader2, History, Lock } from 'lucide-react'
 
 interface Reservation {
   id: string
@@ -97,6 +99,9 @@ function CalendarPageInner() {
     clients,
     services,
     workers,
+    workerHours,
+    timeBlocks,
+    refetchTimeBlocks,
     resources: allResources,
     serviceResources,
     reservationAttendees,
@@ -248,6 +253,9 @@ function CalendarPageInner() {
   // from effectiveServices, once vista expandida's org-wide swap is in
   // scope, so switching to another sede's service still resolves correctly.
   const [previewServiceId, setPreviewServiceId] = useState<string>('none')
+  // "Bloquear horario" dialog (scripts/107) - declared up here with the
+  // other hooks, above the loading/no-business early returns below.
+  const [blockDialogOpen, setBlockDialogOpen] = useState(false)
 
   const handleCreateReservation = () => {
     setSelectedReservation(null)
@@ -421,7 +429,22 @@ function CalendarPageInner() {
   // into one overlapping column. Each user can switch it either way.
   const calendarWorkers = workers
     .filter((w) => w.is_active)
-    .map((w) => ({ id: w.id, name: w.name, color: w.color, photo_url: w.photo_url, business_id: w.business_id }))
+    .map((w) => ({
+      id: w.id,
+      name: w.name,
+      color: w.color,
+      photo_url: w.photo_url,
+      business_id: w.business_id,
+      hours: workerHours.filter((h) => h.worker_id === w.id),
+    }))
+  // Time blocks (scripts/107) expanded for whatever range is on screen -
+  // weekly ones (lunch) become one occurrence per matching day.
+  const canManageBlocks = currentBusiness?.role === 'owner' || currentBusiness?.role === 'admin'
+  const blockOccurrences =
+    visibleRange && !isExpanded
+      ? expandTimeBlocks(timeBlocks, visibleRange.from, visibleRange.to, currentBusiness?.timezone || 'America/Lima')
+      : []
+
   const defaultGroupBy: 'worker' | 'resource' =
     currentBusiness?.client_chooses_worker || (resources.length === 0 && calendarWorkers.length > 0)
       ? 'worker'
@@ -519,6 +542,12 @@ function CalendarPageInner() {
               <span className="hidden sm:inline">{t.calendar.newBackdated}</span>
               <span className="sm:hidden">{t.calendar.newBackdatedShort}</span>
             </Button>
+            {canManageBlocks && (
+              <Button onClick={() => setBlockDialogOpen(true)} size="sm" variant="outline" className="gap-2">
+                <Lock className="h-4 w-4" />
+                <span className="hidden sm:inline">{t.timeBlocks.button}</span>
+              </Button>
+            )}
           </>
         }
       />
@@ -577,6 +606,8 @@ function CalendarPageInner() {
             defaultGroupBy={defaultGroupBy}
             groupByStorageKey={currentBusiness ? `iplanit.calendar.groupBy.${currentBusiness.id}` : undefined}
             workerGroupLabel={getWorkerLabel(currentBusiness, t).plural}
+            timeBlocks={blockOccurrences}
+            onSelectTimeBlock={canManageBlocks ? () => setBlockDialogOpen(true) : undefined}
           />
         </div>
 
@@ -731,6 +762,21 @@ function CalendarPageInner() {
           )}
         </div>
       </div>
+
+      {currentBusiness && canManageBlocks && (
+        <TimeBlockDialog
+          open={blockDialogOpen}
+          onOpenChange={setBlockDialogOpen}
+          businessId={currentBusiness.id}
+          timezone={tz}
+          workers={calendarWorkers}
+          resources={resources}
+          workerGroupLabel={getWorkerLabel(currentBusiness, t).plural}
+          timeBlocks={timeBlocks}
+          defaultDate={today}
+          onChanged={refetchTimeBlocks}
+        />
+      )}
 
       <ReservationModal
         isOpen={isModalOpen}

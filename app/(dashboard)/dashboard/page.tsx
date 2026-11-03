@@ -44,12 +44,13 @@ import { useDashboardData, type Reservation } from '@/context/dashboard-data-con
 import { StatusBadge } from '@/components/dashboard/status-badge'
 import { capitalizeFirst } from '@/lib/utils'
 import { isAiAddonActive } from '@/lib/ai-usage-client'
+import { getWorkerLabel } from '@/lib/worker-label'
 
 export default function DashboardPage() {
   const { user, profile, loading: authLoading } = useAuth()
   const { currentBusiness, aiAddonStatus } = useBusinesses()
   const { t, locale } = useLanguage()
-  const { reservations, services, clients, resources: allResources, loading: dataLoading, refetchReservations } = useDashboardData()
+  const { reservations, services, clients, workers, resources: allResources, loading: dataLoading, refetchReservations } = useDashboardData()
   // Parking spots aren't a real "resource" a client ever picks - same
   // exclusion as Services/Resources pages, so the count matches what those
   // pages themselves show.
@@ -287,6 +288,11 @@ export default function DashboardPage() {
       <OnboardingBanner
         hasBusiness={!!currentBusiness}
         hasResources={resourcesCount > 0}
+        hasWorkers={workers.some((w) => w.is_active)}
+        // Businesses that schedule around people (barbershops, salons -
+        // scripts/102) shouldn't be pointed at Recursos at all.
+        preferWorkers={!!currentBusiness?.client_chooses_worker || resourcesCount === 0}
+        workerLabelPlural={getWorkerLabel(currentBusiness, t).plural}
         hasServices={servicesCount > 0}
         hasClients={clientsCount > 0}
         hasReservations={reservations.length > 0}

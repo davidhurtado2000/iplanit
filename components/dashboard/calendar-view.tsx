@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ChevronLeft, ChevronRight, CalendarOff, ParkingSquare, Search, Eye, HelpCircle, Clock, Check, CheckCheck, X, Minus, Ban, CalendarDays, CalendarRange, Calendar as CalendarIcon, List } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CalendarOff, ParkingSquare, Search, Eye, HelpCircle, Clock, Check, CheckCheck, X, Minus, Ban, CalendarDays, CalendarRange, Calendar as CalendarIcon, List, Lock } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import type { CalendarView } from '@/lib/types'
@@ -26,6 +26,8 @@ import { getStatusLabel } from '@/lib/reservation-status'
 import { StatusBadge } from '@/components/dashboard/status-badge'
 import { sedeAbbr, sedeTint } from '@/lib/sede-colors'
 import { isDayClosed, getDayHoursRange, type BusinessHourRow } from '@/lib/availability'
+import { parseInTimezone } from '@/lib/timezone'
+import { blockAppliesTo, type TimeBlockOccurrence } from '@/lib/time-blocks'
 
 // ─── Time grid constants ───────────────────────────────────────────────────
 const HOUR_HEIGHT    = 64  // px per hour
@@ -158,6 +160,9 @@ export interface CalendarWorker {
   color: string
   photo_url?: string | null
   business_id?: string
+  /** The worker's own schedule (worker_hours) - empty = follows business
+   * hours. Used to hide people who don't work the day being shown. */
+  hours?: BusinessHourRow[]
 }
 
 interface CalendarViewProps {
@@ -238,6 +243,9 @@ interface CalendarViewProps {
   /** The business's own plural for its staff ("Barberos", "Terapeutas") -
    * see lib/worker-label.ts. Falls back to a generic "Personal". */
   workerGroupLabel?: string
+  /** Expanded block occurrences (lib/time-blocks.ts) for the visible range. */
+  timeBlocks?: TimeBlockOccurrence[]
+  onSelectTimeBlock?: (blockId: string) => void
   /** DayView only (vista Dia) - the service picked in the parent's own
    * "vista previa de servicio" card (see calendar/page.tsx's sidebar,
    * next to the "Hoy" card - deliberately its own card there, not folded
@@ -283,6 +291,8 @@ export function CalendarViewComponent({
   defaultGroupBy = 'resource',
   groupByStorageKey,
   workerGroupLabel,
+  timeBlocks = [],
+  onSelectTimeBlock,
 }: CalendarViewProps) {
   const { t, locale } = useLanguage()
   const [currentDate, setCurrentDate] = useState(() => initialDate ?? new Date())
@@ -651,7 +661,7 @@ export function CalendarViewComponent({
           }}
           transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.2, 0.7, 0.3, 1] }}
         >
-          {view === 'day'   && <DayView   date={currentDate} reservations={reservations} resources={resources} selectedResourceId={selectedResourceId} groupBy={groupBy} workers={workers} selectedWorkerId={selectedWorkerId} clientsMap={clientsMap} servicesMap={servicesMap} resourcesMap={resourcesMap} attendeesCountMap={attendeesCountMap} onSelectReservation={onSelectReservation} startHour={startHour} endHour={endHour} timezone={timezone} t={t} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} businessHours={businessHours} onCreateAtSlot={onCreateAtSlot} previewService={previewService} previewAllowedResourceIds={previewAllowedResourceIds} />}
+          {view === 'day'   && <DayView   date={currentDate} reservations={reservations} resources={resources} selectedResourceId={selectedResourceId} groupBy={groupBy} workers={workers} selectedWorkerId={selectedWorkerId} timeBlocks={timeBlocks} onSelectTimeBlock={onSelectTimeBlock} clientsMap={clientsMap} servicesMap={servicesMap} resourcesMap={resourcesMap} attendeesCountMap={attendeesCountMap} onSelectReservation={onSelectReservation} startHour={startHour} endHour={endHour} timezone={timezone} t={t} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} businessHours={businessHours} onCreateAtSlot={onCreateAtSlot} previewService={previewService} previewAllowedResourceIds={previewAllowedResourceIds} />}
           {view === 'week'  && <WeekView  date={currentDate} reservations={reservations} clientsMap={clientsMap} servicesMap={servicesMap} attendeesCountMap={attendeesCountMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
           {view === 'month' && <MonthView date={currentDate} reservations={reservations} servicesMap={servicesMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
           {view === 'list'  && (
@@ -676,7 +686,7 @@ export function CalendarViewComponent({
 
 // ─── Day View — time grid × resource columns ───────────────────────────────
 function DayView({
-  date, reservations, resources, selectedResourceId, groupBy, workers, selectedWorkerId,
+  date, reservations, resources, selectedResourceId, groupBy, workers, selectedWorkerId, timeBlocks, onSelectTimeBlock,
   clientsMap, servicesMap, resourcesMap, attendeesCountMap = {}, onSelectReservation,
   startHour, endHour, timezone, t, businessNameById, businessColorIndexById, businessHours, onCreateAtSlot,
   previewService, previewAllowedResourceIds,
@@ -688,6 +698,8 @@ function DayView({
   groupBy: CalendarGroupBy
   workers: CalendarWorker[]
   selectedWorkerId: string
+  timeBlocks: TimeBlockOccurrence[]
+  onSelectTimeBlock?: (blockId: string) => void
   clientsMap: Record<string, Client>
   servicesMap: Record<string, Service>
   resourcesMap: Record<string, Resource>
@@ -752,6 +764,12 @@ function DayView({
   const HOURS = Array.from({ length: effEndHour - effStartHour }, (_, i) => effStartHour + i)
 
   // Build columns
+  const dayStartInstant = useMemo(() => parseInTimezone(`${dateStr}T00:00`, timezone), [dateStr, timezone])
+  const dayEndInstant = useMemo(() => new Date(dayStartInstant.getTime() + 24 * 60 * 60 * 1000), [dayStartInstant])
+  const blockOccurrences = useMemo(
+    () => timeBlocks.filter((o) => o.start < dayEndInstant && o.end > dayStartInstant),
+    [timeBlocks, dayStartInstant, dayEndInstant]
+  )
   const knownWorkerIds = useMemo(() => new Set(workers.map(w => w.id)), [workers])
   const workerNameById = useMemo(() => Object.fromEntries(workers.map(w => [w.id, w.name])), [workers])
 
@@ -759,7 +777,20 @@ function DayView({
     let cols: Array<{ id: string | null; label: string; color?: string; photoUrl?: string | null; sedeLabel?: string; sedeColorIndex?: number; businessId?: string }> = []
 
     if (groupBy === 'worker') {
-      const shown = selectedWorkerId === 'all' ? workers : workers.filter(w => w.id === selectedWorkerId)
+      // Only people actually working this day get a column - per their own
+      // schedule (or business hours when they have none), minus a full-day
+      // block (day off / vacation). Anyone with a booking that day still
+      // shows regardless, so an appointment never disappears from view.
+      const worksToday = (w: CalendarWorker) => {
+        if (dayRes.some(r => r.worker_id === w.id)) return true
+        const hours = w.hours?.length ? w.hours : businessHours
+        if (hours && hours.length > 0 && isDayClosed(dateStr, hours, timezone)) return false
+        const fullDayOff = blockOccurrences.some(
+          o => o.workerId === w.id && o.start <= dayStartInstant && o.end >= dayEndInstant
+        )
+        return !fullDayOff
+      }
+      const shown = selectedWorkerId === 'all' ? workers.filter(worksToday) : workers.filter(w => w.id === selectedWorkerId)
       cols = shown.map(w => ({
         id: w.id,
         label: w.name,
@@ -806,7 +837,7 @@ function DayView({
       cols = [{ id: null, label: t.calendar.reservationsFallbackColumn }]
     }
     return cols
-  }, [groupBy, workers, selectedWorkerId, knownWorkerIds, resources, selectedResourceId, resourcesMap, dayRes, t, businessNameById, businessColorIndexById])
+  }, [groupBy, workers, selectedWorkerId, knownWorkerIds, businessHours, dateStr, timezone, blockOccurrences, dayStartInstant, dayEndInstant, resources, selectedResourceId, resourcesMap, dayRes, t, businessNameById, businessColorIndexById])
 
   // Groups consecutive columns that share the same sede into one spanning
   // header cell instead of repeating a (sometimes long) business name on
@@ -1234,6 +1265,50 @@ function DayView({
                   {HOURS.map(h => (
                     <div key={`${h}h`} className="pointer-events-none absolute w-full border-t border-border/20" style={{ top: GRID_TOP_PAD + (h - effStartHour) * HOUR_HEIGHT + HOUR_HEIGHT / 2 }} />
                   ))}
+
+                  {/* Time blocks (scripts/107) - lunch, closures, days off.
+                      Drawn under reservations; a click opens them so they
+                      can be removed. In a staff column: that person's
+                      blocks + business-wide ones; in a resource column:
+                      that resource's + business-wide; in the catch-all
+                      column: business-wide only. */}
+                  {blockOccurrences
+                    .filter((o) =>
+                      col.id === null
+                        ? !o.workerId && !o.resourceId
+                        : groupBy === 'worker'
+                          ? blockAppliesTo(o, { workerId: col.id })
+                          : blockAppliesTo(o, { resourceId: col.id })
+                    )
+                    .map((o, i) => {
+                      const startMin = o.start <= dayStartInstant ? 0 : getTzHourMin(o.start.toISOString(), timezone).h * 60 + getTzHourMin(o.start.toISOString(), timezone).m
+                      const endMin = o.end >= dayEndInstant ? 24 * 60 : getTzHourMin(o.end.toISOString(), timezone).h * 60 + getTzHourMin(o.end.toISOString(), timezone).m
+                      const visibleStart = Math.max(startMin, effStartHour * 60)
+                      const visibleEnd = Math.min(endMin, effEndHour * 60)
+                      if (visibleEnd <= visibleStart) return null
+                      return (
+                        <button
+                          key={`${o.blockId}-${i}`}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onSelectTimeBlock?.(o.blockId)
+                          }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          className="absolute inset-x-0.5 z-[1] flex items-start gap-1 overflow-hidden rounded-md border border-dashed border-muted-foreground/30 px-2 py-1 text-left text-[10px] font-medium text-muted-foreground"
+                          style={{
+                            top: minutesToTop(visibleStart),
+                            height: (visibleEnd - visibleStart) * (HOUR_HEIGHT / 60),
+                            backgroundImage:
+                              'repeating-linear-gradient(135deg, color-mix(in oklch, var(--muted-foreground) 12%, transparent) 0 6px, transparent 6px 12px)',
+                          }}
+                          title={o.reason || t.calendar.timeBlockLabel}
+                        >
+                          <Lock className="mt-px h-3 w-3 shrink-0" />
+                          <span className="truncate">{o.reason || t.calendar.timeBlockLabel}</span>
+                        </button>
+                      )
+                    })}
 
                   {colRes.length === 0 && (
                     <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
