@@ -173,7 +173,7 @@ export default function PublicBookingPage() {
   const searchParams = useSearchParams()
   const isEmbed = searchParams.get('embed') === '1'
   const supabase = createClient()
-  const { language, t, locale } = useLanguage()
+  const { language, t, locale, applyPageLanguage, hasSavedLanguage } = useLanguage()
   const tr = t.publicBooking
 
   const [loading, setLoading] = useState(true)
@@ -265,6 +265,14 @@ export default function PublicBookingPage() {
         return
       }
       setBusiness(biz)
+      // Open in the business's own language (Peru -> Spanish, US ->
+      // English) instead of the app-wide English default. ?lang= in the
+      // embed snippet forces one. On the normal link a visitor's own past
+      // choice still wins; inside an embed there's no such choice to
+      // honor (the iframe's storage is separate from the host site's).
+      const forced = searchParams.get('lang')
+      const businessLanguage = forced === 'es' || forced === 'en' ? forced : biz.country === 'US' ? 'en' : 'es'
+      if (forced || isEmbed || !hasSavedLanguage()) applyPageLanguage(businessLanguage)
 
       const [{ data: servicesData }, { data: hoursData }, { data: workersData }] = await Promise.all([
         supabase.rpc('get_public_services', { p_business_id: biz.id }),
@@ -712,7 +720,7 @@ export default function PublicBookingPage() {
       )}
       style={bookingBrandStyle(business.booking_font, business.booking_accent_color)}
     >
-      {!isEmbed && <LanguageToggle className="max-w-md" />}
+      <LanguageToggle className={cn('max-w-md', isEmbed && 'mb-2')} />
 
       <div className="mb-6 flex w-full max-w-md flex-col items-center text-center">
         <Avatar className="h-16 w-16 rounded-2xl shadow-sm">

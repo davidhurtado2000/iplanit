@@ -179,7 +179,7 @@ export function PhoneInput({
           className="absolute inset-0 cursor-pointer opacity-0"
         >
           {COUNTRIES.map((c) => (
-            <option key={c.code} value={c.code}>
+            <option key={c.code} value={c.code} className="bg-popover text-popover-foreground">
               {c.name} (+{c.dialCode})
             </option>
           ))}

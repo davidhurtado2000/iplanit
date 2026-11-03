@@ -3508,6 +3508,8 @@ export type Translations = typeof TRANSLATIONS['es']
 type LanguageContextType = {
   language: Language
   setLanguage: (lang: Language) => void
+  applyPageLanguage: (lang: Language) => void
+  hasSavedLanguage: () => boolean
   locale: string
   t: Translations
 }
@@ -3548,6 +3550,19 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     }
   }, [profile])
 
+  // Page-level language that isn't the visitor's own choice (e.g. the public
+  // booking link following the business's language) - shown, but never
+  // saved to this browser or anyone's account.
+  const applyPageLanguage = (lang: Language) => setLanguageState(lang)
+  const hasSavedLanguage = () => {
+    try {
+      const saved = localStorage.getItem('app-language')
+      return saved === 'es' || saved === 'en'
+    } catch {
+      return false
+    }
+  }
+
   const setLanguage = (lang: Language) => {
     setLanguageState(lang)
     localStorage.setItem('app-language', lang)
@@ -3566,6 +3581,8 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     <LanguageContext.Provider value={{
       language,
       setLanguage,
+      applyPageLanguage,
+      hasSavedLanguage,
       locale: TRANSLATIONS[language].locale,
       t: TRANSLATIONS[language],
     }}>

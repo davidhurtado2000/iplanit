@@ -1017,9 +1017,9 @@ export default function WorkersPage() {
                               aria-label={t.workers.rotationLabel}
                               className="h-8 rounded-md border border-input bg-background px-2 text-xs"
                             >
-                              <option value="every">{t.workers.rotationEvery}</option>
-                              <option value="0">{t.workers.rotationA}</option>
-                              <option value="1">{t.workers.rotationB}</option>
+                              <option value="every" className="bg-popover text-popover-foreground">{t.workers.rotationEvery}</option>
+                              <option value="0" className="bg-popover text-popover-foreground">{t.workers.rotationA}</option>
+                              <option value="1" className="bg-popover text-popover-foreground">{t.workers.rotationB}</option>
                             </select>
                             {hours.rotation !== null && (
                               <span className="text-[11px] text-muted-foreground">

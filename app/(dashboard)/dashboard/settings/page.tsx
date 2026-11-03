@@ -1033,7 +1033,7 @@ function SettingsPageInner() {
   }
 
   // ?embed=1 (app/reservar/[slug]/page.tsx) drops the page's own min-h-screen
-  // and language toggle so it sizes to its actual content instead of the
+  // (and opens in the business's language) so it sizes to its content instead of the
   // full viewport - a fixed height here is a deliberate V1 simplification
   // (internal scroll inside the iframe if the flow runs long) rather than
   // the postMessage auto-resize some embed widgets do; revisit only if a
