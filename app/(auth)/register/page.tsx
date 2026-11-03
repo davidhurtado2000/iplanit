@@ -2,7 +2,7 @@
 
 import React from 'react'
 
-import { useRef, useState } from 'react'
+import { Suspense, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -53,7 +53,17 @@ const BUSINESS_TYPE_VALUES = [
   'other',
 ] as const
 
+// useSearchParams() needs a Suspense boundary, or the static prerender of
+// /register fails the build.
 export default function RegisterPage() {
+  return (
+    <Suspense fallback={null}>
+      <RegisterForm />
+    </Suspense>
+  )
+}
+
+function RegisterForm() {
   const { language, setLanguage, t } = useLanguage()
   const tr = t.auth.register
   const [isLoading, setIsLoading] = useState(false)
