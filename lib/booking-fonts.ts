@@ -61,8 +61,55 @@ export function fontFamilyFor(key: string | null | undefined) {
  * with the text-on-accent color picked by contrast so a light brand color
  * still gets readable button labels.
  */
-export function bookingBrandStyle(font: string | null | undefined, accent: string | null | undefined): CSSProperties {
+export const BOOKING_BG_SWATCHES = [
+  '#0a0a0a', // near-black (most barbershop sites)
+  '#111827', // charcoal blue
+  '#1c1917', // dark brown
+  '#ffffff',
+  '#f5f5f4', // warm off-white
+  '#f8fafc', // cool off-white
+]
+
+const isHex = (v: string | null | undefined): v is string => !!v && /^#[0-9a-fA-F]{6}$/.test(v)
+
+/** Light or dark text for a chosen page background; undefined = no custom
+ * background, so the page keeps following the visitor's own theme. */
+export function bookingThemeMode(bg: string | null | undefined): 'light' | 'dark' | undefined {
+  if (!isHex(bg)) return undefined
+  return relativeLuminance(bg) > 0.4 ? 'light' : 'dark'
+}
+
+/** Text color on a custom page background - also used by Settings' preview. */
+export function bookingForegroundFor(bg: string) {
+  return bookingThemeMode(bg) === 'dark' ? '#f3f4f6' : '#1f2937'
+}
+
+export function bookingBrandStyle(
+  font: string | null | undefined,
+  accent: string | null | undefined,
+  bg?: string | null
+): CSSProperties {
   const style: Record<string, string> = {}
+  // Every surface is derived from the one chosen color, so cards, borders
+  // and secondary text always keep enough contrast against it.
+  if (isHex(bg)) {
+    const dark = bookingThemeMode(bg) === 'dark'
+    const fg = bookingForegroundFor(bg)
+    const card = dark ? `color-mix(in oklab, ${bg} 92%, #ffffff)` : `color-mix(in oklab, ${bg} 35%, #ffffff)`
+    style['--background'] = bg
+    style['--foreground'] = fg
+    style['--card'] = card
+    style['--card-foreground'] = fg
+    style['--popover'] = card
+    style['--popover-foreground'] = fg
+    style['--muted'] = `color-mix(in oklab, ${bg} 88%, ${fg})`
+    style['--muted-foreground'] = `color-mix(in oklab, ${fg} 62%, ${bg})`
+    style['--border'] = `color-mix(in oklab, ${bg} 80%, ${fg})`
+    style['--input'] = `color-mix(in oklab, ${bg} 80%, ${fg})`
+    style['--accent'] = `color-mix(in oklab, ${bg} 85%, ${fg})`
+    style['--accent-foreground'] = fg
+    style.colorScheme = dark ? 'dark' : 'light'
+  }
   const chosenFont = BOOKING_FONTS.find((f) => f.key === font)
   if (chosenFont) style['--font-sora'] = chosenFont.fontFamily
   if (accent && /^#[0-9a-fA-F]{6}$/.test(accent)) {

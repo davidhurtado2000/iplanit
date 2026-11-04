@@ -318,6 +318,7 @@ export interface Database {
           client_chooses_worker: boolean
           booking_font: string | null
           booking_accent_color: string | null
+          booking_bg_color: string | null
           birthday_emails_enabled: boolean
           birthday_discount_percent: number | null
           birthday_window: 'day' | 'week' | 'month'
@@ -357,6 +358,7 @@ export interface Database {
           client_chooses_worker?: boolean
           booking_font?: string | null
           booking_accent_color?: string | null
+          booking_bg_color?: string | null
           birthday_emails_enabled?: boolean
           birthday_discount_percent?: number | null
           birthday_window?: 'day' | 'week' | 'month'
@@ -396,6 +398,7 @@ export interface Database {
           client_chooses_worker?: boolean
           booking_font?: string | null
           booking_accent_color?: string | null
+          booking_bg_color?: string | null
           birthday_emails_enabled?: boolean
           birthday_discount_percent?: number | null
           birthday_window?: 'day' | 'week' | 'month'

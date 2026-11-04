@@ -24,7 +24,7 @@ import { LogoLoader } from '@/components/logo-loader'
 import { sendReservationNotification } from '@/lib/email/notify'
 import { LanguageToggle } from '@/components/language-toggle'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { bookingBrandStyle } from '@/lib/booking-fonts'
+import { bookingBrandStyle, bookingThemeMode } from '@/lib/booking-fonts'
 
 interface PublicReservationStatus {
   id: string
@@ -42,6 +42,7 @@ interface PublicReservationStatus {
   worker_name?: string | null
   worker_photo_url?: string | null
   booking_font?: string | null
+  booking_bg_color?: string | null
   booking_accent_color?: string | null
 }
 
@@ -110,7 +111,7 @@ export default function ManageReservationPage() {
 
   if (loading) {
     return (
-      <div className="booking-shell flex min-h-screen items-center justify-center bg-background">
+      <div className="booking-shell text-foreground flex min-h-screen items-center justify-center bg-background">
         <LogoLoader />
       </div>
     )
@@ -118,7 +119,7 @@ export default function ManageReservationPage() {
 
   if (notFound || !reservation) {
     return (
-      <div className="booking-shell flex min-h-screen flex-col items-center justify-center gap-3 bg-background px-4 text-center">
+      <div className="booking-shell text-foreground flex min-h-screen flex-col items-center justify-center gap-3 bg-background px-4 text-center">
         <Building2 className="h-10 w-10 text-muted-foreground/50" />
         <h1 className="text-xl font-semibold">{tr.manageNotFoundTitle}</h1>
         <p className="text-sm text-muted-foreground">{tr.manageNotFoundDesc}</p>
@@ -130,8 +131,9 @@ export default function ManageReservationPage() {
 
   return (
     <div
-      className="booking-shell flex min-h-screen flex-col items-center bg-background px-4 py-10"
-      style={bookingBrandStyle(reservation.booking_font, reservation.booking_accent_color)}
+      className="booking-shell text-foreground flex min-h-screen flex-col items-center bg-background px-4 py-10"
+      data-booking-mode={bookingThemeMode(reservation.booking_bg_color)}
+      style={bookingBrandStyle(reservation.booking_font, reservation.booking_accent_color, reservation.booking_bg_color)}
     >
       <LanguageToggle className="max-w-md" />
 

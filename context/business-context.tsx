@@ -72,6 +72,8 @@ interface Business {
    * default iPlanit booking look. */
   booking_font: string | null
   booking_accent_color: string | null
+  /** Public booking page background - scripts/109. Null = default look. */
+  booking_bg_color: string | null
   /** Client birthday emails - see scripts/071-client-birthdays.sql. The
    * discount is informational only (mentioned in the email, applied
    * manually by the business) - nothing here touches pricing/checkout. */

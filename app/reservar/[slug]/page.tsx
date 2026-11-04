@@ -39,7 +39,7 @@ import { sendReservationNotification } from '@/lib/email/notify'
 import { syncReservationToKommo } from '@/lib/kommo/sync'
 import { TurnstileWidget, type TurnstileWidgetHandle } from '@/components/turnstile-widget'
 import { LogoLoader } from '@/components/logo-loader'
-import { bookingBrandStyle } from '@/lib/booking-fonts'
+import { bookingBrandStyle, bookingThemeMode } from '@/lib/booking-fonts'
 import { BookingMonthCalendar } from '@/components/booking-month-calendar'
 
 interface PublicBusiness {
@@ -58,6 +58,8 @@ interface PublicBusiness {
   /** scripts/103 - null/undefined = default booking look. */
   booking_font?: string | null
   booking_accent_color?: string | null
+  /** scripts/109 - page background; null/undefined = follows visitor theme. */
+  booking_bg_color?: string | null
 }
 
 interface PublicWorker {
@@ -525,6 +527,53 @@ export default function PublicBookingPage() {
     }
   }, [business?.id, business?.offers_parking, selectedSlot, effectiveDurationMinutes])
 
+  // ── Embed helpers (Settings' "Insertar en tu web" snippet) ──────────────
+  // With a custom background chosen, the embedded page drops its own
+  // background so it blends into the host website. The root also has to
+  // stay color-scheme "normal": browsers paint an opaque backdrop behind an
+  // iframe whose color scheme differs from the page embedding it. Native
+  // controls still get the right scheme from the shell's own color-scheme.
+  const bookingMode = bookingThemeMode(business?.booking_bg_color)
+  const transparentEmbed = isEmbed && !!bookingMode
+  useEffect(() => {
+    if (!transparentEmbed) return
+    const tag = document.createElement('style')
+    tag.textContent =
+      'html{color-scheme:normal !important;background:transparent !important}body{background:transparent !important}'
+    document.head.appendChild(tag)
+    return () => tag.remove()
+  }, [transparentEmbed])
+
+  // Tells the host page how tall the content is, so the snippet's script can
+  // size the iframe to fit instead of showing a scrollbar inside it.
+  // Harmless when the host uses an older snippet without that script.
+  useEffect(() => {
+    if (!isEmbed || window.parent === window) return
+    let last = 0
+    const post = () => {
+      const height = Math.ceil(document.body.getBoundingClientRect().height)
+      if (height === last || height === 0) return
+      last = height
+      window.parent.postMessage({ type: 'iplanit:resize', height }, '*')
+    }
+    post()
+    const ro = new ResizeObserver(post)
+    ro.observe(document.body)
+    return () => ro.disconnect()
+  }, [isEmbed])
+
+  // On each new step, ask the host to bring the top of the booking box back
+  // into view - otherwise a long services list leaves the visitor scrolled
+  // past the start of the (shorter) next step.
+  const firstStepRef = useRef(true)
+  useEffect(() => {
+    if (firstStepRef.current) {
+      firstStepRef.current = false
+      return
+    }
+    if (isEmbed && window.parent !== window) window.parent.postMessage({ type: 'iplanit:step' }, '*')
+  }, [step, isEmbed])
+
   const goToResourceOrDatetime = (svc: PublicService) => {
     if (needsResourceStep(svc)) {
       setSelectedResourceId(null)
@@ -685,7 +734,7 @@ export default function PublicBookingPage() {
     return (
       <div
         className={cn(
-          'booking-shell flex items-center justify-center bg-background',
+          'booking-shell text-foreground flex items-center justify-center bg-background',
           isEmbed ? 'py-16' : 'min-h-screen'
         )}
       >
@@ -698,7 +747,7 @@ export default function PublicBookingPage() {
     return (
       <div
         className={cn(
-          'booking-shell flex flex-col items-center justify-center gap-3 bg-background px-4 text-center',
+          'booking-shell text-foreground flex flex-col items-center justify-center gap-3 bg-background px-4 text-center',
           isEmbed ? 'py-16' : 'min-h-screen'
         )}
       >
@@ -715,10 +764,12 @@ export default function PublicBookingPage() {
   return (
     <div
       className={cn(
-        'booking-shell flex flex-col items-center bg-background px-4',
+        'booking-shell text-foreground flex flex-col items-center px-4',
+        transparentEmbed ? 'bg-transparent' : 'bg-background',
         isEmbed ? 'py-6' : 'min-h-screen py-10'
       )}
-      style={bookingBrandStyle(business.booking_font, business.booking_accent_color)}
+      data-booking-mode={bookingMode}
+      style={bookingBrandStyle(business.booking_font, business.booking_accent_color, business.booking_bg_color)}
     >
       <LanguageToggle className={cn('max-w-md', isEmbed && 'mb-2')} />
 

@@ -31,7 +31,12 @@
   --confirm-foreground: oklch(0.99 0 0);
 }
 
-.dark .booking-shell {
+/* data-booking-mode (set from the business's chosen background - see
+   bookingThemeMode in lib/booking-fonts.ts) forces this palette regardless
+   of the visitor's own theme, so a dark-background business always gets
+   light text and vice versa. */
+.dark .booking-shell:not([data-booking-mode='light']),
+.booking-shell[data-booking-mode='dark'] {
   --background: oklch(0.14 0.02 260);
   --foreground: oklch(0.94 0.01 255);
   --card: oklch(0.19 0.02 260);

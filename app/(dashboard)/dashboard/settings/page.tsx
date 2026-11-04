@@ -79,7 +79,7 @@ import {
   Star,
   Palette,
 } from 'lucide-react'
-import { BOOKING_ACCENT_SWATCHES, BOOKING_FONTS, accentForeground, fontFamilyFor } from '@/lib/booking-fonts'
+import { BOOKING_ACCENT_SWATCHES, BOOKING_BG_SWATCHES, BOOKING_FONTS, accentForeground, bookingForegroundFor, fontFamilyFor } from '@/lib/booking-fonts'
 
 type DayOfWeek = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday'
 
@@ -634,6 +634,7 @@ function SettingsPageInner() {
     client_chooses_worker: false,
     booking_font: null as string | null,
     booking_accent_color: null as string | null,
+    booking_bg_color: null as string | null,
   })
   const [slugError, setSlugError] = useState('')
 
@@ -715,6 +716,7 @@ function SettingsPageInner() {
         client_chooses_worker: currentBusiness.client_chooses_worker ?? false,
         booking_font: currentBusiness.booking_font ?? null,
         booking_accent_color: currentBusiness.booking_accent_color ?? null,
+        booking_bg_color: currentBusiness.booking_bg_color ?? null,
       })
       setNotifications({
         emailConfirmations: currentBusiness.notify_confirmations ?? true,
@@ -1032,14 +1034,23 @@ function SettingsPageInner() {
     }
   }
 
-  // ?embed=1 (app/reservar/[slug]/page.tsx) drops the page's own min-h-screen
-  // (and opens in the business's language) so it sizes to its content instead of the
-  // full viewport - a fixed height here is a deliberate V1 simplification
-  // (internal scroll inside the iframe if the flow runs long) rather than
-  // the postMessage auto-resize some embed widgets do; revisit only if a
-  // business actually finds the scroll-in-scroll awkward in practice.
+  // ?embed=1 (app/reservar/[slug]/page.tsx) sizes to its content and posts
+  // its height; the small script below resizes the iframe to match (no
+  // scrollbar inside it) and scrolls the box back into view on each step.
+  // Only messages from our own origin and this iframe are accepted. 800px
+  // stays as the starting height, and as the height if a site builder
+  // strips the script.
+  const embedOrigin = (() => {
+    try {
+      return bookingLink ? new URL(bookingLink).origin : ''
+    } catch {
+      return ''
+    }
+  })()
+  const embedTitle = (currentBusiness?.name || 'Reservar cita').replace(/"/g, '&quot;')
   const embedCode = bookingLink
-    ? `<iframe src="${bookingLink}?embed=1" style="width:100%;height:800px;border:none;" title="${currentBusiness?.name || 'Reservar cita'}"></iframe>`
+    ? `<iframe id="iplanit-booking" src="${bookingLink}?embed=1" style="width:100%;height:800px;border:none;display:block;" title="${embedTitle}" allowtransparency="true"></iframe>\n` +
+      `<script>(function(){var f=document.getElementById('iplanit-booking');window.addEventListener('message',function(e){if(e.origin!=='${embedOrigin}'||e.source!==f.contentWindow||!e.data)return;if(e.data.type==='iplanit:resize'&&e.data.height>0)f.style.height=e.data.height+'px';if(e.data.type==='iplanit:step'){var r=f.getBoundingClientRect();if(r.top<0)window.scrollBy({top:r.top-16,behavior:'smooth'});}});})();</script>`
     : ''
   const embedCodeInputRef = useRef<HTMLTextAreaElement>(null)
   const handleCopyEmbedCode = async () => {
@@ -1109,6 +1120,10 @@ function SettingsPageInner() {
               : {}),
             ...(business.booking_accent_color !== (currentBusiness.booking_accent_color ?? null)
               ? { booking_accent_color: business.booking_accent_color }
+              : {}),
+            // scripts/109 - same only-when-changed rule.
+            ...(business.booking_bg_color !== (currentBusiness.booking_bg_color ?? null)
+              ? { booking_bg_color: business.booking_bg_color }
               : {}),
           })
         } catch (businessErr: any) {
@@ -2012,7 +2027,7 @@ function SettingsPageInner() {
                         ref={embedCodeInputRef}
                         value={embedCode}
                         readOnly
-                        rows={2}
+                        rows={4}
                         className="resize-none font-mono text-xs sm:text-sm"
                         onClick={(e) => e.currentTarget.select()}
                       />
@@ -2118,18 +2133,84 @@ function SettingsPageInner() {
                     </div>
                   </div>
 
+                  <div className="space-y-2">
+                    <Label>{t.settings.bookingBgLabel}</Label>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setBusiness({ ...business, booking_bg_color: null })}
+                        className={cn(
+                          'h-8 rounded-full border px-3 text-xs font-medium transition-colors',
+                          business.booking_bg_color === null ? 'border-foreground ring-2 ring-foreground/20' : 'hover:bg-muted'
+                        )}
+                      >
+                        {t.settings.bookingBgAuto}
+                      </button>
+                      {BOOKING_BG_SWATCHES.map((color) => {
+                        const selected = business.booking_bg_color === color
+                        return (
+                          <button
+                            key={color}
+                            type="button"
+                            title={color}
+                            aria-label={color}
+                            onClick={() => setBusiness({ ...business, booking_bg_color: color })}
+                            className={cn(
+                              'h-8 w-8 rounded-full border-2 shadow-[inset_0_0_0_1px_rgba(127,127,127,0.35)] transition-transform',
+                              selected ? 'scale-110 border-foreground' : 'border-transparent hover:scale-105'
+                            )}
+                            style={{ backgroundColor: color }}
+                          />
+                        )
+                      })}
+                      <label
+                        className={cn(
+                          'relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-2 transition-transform',
+                          business.booking_bg_color && !BOOKING_BG_SWATCHES.includes(business.booking_bg_color)
+                            ? 'scale-110 border-foreground'
+                            : 'border-transparent hover:scale-105'
+                        )}
+                        style={{
+                          background:
+                            business.booking_bg_color && !BOOKING_BG_SWATCHES.includes(business.booking_bg_color)
+                              ? business.booking_bg_color
+                              : 'conic-gradient(from 0deg, #EF4444, #F59E0B, #84CC16, #10B981, #06B6D4, #3B82F6, #8B5CF6, #EC4899, #EF4444)',
+                        }}
+                        title={t.services.customColorLabel}
+                      >
+                        <input
+                          type="color"
+                          value={business.booking_bg_color ?? '#0a0a0a'}
+                          onChange={(e) => setBusiness({ ...business, booking_bg_color: e.target.value.toLowerCase() })}
+                          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                          aria-label={t.services.customColorLabel}
+                        />
+                      </label>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{t.settings.bookingBgHint}</p>
+                  </div>
+
                   {/* Live preview with the same font/contrast logic the
                       public page uses (lib/booking-fonts.ts). */}
-                  <div className="rounded-lg border bg-muted/30 p-4">
-                    <p className="mb-3 text-xs text-muted-foreground">{t.settings.bookingStylePreview}</p>
+                  <div
+                    className="rounded-lg border bg-muted/30 p-4"
+                    style={
+                      business.booking_bg_color
+                        ? { backgroundColor: business.booking_bg_color, color: bookingForegroundFor(business.booking_bg_color) }
+                        : undefined
+                    }
+                  >
+                    <p className={cn('mb-3 text-xs', business.booking_bg_color ? 'opacity-70' : 'text-muted-foreground')}>
+                      {t.settings.bookingStylePreview}
+                    </p>
                     <p
-                      className="text-2xl text-foreground"
+                      className={cn('text-2xl', !business.booking_bg_color && 'text-foreground')}
                       style={{ fontFamily: fontFamilyFor(business.booking_font) }}
                     >
                       {business.name || 'iPlanit'}
                     </p>
                     <p
-                      className="mt-1 text-base text-foreground"
+                      className={cn('mt-1 text-base', !business.booking_bg_color && 'text-foreground')}
                       style={{ fontFamily: fontFamilyFor(business.booking_font) }}
                     >
                       {t.settings.bookingStylePreviewService}
