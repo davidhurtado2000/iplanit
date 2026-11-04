@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Lock, Trash2 } from 'lucide-react'
+import { Loader2, Lock, Pencil, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSepa
 import { TimeSelect } from '@/components/dashboard/time-select'
 import { useLanguage } from '@/context/language-context'
 import { createClient } from '@/lib/supabase/client'
-import { parseInTimezone } from '@/lib/timezone'
+import { parseInTimezone, toTzLocalInput } from '@/lib/timezone'
 import type { TimeBlock } from '@/lib/time-blocks'
 import { cn } from '@/lib/utils'
 
@@ -27,6 +27,22 @@ function addDays(dateStr: string, days: number) {
   return d.toISOString().slice(0, 10)
 }
 
+function addHour(hhmm: string) {
+  const [h, m] = hhmm.split(':').map(Number)
+  const next = Math.min(h * 60 + m + 60, 23 * 60 + 45)
+  return `${String(Math.floor(next / 60)).padStart(2, '0')}:${String(next % 60).padStart(2, '0')}`
+}
+
+/** What the calendar already knows when the dialog is opened from a click
+ * on the grid: who (column) and when (clicked or dragged slot). */
+export interface TimeBlockPrefill {
+  /** 'all' | 'worker:<id>' | 'resource:<id>' */
+  target?: string
+  date?: string
+  timeFrom?: string
+  timeTo?: string
+}
+
 export function TimeBlockDialog({
   open,
   onOpenChange,
@@ -38,6 +54,8 @@ export function TimeBlockDialog({
   timeBlocks,
   defaultDate,
   onChanged,
+  editBlockId,
+  prefill,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -50,6 +68,10 @@ export function TimeBlockDialog({
   /** 'YYYY-MM-DD' business-local - prefills the date fields. */
   defaultDate: string
   onChanged: () => Promise<void> | void
+  /** Opens straight into editing this block (clicked on the calendar). */
+  editBlockId?: string | null
+  /** Prefills a new block from a click/drag on the calendar grid. */
+  prefill?: TimeBlockPrefill | null
 }) {
   const { t, locale } = useLanguage()
   const tr = t.timeBlocks
@@ -68,13 +90,72 @@ export function TimeBlockDialog({
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [removingId, setRemovingId] = useState<string | null>(null)
+  // The block being edited, or null when creating a new one.
+  const [editingId, setEditingId] = useState<string | null>(null)
 
+  const resetForNew = (p?: TimeBlockPrefill | null) => {
+    setEditingId(null)
+    setTarget(p?.target ?? 'all')
+    setKind('once')
+    setDate(p?.date ?? defaultDate)
+    setDateTo('')
+    setAllDay(false)
+    setTimeFrom(p?.timeFrom ?? '13:00')
+    setTimeTo(p?.timeTo ?? (p?.timeFrom ? addHour(p.timeFrom) : '14:00'))
+    setWeekdays([1, 2, 3, 4, 5])
+    setRepeatUntil('')
+    setReason('')
+    setError('')
+  }
+
+  const loadForEdit = (b: TimeBlock) => {
+    setEditingId(b.id)
+    setTarget(b.worker_id ? `worker:${b.worker_id}` : b.resource_id ? `resource:${b.resource_id}` : 'all')
+    setReason(b.reason ?? '')
+    setError('')
+    if (b.repeat_weekdays) {
+      setKind('weekly')
+      setWeekdays(b.repeat_weekdays)
+      setDate(b.repeat_from ?? defaultDate)
+      setRepeatUntil(b.repeat_until ?? '')
+      setDateTo('')
+      setAllDay(!b.start_time)
+      setTimeFrom(b.start_time?.slice(0, 5) ?? '13:00')
+      setTimeTo(b.end_time?.slice(0, 5) ?? '14:00')
+      return
+    }
+    setKind('once')
+    setRepeatUntil('')
+    if (!b.starts_at || !b.ends_at) return
+    const start = toTzLocalInput(b.starts_at, timezone)
+    const end = toTzLocalInput(b.ends_at, timezone)
+    const startDay = start.slice(0, 10)
+    const isAllDay = start.slice(11) === '00:00' && end.slice(11) === '00:00'
+    setDate(startDay)
+    setAllDay(isAllDay)
+    if (isAllDay) {
+      const lastDay = addDays(end.slice(0, 10), -1)
+      setDateTo(lastDay > startDay ? lastDay : '')
+      setTimeFrom('13:00')
+      setTimeTo('14:00')
+    } else {
+      setDateTo('')
+      setTimeFrom(start.slice(11))
+      setTimeTo(end.slice(11))
+    }
+  }
+
+  // Each open starts from what the calendar asked for: a specific block to
+  // edit, or a new one prefilled from the clicked slot. Before, a click on
+  // a block always opened a blank "new" form, so saving it created a copy.
   useEffect(() => {
     if (!open) return
-    setDate(defaultDate)
-    setDateTo('')
-    setError('')
-  }, [open, defaultDate])
+    const block = editBlockId ? timeBlocks.find((b) => b.id === editBlockId) : undefined
+    if (block) loadForEdit(block)
+    else resetForNew(prefill)
+    // Only on open - timeBlocks refetching mid-edit must not wipe the form.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, editBlockId, prefill, defaultDate])
 
   // Monday-first, labelled in the UI language.
   const weekdayOptions = [1, 2, 3, 4, 5, 6, 0].map((dow) => ({
@@ -121,8 +202,11 @@ export function TimeBlockDialog({
 
   const now = new Date()
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(now)
+  // Anything still running today stays listed - a lunch block that ended
+  // an hour ago is still on today's calendar, so it must be findable here.
+  const startOfToday = parseInTimezone(`${today}T00:00`, timezone)
   const activeBlocks = timeBlocks
-    .filter((b) => (b.repeat_weekdays ? !b.repeat_until || b.repeat_until >= today : !!b.ends_at && new Date(b.ends_at) > now))
+    .filter((b) => (b.repeat_weekdays ? !b.repeat_until || b.repeat_until >= today : !!b.ends_at && new Date(b.ends_at) > startOfToday))
     .sort((a, b) => (a.starts_at ?? a.repeat_from ?? '').localeCompare(b.starts_at ?? b.repeat_from ?? ''))
 
   const handleSave = async () => {
@@ -133,6 +217,15 @@ export function TimeBlockDialog({
       worker_id: kindPart === 'worker' ? id : null,
       resource_id: kindPart === 'resource' ? id : null,
       reason: reason.trim() || null,
+      // Explicit nulls for the other kind's fields, so editing a weekly
+      // block into a one-off (or back) doesn't leave stale values behind.
+      starts_at: null,
+      ends_at: null,
+      repeat_weekdays: null,
+      repeat_from: null,
+      repeat_until: null,
+      start_time: null,
+      end_time: null,
     }
     if (!allDay && timeTo <= timeFrom) {
       setError(tr.errorTimeOrder)
@@ -165,16 +258,18 @@ export function TimeBlockDialog({
     }
 
     setSaving(true)
-    const { error: insertError } = await supabase.from('time_blocks').insert(row as never)
+    const { error: saveError } = editingId
+      ? await supabase.from('time_blocks').update(row as never).eq('id', editingId)
+      : await supabase.from('time_blocks').insert(row as never)
     setSaving(false)
-    if (insertError) {
-      console.error('[iplanit] Error saving time block:', insertError)
+    if (saveError) {
+      console.error('[iplanit] Error saving time block:', saveError)
       setError(t.saveError)
       return
     }
-    toast.success(tr.saved)
-    setReason('')
+    toast.success(editingId ? tr.updated : tr.saved)
     await onChanged()
+    onOpenChange(false)
   }
 
   const handleRemove = async (id: string) => {
@@ -186,6 +281,11 @@ export function TimeBlockDialog({
       return
     }
     toast.success(tr.removed)
+    if (id === editingId) {
+      await onChanged()
+      onOpenChange(false)
+      return
+    }
     await onChanged()
   }
 
@@ -195,7 +295,7 @@ export function TimeBlockDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Lock className="h-4 w-4" />
-            {tr.title}
+            {editingId ? tr.editTitle : tr.title}
           </DialogTitle>
           <DialogDescription>{tr.desc}</DialogDescription>
         </DialogHeader>
@@ -285,7 +385,7 @@ export function TimeBlockDialog({
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="block-date">{kind === 'weekly' ? tr.repeatFrom : tr.date}</Label>
-              <Input id="block-date" type="date" value={date} min={today} onChange={(e) => setDate(e.target.value)} />
+              <Input id="block-date" type="date" value={date} min={editingId ? undefined : today} onChange={(e) => setDate(e.target.value)} />
             </div>
             {kind === 'weekly' ? (
               <div className="space-y-2">
@@ -336,13 +436,25 @@ export function TimeBlockDialog({
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="gap-2">
+          {editingId && (
+            <Button
+              type="button"
+              variant="ghost"
+              className="gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive sm:mr-auto"
+              disabled={saving || removingId === editingId}
+              onClick={() => handleRemove(editingId)}
+            >
+              {removingId === editingId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              {tr.remove}
+            </Button>
+          )}
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             {t.services.cancelBtn}
           </Button>
           <Button type="button" onClick={handleSave} disabled={saving || !date}>
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {tr.save}
+            {editingId ? tr.saveChanges : tr.save}
           </Button>
         </DialogFooter>
 
@@ -353,14 +465,31 @@ export function TimeBlockDialog({
           ) : (
             <ul className="space-y-2">
               {activeBlocks.map((b) => (
-                <li key={b.id} className="flex items-start justify-between gap-3 rounded-lg border p-3 text-sm">
-                  <div className="min-w-0">
+                <li
+                  key={b.id}
+                  className={cn(
+                    'flex items-start justify-between gap-2 rounded-lg border p-3 text-sm',
+                    b.id === editingId && 'border-primary bg-primary/5'
+                  )}
+                >
+                  <div className="min-w-0 flex-1">
                     <p className="font-medium">
                       {targetLabel(b)}
                       {b.reason && <span className="font-normal text-muted-foreground"> · {b.reason}</span>}
                     </p>
                     <p className="text-xs text-muted-foreground">{describe(b)}</p>
                   </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0 gap-1"
+                    disabled={b.id === editingId}
+                    onClick={() => loadForEdit(b)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    {tr.edit}
+                  </Button>
                   <Button
                     type="button"
                     variant="ghost"

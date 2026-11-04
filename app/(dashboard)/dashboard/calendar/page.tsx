@@ -21,7 +21,7 @@ import { sedeAbbr, sedeTint } from '@/lib/sede-colors'
 import { createClient } from '@/lib/supabase/client'
 import { getWorkerLabel } from '@/lib/worker-label'
 import { expandTimeBlocks } from '@/lib/time-blocks'
-import { TimeBlockDialog } from '@/components/dashboard/time-block-dialog'
+import { TimeBlockDialog, type TimeBlockPrefill } from '@/components/dashboard/time-block-dialog'
 import type { CalendarView } from '@/lib/types'
 import { Plus, CalendarDays, Clock, Building2, Eye, Loader2, History, Lock } from 'lucide-react'
 
@@ -256,6 +256,13 @@ function CalendarPageInner() {
   // "Bloquear horario" dialog (scripts/107) - declared up here with the
   // other hooks, above the loading/no-business early returns below.
   const [blockDialogOpen, setBlockDialogOpen] = useState(false)
+  const [blockEditId, setBlockEditId] = useState<string | null>(null)
+  const [blockPrefill, setBlockPrefill] = useState<TimeBlockPrefill | null>(null)
+  const openBlockDialog = (editId: string | null, prefill: TimeBlockPrefill | null) => {
+    setBlockEditId(editId)
+    setBlockPrefill(prefill)
+    setBlockDialogOpen(true)
+  }
 
   const handleCreateReservation = () => {
     setSelectedReservation(null)
@@ -543,7 +550,7 @@ function CalendarPageInner() {
               <span className="sm:hidden">{t.calendar.newBackdatedShort}</span>
             </Button>
             {canManageBlocks && (
-              <Button onClick={() => setBlockDialogOpen(true)} size="sm" variant="outline" className="gap-2">
+              <Button onClick={() => openBlockDialog(null, null)} size="sm" variant="outline" className="gap-2">
                 <Lock className="h-4 w-4" />
                 <span className="hidden sm:inline">{t.timeBlocks.button}</span>
               </Button>
@@ -607,7 +614,18 @@ function CalendarPageInner() {
             groupByStorageKey={currentBusiness ? `iplanit.calendar.groupBy.${currentBusiness.id}` : undefined}
             workerGroupLabel={getWorkerLabel(currentBusiness, t).plural}
             timeBlocks={blockOccurrences}
-            onSelectTimeBlock={canManageBlocks ? () => setBlockDialogOpen(true) : undefined}
+            onSelectTimeBlock={canManageBlocks ? (blockId) => openBlockDialog(blockId, null) : undefined}
+            onBlockAtSlot={
+              canManageBlocks && !isExpanded
+                ? (target, date, startLocal, endLocal) =>
+                    openBlockDialog(null, {
+                      target,
+                      date,
+                      timeFrom: startLocal?.slice(11, 16),
+                      timeTo: endLocal?.slice(11, 16),
+                    })
+                : undefined
+            }
           />
         </div>
 
@@ -775,6 +793,8 @@ function CalendarPageInner() {
           timeBlocks={timeBlocks}
           defaultDate={today}
           onChanged={refetchTimeBlocks}
+          editBlockId={blockEditId}
+          prefill={blockPrefill}
         />
       )}
 

@@ -246,6 +246,12 @@ interface CalendarViewProps {
   /** Expanded block occurrences (lib/time-blocks.ts) for the visible range. */
   timeBlocks?: TimeBlockOccurrence[]
   onSelectTimeBlock?: (blockId: string) => void
+  /** When set, a click on an empty slot asks "new booking or block this
+   * time?" instead of going straight to a booking, and a column header
+   * opens the block form for that person/resource. target is 'all' |
+   * 'worker:<id>' | 'resource:<id>'; times are business-local
+   * 'YYYY-MM-DDTHH:mm' (start omitted for a header click). */
+  onBlockAtSlot?: (target: string, date: string, startLocal?: string, endLocal?: string) => void
   /** DayView only (vista Dia) - the service picked in the parent's own
    * "vista previa de servicio" card (see calendar/page.tsx's sidebar,
    * next to the "Hoy" card - deliberately its own card there, not folded
@@ -293,6 +299,7 @@ export function CalendarViewComponent({
   workerGroupLabel,
   timeBlocks = [],
   onSelectTimeBlock,
+  onBlockAtSlot,
 }: CalendarViewProps) {
   const { t, locale } = useLanguage()
   const [currentDate, setCurrentDate] = useState(() => initialDate ?? new Date())
@@ -661,7 +668,7 @@ export function CalendarViewComponent({
           }}
           transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.2, 0.7, 0.3, 1] }}
         >
-          {view === 'day'   && <DayView   date={currentDate} reservations={reservations} resources={resources} selectedResourceId={selectedResourceId} groupBy={groupBy} workers={workers} selectedWorkerId={selectedWorkerId} timeBlocks={timeBlocks} onSelectTimeBlock={onSelectTimeBlock} clientsMap={clientsMap} servicesMap={servicesMap} resourcesMap={resourcesMap} attendeesCountMap={attendeesCountMap} onSelectReservation={onSelectReservation} startHour={startHour} endHour={endHour} timezone={timezone} t={t} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} businessHours={businessHours} onCreateAtSlot={onCreateAtSlot} previewService={previewService} previewAllowedResourceIds={previewAllowedResourceIds} />}
+          {view === 'day'   && <DayView   date={currentDate} reservations={reservations} resources={resources} selectedResourceId={selectedResourceId} groupBy={groupBy} workers={workers} selectedWorkerId={selectedWorkerId} timeBlocks={timeBlocks} onSelectTimeBlock={onSelectTimeBlock} onBlockAtSlot={onBlockAtSlot} clientsMap={clientsMap} servicesMap={servicesMap} resourcesMap={resourcesMap} attendeesCountMap={attendeesCountMap} onSelectReservation={onSelectReservation} startHour={startHour} endHour={endHour} timezone={timezone} t={t} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} businessHours={businessHours} onCreateAtSlot={onCreateAtSlot} previewService={previewService} previewAllowedResourceIds={previewAllowedResourceIds} />}
           {view === 'week'  && <WeekView  date={currentDate} reservations={reservations} clientsMap={clientsMap} servicesMap={servicesMap} attendeesCountMap={attendeesCountMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
           {view === 'month' && <MonthView date={currentDate} reservations={reservations} servicesMap={servicesMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
           {view === 'list'  && (
@@ -686,7 +693,7 @@ export function CalendarViewComponent({
 
 // ─── Day View — time grid × resource columns ───────────────────────────────
 function DayView({
-  date, reservations, resources, selectedResourceId, groupBy, workers, selectedWorkerId, timeBlocks, onSelectTimeBlock,
+  date, reservations, resources, selectedResourceId, groupBy, workers, selectedWorkerId, timeBlocks, onSelectTimeBlock, onBlockAtSlot,
   clientsMap, servicesMap, resourcesMap, attendeesCountMap = {}, onSelectReservation,
   startHour, endHour, timezone, t, businessNameById, businessColorIndexById, businessHours, onCreateAtSlot,
   previewService, previewAllowedResourceIds,
@@ -700,6 +707,7 @@ function DayView({
   selectedWorkerId: string
   timeBlocks: TimeBlockOccurrence[]
   onSelectTimeBlock?: (blockId: string) => void
+  onBlockAtSlot?: (target: string, date: string, startLocal?: string, endLocal?: string) => void
   clientsMap: Record<string, Client>
   servicesMap: Record<string, Service>
   resourcesMap: Record<string, Resource>
@@ -972,10 +980,41 @@ function DayView({
 
   // A click in a column means "this resource" or "this person" depending on
   // how the grid is grouped - the modal gets whichever one it was.
-  const createAt = (colId: string | null, start: string, end?: string, serviceId?: string) => {
+  const createReservationAt = (colId: string | null, start: string, end?: string, serviceId?: string) => {
     if (!onCreateAtSlot) return
     if (groupBy === 'worker') onCreateAtSlot(null, start, end, serviceId, colId)
     else onCreateAtSlot(colId, start, end, serviceId)
+  }
+  const blockTargetFor = (colId: string | null) =>
+    colId === null ? 'all' : groupBy === 'worker' ? `worker:${colId}` : `resource:${colId}`
+
+  // Where the last grid click/release happened, so the chooser below opens
+  // right under the cursor/finger.
+  const lastPointerRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+  const [slotMenu, setSlotMenu] = useState<{ colId: string | null; start: string; end?: string; x: number; y: number } | null>(null)
+  useEffect(() => {
+    if (!slotMenu) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSlotMenu(null)
+    }
+    const onScroll = () => setSlotMenu(null)
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('scroll', onScroll, true)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', onScroll, true)
+    }
+  }, [slotMenu])
+
+  // With blocking available, an empty-slot click asks what to do instead
+  // of assuming a booking. A previewed service means the user is clearly
+  // placing that service, so that path still goes straight to the form.
+  const createAt = (colId: string | null, start: string, end?: string, serviceId?: string) => {
+    if (onBlockAtSlot && !serviceId) {
+      setSlotMenu({ colId, start, end, ...lastPointerRef.current })
+      return
+    }
+    createReservationAt(colId, start, end, serviceId)
   }
 
   // Shared by both the drag finish and the plain-click fallback. Rejects
@@ -1040,6 +1079,7 @@ function DayView({
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>, colId: string | null) => {
     if (!drag || drag.colId !== colId) return
+    lastPointerRef.current = { x: e.clientX, y: e.clientY }
     const isDrag = Math.abs(drag.currentY - drag.startY) >= DRAG_THRESHOLD_PX
     pointerHandledRef.current = true
     finalizeSlot(colId, drag.startY, drag.currentY, isDrag)
@@ -1055,12 +1095,67 @@ function DayView({
       return
     }
     if (!onCreateAtSlot || e.target !== e.currentTarget) return
+    lastPointerRef.current = { x: e.clientX, y: e.clientY }
     const y = e.nativeEvent.offsetY
     finalizeSlot(colId, y, y, false)
   }
 
+  const slotMenuCol = slotMenu ? columns.find(c => c.id === slotMenu.colId) : undefined
+  const fmtSlotTime = (local: string) => {
+    const [h, m] = local.slice(11, 16).split(':').map(Number)
+    return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
+  }
+  const menuItemClass =
+    'flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:outline-none'
+
   return (
     <div className="relative rounded-lg border bg-card">
+      {slotMenu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setSlotMenu(null)} />
+          <div
+            role="menu"
+            className="fixed z-50 w-56 rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg"
+            style={{
+              left: Math.max(8, Math.min(slotMenu.x, window.innerWidth - 232)),
+              top: Math.max(8, Math.min(slotMenu.y + 4, window.innerHeight - 130)),
+            }}
+          >
+            <p className="truncate px-2 py-1.5 text-xs text-muted-foreground">
+              {t.calendar.slotMenuTitle
+                .replace('{time}', slotMenu.end ? `${fmtSlotTime(slotMenu.start)} – ${fmtSlotTime(slotMenu.end)}` : fmtSlotTime(slotMenu.start))
+                .replace('{who}', slotMenuCol?.label ?? '')}
+            </p>
+            <button
+              type="button"
+              role="menuitem"
+              autoFocus
+              className={menuItemClass}
+              onClick={() => {
+                const m = slotMenu
+                setSlotMenu(null)
+                createReservationAt(m.colId, m.start, m.end)
+              }}
+            >
+              <CalendarIcon className="h-4 w-4 text-primary" />
+              {t.calendar.slotMenuReservation}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className={menuItemClass}
+              onClick={() => {
+                const m = slotMenu
+                setSlotMenu(null)
+                onBlockAtSlot?.(blockTargetFor(m.colId), m.start.slice(0, 10), m.start, m.end)
+              }}
+            >
+              <Lock className="h-4 w-4 text-muted-foreground" />
+              {t.calendar.slotMenuBlock}
+            </button>
+          </div>
+        </>
+      )}
       {showRightFade && (
         <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-8 bg-gradient-to-l from-card to-transparent" />
       )}
@@ -1105,16 +1200,18 @@ function DayView({
                 const incompatibleMessage = incompatibleReason === 'sede'
                   ? t.calendar.previewServiceWrongSede.replace('{service}', previewService?.name ?? '')
                   : t.calendar.previewServiceResourceMismatch.replace('{service}', previewService?.name ?? '')
-                return (
-                  <div
-                    key={String(col.id)}
-                    className={cn(
-                      'flex min-w-0 items-center justify-center gap-1.5 border-r last:border-r-0 px-3 py-2.5 text-center text-xs font-semibold bg-muted/40',
-                      incompatible && 'opacity-40'
-                    )}
-                    style={{ flex: `1 1 ${MIN_COL_WIDTH}px`, color: incompatible ? undefined : col.color || undefined }}
-                    title={incompatible ? incompatibleMessage : undefined}
-                  >
+                // A real person/resource header opens the block form for
+                // them (day off, lunch) - the lock shows on hover so it's
+                // discoverable without cluttering every header.
+                const headerBlocks = !!onBlockAtSlot && col.id !== null && !incompatible
+                const headerClass = cn(
+                  'group flex min-w-0 items-center justify-center gap-1.5 border-r last:border-r-0 px-3 py-2.5 text-center text-xs font-semibold bg-muted/40',
+                  incompatible && 'opacity-40',
+                  headerBlocks && 'cursor-pointer transition-colors hover:bg-muted'
+                )
+                const headerStyle = { flex: `1 1 ${MIN_COL_WIDTH}px`, color: incompatible ? undefined : col.color || undefined }
+                const headerInner = (
+                  <>
                     {incompatible ? (
                       <Ban className="h-3 w-3 shrink-0 text-muted-foreground" />
                     ) : col.photoUrl ? (
@@ -1128,6 +1225,30 @@ function DayView({
                       )
                     )}
                     <span className={cn('min-w-0 truncate', col.color && !incompatible ? '' : 'text-muted-foreground')}>{col.label}</span>
+                    {headerBlocks && (
+                      <Lock className="h-3 w-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" aria-hidden />
+                    )}
+                  </>
+                )
+                return headerBlocks ? (
+                  <button
+                    key={String(col.id)}
+                    type="button"
+                    onClick={() => onBlockAtSlot!(blockTargetFor(col.id), dateStr)}
+                    className={headerClass}
+                    style={headerStyle}
+                    title={t.calendar.headerMenuBlockDay.replace('{who}', col.label)}
+                  >
+                    {headerInner}
+                  </button>
+                ) : (
+                  <div
+                    key={String(col.id)}
+                    className={headerClass}
+                    style={headerStyle}
+                    title={incompatible ? incompatibleMessage : undefined}
+                  >
+                    {headerInner}
                   </div>
                 )
               })}
