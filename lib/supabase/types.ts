@@ -6,6 +6,51 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
+// SUNAT doc types: 01 factura, 03 boleta, 07 nota de crédito.
+export type InvoiceDocType = '01' | '03' | '07'
+// SUNAT catálogo 06: 1 DNI, 4 CE, 6 RUC, 7 pasaporte, 0 no domiciliado,
+// A cédula diplomática, '-' clientes varios.
+export type InvoiceCustomerDocType = '0' | '1' | '4' | '6' | '7' | 'A' | '-'
+export type InvoiceStatus = 'pending' | 'sent' | 'accepted' | 'rejected' | 'error' | 'voided'
+
+export type InvoiceRow = {
+  id: string
+  business_id: string
+  ruc: string
+  reservation_id: string | null
+  doc_type: InvoiceDocType
+  serie: string
+  numero: number
+  related_invoice_id: string | null
+  credit_note_reason: string | null
+  customer_doc_type: InvoiceCustomerDocType
+  customer_doc_number: string | null
+  customer_name: string
+  customer_address: string | null
+  customer_email: string | null
+  items: Json
+  currency: 'PEN' | 'USD'
+  subtotal: number
+  igv: number
+  total: number
+  status: InvoiceStatus
+  attempts: number
+  last_error: string | null
+  next_retry_at: string | null
+  provider_response: Json | null
+  pdf_url: string | null
+  xml_url: string | null
+  cdr_url: string | null
+  sunat_description: string | null
+  sunat_hash: string | null
+  qr_string: string | null
+  issue_date: string
+  issued_at: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface Database {
   __InternalSupabase: {
     PostgrestVersion: '12'
@@ -190,6 +235,9 @@ export interface Database {
           extra_seats_purchased: number
           requires_plan_selection: boolean
           billing_exempt: boolean
+          invoicing_addon_active: boolean
+          invoicing_addon_override: boolean
+          invoicing_addon_access_until: string | null
           created_at: string
           updated_at: string
         }
@@ -209,6 +257,9 @@ export interface Database {
           extra_seats_purchased?: number
           requires_plan_selection?: boolean
           billing_exempt?: boolean
+          invoicing_addon_active?: boolean
+          invoicing_addon_override?: boolean
+          invoicing_addon_access_until?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -228,6 +279,9 @@ export interface Database {
           extra_seats_purchased?: number
           requires_plan_selection?: boolean
           billing_exempt?: boolean
+          invoicing_addon_active?: boolean
+          invoicing_addon_override?: boolean
+          invoicing_addon_access_until?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -563,8 +617,10 @@ export interface Database {
           email: string | null
           phone: string | null
           notes: string | null
-          document_type: 'dni' | 'ruc' | 'ein' | 'passport' | 'other' | null
+          document_type: 'dni' | 'ruc' | 'ce' | 'ein' | 'passport' | 'other' | null
           document_number: string | null
+          fiscal_name: string | null
+          fiscal_address: string | null
           is_active: boolean
           birthday_month: number | null
           birthday_day: number | null
@@ -586,8 +642,10 @@ export interface Database {
           email?: string | null
           phone?: string | null
           notes?: string | null
-          document_type?: 'dni' | 'ruc' | 'ein' | 'passport' | 'other' | null
+          document_type?: 'dni' | 'ruc' | 'ce' | 'ein' | 'passport' | 'other' | null
           document_number?: string | null
+          fiscal_name?: string | null
+          fiscal_address?: string | null
           is_active?: boolean
           birthday_month?: number | null
           birthday_day?: number | null
@@ -604,8 +662,10 @@ export interface Database {
           email?: string | null
           phone?: string | null
           notes?: string | null
-          document_type?: 'dni' | 'ruc' | 'ein' | 'passport' | 'other' | null
+          document_type?: 'dni' | 'ruc' | 'ce' | 'ein' | 'passport' | 'other' | null
           document_number?: string | null
+          fiscal_name?: string | null
+          fiscal_address?: string | null
           is_active?: boolean
           birthday_month?: number | null
           birthday_day?: number | null
@@ -641,6 +701,7 @@ export interface Database {
           review_requested_at: string | null
           payment_method: string | null
           paid_at: string | null
+          invoice_type_requested: 'boleta' | 'factura' | null
           notes: string | null
           kommo_contact_id: string | null
           kommo_lead_id: string | null
@@ -671,6 +732,7 @@ export interface Database {
           review_requested_at?: string | null
           payment_method?: string | null
           paid_at?: string | null
+          invoice_type_requested?: 'boleta' | 'factura' | null
           notes?: string | null
           kommo_contact_id?: string | null
           kommo_lead_id?: string | null
@@ -701,6 +763,7 @@ export interface Database {
           review_requested_at?: string | null
           payment_method?: string | null
           paid_at?: string | null
+          invoice_type_requested?: 'boleta' | 'factura' | null
           notes?: string | null
           kommo_contact_id?: string | null
           kommo_lead_id?: string | null
@@ -869,6 +932,116 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
+      }
+      // scripts/110 - no SELECT policy for logged-in users (holds the
+      // encrypted PSE token); the dashboard reads it via get_invoicing_settings.
+      business_invoicing_settings: {
+        Row: {
+          business_id: string
+          provider: 'nubefact'
+          environment: 'demo' | 'production'
+          api_url: string
+          api_token_encrypted: string
+          ruc: string
+          razon_social: string
+          serie_factura: string
+          serie_boleta: string
+          serie_nc_factura: string
+          serie_nc_boleta: string
+          prices_include_igv: boolean
+          igv_affectation: 'gravado' | 'exonerado' | 'inafecto'
+          igv_rate: number
+          auto_emit: boolean
+          enabled: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          business_id: string
+          provider?: 'nubefact'
+          environment?: 'demo' | 'production'
+          api_url: string
+          api_token_encrypted: string
+          ruc: string
+          razon_social: string
+          serie_factura?: string
+          serie_boleta?: string
+          serie_nc_factura?: string
+          serie_nc_boleta?: string
+          prices_include_igv?: boolean
+          igv_affectation?: 'gravado' | 'exonerado' | 'inafecto'
+          igv_rate?: number
+          auto_emit?: boolean
+          enabled?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          business_id?: string
+          provider?: 'nubefact'
+          environment?: 'demo' | 'production'
+          api_url?: string
+          api_token_encrypted?: string
+          ruc?: string
+          razon_social?: string
+          serie_factura?: string
+          serie_boleta?: string
+          serie_nc_factura?: string
+          serie_nc_boleta?: string
+          prices_include_igv?: boolean
+          igv_affectation?: 'gravado' | 'exonerado' | 'inafecto'
+          igv_rate?: number
+          auto_emit?: boolean
+          enabled?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      invoice_series_counters: {
+        Row: {
+          ruc: string
+          serie: string
+          last_number: number
+          updated_at: string
+        }
+        Insert: {
+          ruc: string
+          serie: string
+          last_number?: number
+          updated_at?: string
+        }
+        Update: {
+          ruc?: string
+          serie?: string
+          last_number?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      invoices: {
+        Row: InvoiceRow
+        // Rows are created only through create_pending_invoice (assigns the
+        // number atomically); direct inserts are for tests/backfills.
+        Insert: Partial<InvoiceRow> &
+          Pick<
+            InvoiceRow,
+            | 'business_id'
+            | 'ruc'
+            | 'doc_type'
+            | 'serie'
+            | 'numero'
+            | 'customer_doc_type'
+            | 'customer_name'
+            | 'items'
+            | 'currency'
+            | 'subtotal'
+            | 'igv'
+            | 'total'
+            | 'issue_date'
+          >
+        Update: Partial<InvoiceRow>
         Relationships: []
       }
       business_members: {
@@ -1229,6 +1402,27 @@ export interface Database {
       }
     }
     Functions: {
+      get_invoicing_settings: {
+        Args: { p_business_id: string }
+        Returns: Json
+      }
+      // Service role only (scripts/110).
+      business_has_invoicing_access: {
+        Args: { p_business_id: string }
+        Returns: boolean
+      }
+      next_invoice_number: {
+        Args: { p_ruc: string; p_serie: string }
+        Returns: number
+      }
+      create_pending_invoice: {
+        Args: { p_invoice: Json }
+        Returns: InvoiceRow
+      }
+      set_invoice_series_start: {
+        Args: { p_ruc: string; p_serie: string; p_next_number: number }
+        Returns: Json
+      }
       is_platform_admin: {
         Args: Record<PropertyKey, never>
         Returns: boolean
