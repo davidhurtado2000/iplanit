@@ -12,6 +12,7 @@ export type InvoiceDocType = '01' | '03' | '07'
 // A cédula diplomática, '-' clientes varios.
 export type InvoiceCustomerDocType = '0' | '1' | '4' | '6' | '7' | 'A' | '-'
 export type InvoiceStatus = 'pending' | 'sent' | 'accepted' | 'rejected' | 'error' | 'voided'
+export type InvoicingProvider = 'lucode' | 'nubefact' | 'mock'
 
 export type InvoiceRow = {
   id: string
@@ -44,6 +45,8 @@ export type InvoiceRow = {
   sunat_description: string | null
   sunat_hash: string | null
   qr_string: string | null
+  provider_document_id: string | null
+  environment: 'demo' | 'production'
   issue_date: string
   issued_at: string | null
   created_by: string | null
@@ -939,10 +942,14 @@ export interface Database {
       business_invoicing_settings: {
         Row: {
           business_id: string
-          provider: 'nubefact'
+          provider: InvoicingProvider
           environment: 'demo' | 'production'
-          api_url: string
-          api_token_encrypted: string
+          mode: 'managed' | 'own_provider'
+          provider_company_id: string | null
+          direccion_fiscal: string | null
+          ubigeo: string | null
+          api_url: string | null
+          api_token_encrypted: string | null
           ruc: string
           razon_social: string
           serie_factura: string
@@ -959,10 +966,14 @@ export interface Database {
         }
         Insert: {
           business_id: string
-          provider?: 'nubefact'
+          provider?: InvoicingProvider
           environment?: 'demo' | 'production'
-          api_url: string
-          api_token_encrypted: string
+          mode?: 'managed' | 'own_provider'
+          provider_company_id?: string | null
+          direccion_fiscal?: string | null
+          ubigeo?: string | null
+          api_url: string | null
+          api_token_encrypted: string | null
           ruc: string
           razon_social: string
           serie_factura?: string
@@ -979,10 +990,14 @@ export interface Database {
         }
         Update: {
           business_id?: string
-          provider?: 'nubefact'
+          provider?: InvoicingProvider
           environment?: 'demo' | 'production'
-          api_url?: string
-          api_token_encrypted?: string
+          mode?: 'managed' | 'own_provider'
+          provider_company_id?: string | null
+          direccion_fiscal?: string | null
+          ubigeo?: string | null
+          api_url?: string | null
+          api_token_encrypted?: string | null
           ruc?: string
           razon_social?: string
           serie_factura?: string
@@ -1042,6 +1057,37 @@ export interface Database {
             | 'issue_date'
           >
         Update: Partial<InvoiceRow>
+        Relationships: []
+      }
+      // scripts/111 - readable by anyone (prices are public).
+      invoicing_plan_config: {
+        Row: {
+          plan: 'basic' | 'pro' | 'premium'
+          included_docs: number
+          addon_required: boolean
+          addon_price_usd: number
+          overage_block_size: number
+          overage_block_price_usd: number
+          updated_at: string
+        }
+        Insert: {
+          plan: 'basic' | 'pro' | 'premium'
+          included_docs: number
+          addon_required: boolean
+          addon_price_usd?: number
+          overage_block_size?: number
+          overage_block_price_usd?: number
+          updated_at?: string
+        }
+        Update: {
+          plan?: 'basic' | 'pro' | 'premium'
+          included_docs?: number
+          addon_required?: boolean
+          addon_price_usd?: number
+          overage_block_size?: number
+          overage_block_price_usd?: number
+          updated_at?: string
+        }
         Relationships: []
       }
       business_members: {
@@ -1421,6 +1467,16 @@ export interface Database {
       }
       set_invoice_series_start: {
         Args: { p_ruc: string; p_serie: string; p_next_number: number }
+        Returns: Json
+      }
+      // scripts/111
+      get_invoicing_usage: {
+        Args: { p_business_id: string }
+        Returns: Json
+      }
+      // Service role only (scripts/111).
+      clear_demo_invoices: {
+        Args: { p_ruc: string }
         Returns: Json
       }
       is_platform_admin: {
