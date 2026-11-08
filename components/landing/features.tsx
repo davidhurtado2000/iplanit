@@ -1,6 +1,6 @@
 'use client'
 
-import { CalendarDays, Link2, Users, UserCog, BarChart3, Bell, Plug } from 'lucide-react'
+import { CalendarDays, Link2, Users, UserCog, BarChart3, Bell, Plug, Receipt, Star } from 'lucide-react'
 import { useLanguage } from '@/context/language-context'
 import { Reveal } from '@/components/landing/reveal'
 
@@ -15,6 +15,8 @@ export function Features() {
     { icon: UserCog, title: l.featureTeamTitle, desc: l.featureTeamDesc },
     { icon: BarChart3, title: l.featureReportsTitle, desc: l.featureReportsDesc },
     { icon: Bell, title: l.featureNotificationsTitle, desc: l.featureNotificationsDesc },
+    { icon: Receipt, title: l.featureInvoicingLandingTitle, desc: l.featureInvoicingLandingDesc },
+    { icon: Star, title: l.featureReviewsTitle, desc: l.featureReviewsDesc },
     { icon: Plug, title: l.featureCrmTitle, desc: l.featureCrmDesc },
   ]
 

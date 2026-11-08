@@ -440,8 +440,21 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
   const updateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const BATCH_DEBOUNCE_MS = 600
 
+  // Supabase Realtime sends payload.old with ONLY the primary key on tables
+  // with RLS (even with REPLICA IDENTITY FULL), so the old status never
+  // arrives. Without tracking it here, every UPDATE looked like a status
+  // change: one action that writes the row twice (status, then e.g. the
+  // Kommo sync's kommo_lead_id) chimed and toasted twice, and Undo never
+  // showed because previousStatus was always undefined.
+  const reservationsRef = useRef<Reservation[]>([])
+  useEffect(() => {
+    reservationsRef.current = reservations
+  }, [reservations])
+  const knownStatusRef = useRef(new Map<string, Reservation['status']>())
+
   useEffect(() => {
     if (!currentBusiness) return
+    knownStatusRef.current.clear()
 
     const flushInsertBuffer = () => {
       const batch = insertBufferRef.current
@@ -619,9 +632,17 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         { event: 'UPDATE', schema: 'public', table: 'reservations', filter: `business_id=eq.${currentBusiness.id}` },
         (payload) => {
           const updated = payload.new as Reservation
-          const previousStatus = (payload.old as Partial<Reservation>).status
+          // Last status this tab saw for the row: from an earlier event, or
+          // the loaded list (still the old value - the realtime event lands
+          // before any refetch triggered by the same action).
+          const previousStatus =
+            (payload.old as Partial<Reservation>).status ??
+            knownStatusRef.current.get(updated.id) ??
+            reservationsRef.current.find((r) => r.id === updated.id)?.status
+          knownStatusRef.current.set(updated.id, updated.status)
           setReservations((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
 
+          // Same status = some other column changed: no chime, no toast.
           if (previousStatus === updated.status) return
 
           updateBufferRef.current.push({ reservation: updated, previousStatus })

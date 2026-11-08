@@ -112,17 +112,25 @@ export async function POST(request: Request) {
 
     const replyTo = (await getBusinessEmailsByReservation(supabase, [reservationId])).get(reservationId)
 
-    const primaryEmail = buildEmail(
-      reservation.client_name,
-      `${process.env.NEXT_PUBLIC_APP_URL || 'https://www.iplanit.io'}/reservar/cita/${reservationId}`
-    )
-    await getResendClient().emails.send({
-      from: NOTIFICATIONS_FROM_EMAIL,
-      to: reservation.client_email,
-      replyTo,
-      subject: primaryEmail.subject,
-      html: primaryEmail.html,
-    })
+    // The client cancelled it themselves on the manage page and already saw
+    // it confirmed on screen: no email to them (scripts/113). Group
+    // attendees below still need to hear about it. Can only ever skip a
+    // send, never add one, so it's safe to take from the request.
+    const skipPrimary = type === 'cancellation' && body?.cancelledByClient === true
+
+    if (!skipPrimary) {
+      const primaryEmail = buildEmail(
+        reservation.client_name,
+        `${process.env.NEXT_PUBLIC_APP_URL || 'https://www.iplanit.io'}/reservar/cita/${reservationId}`
+      )
+      await getResendClient().emails.send({
+        from: NOTIFICATIONS_FROM_EMAIL,
+        to: reservation.client_email,
+        replyTo,
+        subject: primaryEmail.subject,
+        html: primaryEmail.html,
+      })
+    }
 
     // Additional attendees on a group reservation (scripts/081-group-
     // reservations.sql) get the same notification, personalized with their

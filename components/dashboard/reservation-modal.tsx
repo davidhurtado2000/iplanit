@@ -1523,7 +1523,16 @@ export function ReservationModal({
         .eq('id', reservation.id)
 
       if (error) throw error
-      if (newStatus === 'confirmed' && currentBusiness?.notify_confirmations && selectedClient?.email) {
+      // "Your reservation was approved" only makes sense for a request the
+      // client made on the public page (sold_by null). A reservation created
+      // by staff already sent its confirmation email at creation - a second
+      // one would be noise and burn the email quota (scripts/113).
+      if (
+        newStatus === 'confirmed' &&
+        !reservation.sold_by &&
+        currentBusiness?.notify_confirmations &&
+        selectedClient?.email
+      ) {
         sendReservationNotification('approved', reservation.id, clientEmailLanguage)
       }
 
@@ -1830,6 +1839,8 @@ export function ReservationModal({
                   reservationId={reservation.id}
                   refreshKey={`${reservation.status}|${reservation.payment_method ?? ''}`}
                   onLiveInvoicesChange={setLiveInvoiceLabels}
+                  clientPhone={viewClient?.phone}
+                  businessName={currentBusiness?.name}
                 />
               )}
               {reservation.parking_resource_id && (

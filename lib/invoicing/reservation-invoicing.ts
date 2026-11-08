@@ -5,6 +5,8 @@ import { NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import type { Database, InvoiceRow } from '@/lib/supabase/types'
+import { getBusinessEmailsByReservation, getResendClient, NOTIFICATIONS_FROM_EMAIL } from '@/lib/email/resend'
+import { buildInvoiceEmail } from '@/lib/email/templates'
 import { buildCreditNoteDraft, buildReservationDraft, type DraftResult } from './build-draft'
 import { CREDIT_NOTE_REASONS, type CreditNoteReasonCode } from './documents'
 import { emitDraft, sendInvoice } from './emit'
@@ -184,6 +186,49 @@ export async function cancelWithCreditNote(opts: {
     }),
     now: new Date(),
   })
+}
+
+const DOC_LABEL = { es: { '01': 'Factura', '03': 'Boleta', '07': 'Nota de crédito' }, en: { '01': 'Factura', '03': 'Boleta', '07': 'Credit note' } }
+
+// Emails the comprobante's PDF link to the customer. Recipient: the email
+// captured on the comprobante, or the client's current one if it was added
+// later.
+export async function emailInvoice(
+  admin: SupabaseClient<Database>,
+  invoice: InvoiceRow,
+): Promise<{ ok: true; to: string } | { ok: false; error: 'no_email' | 'send_failed' }> {
+  const [{ data: business }, reservation] = await Promise.all([
+    admin.from('businesses').select('name, country').eq('id', invoice.business_id).single(),
+    invoice.reservation_id ? loadReservation(admin, invoice.business_id, invoice.reservation_id) : Promise.resolve(null),
+  ])
+  let to = invoice.customer_email
+  if (!to && reservation) {
+    const { data: client } = await admin.from('clients').select('email').eq('id', reservation.client_id).maybeSingle()
+    to = client?.email ?? null
+  }
+  if (!to) return { ok: false, error: 'no_email' }
+
+  const language = business?.country === 'US' ? 'en' : 'es'
+  const { subject, html } = buildInvoiceEmail({
+    clientName: invoice.customer_name,
+    businessName: business?.name ?? '',
+    documentLabel: `${DOC_LABEL[language][invoice.doc_type]} ${invoice.serie}-${invoice.numero}`,
+    total: `${invoice.currency === 'USD' ? '$' : 'S/'} ${Number(invoice.total).toFixed(2)}`,
+    issueDate: invoice.issue_date.split('-').reverse().join('/'),
+    pdfUrl: invoice.pdf_url!,
+    language,
+  })
+
+  try {
+    const replyTo = invoice.reservation_id
+      ? (await getBusinessEmailsByReservation(admin, [invoice.reservation_id])).get(invoice.reservation_id)
+      : undefined
+    await getResendClient().emails.send({ from: NOTIFICATIONS_FROM_EMAIL, to, replyTo, subject, html })
+    return { ok: true, to }
+  } catch (err) {
+    console.error('[iplanit] Error emailing comprobante', invoice.id, err)
+    return { ok: false, error: 'send_failed' }
+  }
 }
 
 export function isCreditNoteReason(code: unknown): code is CreditNoteReasonCode {

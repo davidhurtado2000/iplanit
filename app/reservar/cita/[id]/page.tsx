@@ -99,7 +99,7 @@ export default function ManageReservationPage() {
       setCancelled(true)
       setReservation({ ...reservation, status: 'cancelled' })
       if (reservation.notify_cancellations && reservation.client_email) {
-        sendReservationNotification('cancellation', reservation.id, language)
+        sendReservationNotification('cancellation', reservation.id, language, { cancelledByClient: true })
       }
     } catch (err) {
       console.error('[v0] Error cancelling public reservation:', err)

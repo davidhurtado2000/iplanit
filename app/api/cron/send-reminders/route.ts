@@ -64,6 +64,22 @@ export async function GET(request: Request) {
       const isDayOf = row.reminder_kind === 'day_of'
       const remindedSet = isDayOf ? dayOfRemindedReservationIds : remindedReservationIds
 
+      // The day-of reminder (~3h before) no longer goes by email: the client
+      // already got the main one, and email volume has to stay within the
+      // Resend free plan (scripts/113). A client with email just doesn't get
+      // a second one; one with only a phone still gets it by WhatsApp below.
+      if (isDayOf && row.client_email) {
+        if (!remindedSet.has(row.reservation_id)) {
+          remindedSet.add(row.reservation_id)
+          await supabase
+            .from('reservations')
+            .update({ day_of_reminder_sent_at: new Date().toISOString() })
+            .eq('id', row.reservation_id)
+        }
+        skipped++
+        continue
+      }
+
       // Email stays the default channel when a client has one - WhatsApp
       // only covers the clients who'd otherwise get no reminder at all
       // (see scripts/076-whatsapp-reminders.sql).

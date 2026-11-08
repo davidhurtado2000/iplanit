@@ -350,26 +350,88 @@ export function buildReviewRequestEmail(data: ReviewRequestEmailData): { subject
   const button = (label: string) =>
     `<a href="${googleReviewUrl}" style="display: inline-block; margin-top: 16px; padding: 10px 18px; background-color: #2563eb; color: #ffffff; font-size: 14px; font-weight: 500; text-decoration: none; border-radius: 6px;">${label}</a>`
 
+  // Sent at most once every 180 days per client (scripts/113), so it leads
+  // with a real thank-you and treats the review as an optional favor.
   if (language === 'es') {
     return {
-      subject: `¿Como estuvo tu visita a ${businessName}?`,
+      subject: `Gracias por tu visita a ${businessName}`,
       html: emailLayout(
         'es',
-        'Gracias por tu visita',
+        '¡Gracias por tu visita!',
         `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hola ${name},</p>
-         <p style="font-size: 14px; color: #374151; margin: 0;">Gracias por visitar <strong>${business}</strong>. Si tienes un minuto, nos ayudaria muchisimo que dejes tu opinion en Google.</p>
-         ${button('Dejar una resena en Google')}`
+         <p style="font-size: 14px; color: #374151; margin: 0 0 12px 0;">Fue un gusto atenderte en <strong>${business}</strong>. Gracias por confiar en nosotros.</p>
+         <p style="font-size: 14px; color: #374151; margin: 0;">Si te gustó la experiencia, ¿nos ayudas con una reseña en Google? Toma menos de un minuto y ayuda a que más personas nos encuentren.</p>
+         ${button('Dejar mi reseña')}
+         <p style="font-size: 14px; color: #374151; margin: 20px 0 0 0;">¡Te esperamos pronto!</p>`
       ),
     }
   }
   return {
-    subject: `How was your visit to ${businessName}?`,
+    subject: `Thanks for visiting ${businessName}`,
     html: emailLayout(
       'en',
-      'Thanks for visiting',
+      'Thanks for your visit!',
       `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hi ${name},</p>
-       <p style="font-size: 14px; color: #374151; margin: 0;">Thanks for visiting <strong>${business}</strong>. If you have a minute, it would mean a lot if you left us a review on Google.</p>
-       ${button('Leave a review on Google')}`
+       <p style="font-size: 14px; color: #374151; margin: 0 0 12px 0;">It was a pleasure having you at <strong>${business}</strong>. Thank you for trusting us.</p>
+       <p style="font-size: 14px; color: #374151; margin: 0;">If you enjoyed it, would you leave us a quick review on Google? It takes less than a minute and helps more people find us.</p>
+       ${button('Leave my review')}
+       <p style="font-size: 14px; color: #374151; margin: 20px 0 0 0;">We hope to see you again soon!</p>`
+    ),
+  }
+}
+
+export interface InvoiceEmailData {
+  clientName: string
+  businessName: string
+  /** e.g. "Boleta B002-1" */
+  documentLabel: string
+  /** e.g. "S/ 60.00" */
+  total: string
+  issueDate: string
+  pdfUrl: string
+  language: EmailLanguage
+}
+
+// SUNAT comprobante, sent only when staff press "Enviar por correo" in the
+// reservation (never automatically - see scripts/113 on email volume).
+export function buildInvoiceEmail(data: InvoiceEmailData): { subject: string; html: string } {
+  const { language, pdfUrl } = data
+  const name = escapeHtml(data.clientName)
+  const business = escapeHtml(data.businessName)
+  const doc = escapeHtml(data.documentLabel)
+  const button = (label: string) =>
+    `<a href="${escapeHtml(pdfUrl)}" style="display: inline-block; margin-top: 4px; padding: 10px 18px; background-color: #2563eb; color: #ffffff; font-size: 14px; font-weight: 500; text-decoration: none; border-radius: 6px;">${label}</a>`
+
+  if (language === 'es') {
+    return {
+      subject: `Tu ${data.documentLabel} de ${data.businessName}`,
+      html: emailLayout(
+        'es',
+        'Tu comprobante electrónico',
+        `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hola ${name},</p>
+         <p style="font-size: 14px; color: #374151; margin: 0;">Gracias por tu visita a <strong>${business}</strong>. Aquí tienes tu comprobante electrónico.</p>
+         ${detailsCard([
+           ['Comprobante', doc],
+           ['Fecha', escapeHtml(data.issueDate)],
+           ['Total', escapeHtml(data.total)],
+         ])}
+         ${button('Ver comprobante (PDF)')}`
+      ),
+    }
+  }
+  return {
+    subject: `Your ${data.documentLabel} from ${data.businessName}`,
+    html: emailLayout(
+      'en',
+      'Your electronic receipt',
+      `<p style="font-size: 14px; color: #374151; margin: 0 0 8px 0;">Hi ${name},</p>
+       <p style="font-size: 14px; color: #374151; margin: 0;">Thanks for visiting <strong>${business}</strong>. Here is your electronic receipt.</p>
+       ${detailsCard([
+         ['Document', doc],
+         ['Date', escapeHtml(data.issueDate)],
+         ['Total', escapeHtml(data.total)],
+       ])}
+       ${button('View receipt (PDF)')}`
     ),
   }
 }

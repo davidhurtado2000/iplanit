@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { AlertCircle, Ban, Check, Clock, FileText, FlaskConical, Loader2, Receipt, RotateCw, X } from 'lucide-react'
+import { AlertCircle, Ban, Check, Clock, FileText, FlaskConical, Loader2, Mail, MessageCircle, Receipt, RotateCw, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useLanguage } from '@/context/language-context'
 import { cn } from '@/lib/utils'
+import { getWhatsappLink } from '@/lib/whatsapp'
 
 // Strings kept next to the UI (Peru-only feature), same as invoicing-settings.tsx.
 const STRINGS = {
@@ -45,6 +46,9 @@ const STRINGS = {
       voided: 'Anulado',
     } as Record<string, string>,
     pdf: 'PDF',
+    email: 'Correo',
+    emailSent: 'Comprobante enviado a {to}',
+    whatsappMessage: 'Hola {name}, gracias por tu visita a {business}. Aquí tienes tu {doc} por {total}: {url}',
     retry: 'Reintentar',
     void: 'Anular',
     voidTitle: 'Anular con nota de credito',
@@ -69,6 +73,7 @@ const STRINGS = {
       disabled: 'La emision de comprobantes esta desactivada en Ajustes > Facturacion.',
       not_completed: 'La reserva debe estar completada.',
       not_paid: 'Registra el pago de la reserva primero.',
+      no_email: 'El cliente no tiene correo en su ficha. Agregalo o envialo por WhatsApp.',
     } as Record<string, string>,
   },
   en: {
@@ -103,6 +108,9 @@ const STRINGS = {
       voided: 'Voided',
     } as Record<string, string>,
     pdf: 'PDF',
+    email: 'Email',
+    emailSent: 'Receipt sent to {to}',
+    whatsappMessage: 'Hi {name}, thanks for visiting {business}. Here is your {doc} for {total}: {url}',
     retry: 'Retry',
     void: 'Void',
     voidTitle: 'Void with a credit note',
@@ -127,6 +135,7 @@ const STRINGS = {
       disabled: 'Issuing is turned off in Settings > Invoicing.',
       not_completed: 'The reservation must be completed.',
       not_paid: 'Record the payment first.',
+      no_email: "The client has no email in their profile. Add one or send it by WhatsApp.",
     } as Record<string, string>,
   },
 }
@@ -177,10 +186,16 @@ export function ReservationInvoicing({
   // Changes when the reservation's status or payment changes, to re-check.
   refreshKey,
   onLiveInvoicesChange,
+  clientPhone,
+  businessName,
 }: {
   businessId: string
   reservationId: string
   refreshKey: string
+  // For the manual WhatsApp share (wa.me link, same as the reminder button:
+  // the person still hits send - no Twilio involved).
+  clientPhone?: string | null
+  businessName?: string
   // Tells the modal which factura/boleta are still valid (e.g. "Boleta
   // B002-1 · S/ 60.00"), so cancelling or reopening the reservation can warn
   // that the comprobante isn't voided by that.
@@ -303,12 +318,27 @@ export function ReservationInvoicing({
     }
   }
 
-  async function act(action: 'retry' | 'credit_note', invoiceId: string) {
+  function whatsappHref(inv: Invoice): string | null {
+    if (!clientPhone || !inv.pdfUrl) return null
+    const message = s.whatsappMessage
+      .replace('{name}', inv.customerName.split(' ')[0] || inv.customerName)
+      .replace('{business}', businessName ?? '')
+      .replace('{doc}', `${label(inv)} ${inv.serie}-${inv.numero}`)
+      .replace('{total}', money(inv.currency, inv.total))
+      .replace('{url}', inv.pdfUrl)
+    return getWhatsappLink(clientPhone, message)
+  }
+
+  async function act(action: 'retry' | 'credit_note' | 'email', invoiceId: string) {
     setBusy(true)
     try {
       const { ok, json } = await post({ action, invoiceId, reasonCode: reason })
       if (!ok) {
         toast.error(s.errors[json.error] ?? json.message ?? s.generic)
+        return
+      }
+      if (action === 'email') {
+        toast.success(s.emailSent.replace('{to}', json.to))
         return
       }
       if (action === 'credit_note' && json.invoice?.status === 'accepted') toast.success(s.voided)
@@ -404,6 +434,20 @@ export function ReservationInvoicing({
                   <FileText className="h-3.5 w-3.5" />
                   {s.pdf}
                 </a>
+              </Button>
+            )}
+            {inv.status === 'accepted' && whatsappHref(inv) && (
+              <Button variant="outline" size="sm" className="h-7 gap-1" asChild>
+                <a href={whatsappHref(inv)!} target="_blank" rel="noopener noreferrer">
+                  <MessageCircle className="h-3.5 w-3.5" />
+                  WhatsApp
+                </a>
+              </Button>
+            )}
+            {inv.status === 'accepted' && inv.pdfUrl && (
+              <Button variant="outline" size="sm" className="h-7 gap-1" disabled={busy} onClick={() => act('email', inv.id)}>
+                <Mail className="h-3.5 w-3.5" />
+                {s.email}
               </Button>
             )}
             {['pending', 'sent', 'error'].includes(inv.status) && (

@@ -3,6 +3,7 @@ import {
   buildDraftForReservation,
   CAN_CANCEL,
   cancelWithCreditNote,
+  emailInvoice,
   emitForReservation,
   isCreditNoteReason,
   json,
@@ -55,7 +56,7 @@ export async function GET(request: Request) {
 }
 
 type Body = {
-  action?: 'preview' | 'emit' | 'retry' | 'credit_note'
+  action?: 'preview' | 'emit' | 'retry' | 'credit_note' | 'email'
   businessId?: string
   reservationId?: string
   invoiceId?: string
@@ -115,10 +116,19 @@ export async function POST(request: Request) {
     return json({ invoice: publicInvoice(result.invoice), reused: result.reused })
   }
 
-  if (body.action === 'retry' || body.action === 'credit_note') {
+  if (body.action === 'retry' || body.action === 'credit_note' || body.action === 'email') {
     if (!body.invoiceId) return json({ error: 'missing_invoice_id' }, 400)
     const original = await setup.store.getById(body.invoiceId)
     if (!original || original.business_id !== businessId) return json({ error: 'invoice_not_found' }, 404)
+
+    // Manual send only (never automatic, see scripts/113 on email volume).
+    if (body.action === 'email') {
+      if (original.status !== 'accepted') return json({ error: 'not_sendable' }, 409)
+      if (!original.pdf_url) return json({ error: 'no_pdf' }, 409)
+      const sent = await emailInvoice(auth.admin, original)
+      if (!sent.ok) return json({ error: sent.error }, sent.error === 'no_email' ? 409 : 500)
+      return json({ success: true, to: sent.to })
+    }
 
     if (body.action === 'retry') {
       if (!['pending', 'sent', 'error'].includes(original.status)) return json({ error: 'not_retryable' }, 409)
