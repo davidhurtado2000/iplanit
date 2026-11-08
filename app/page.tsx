@@ -36,7 +36,7 @@ const JSON_LD = {
       offers: [
         { '@type': 'Offer', name: 'Basic', price: '15', priceCurrency: 'USD' },
         { '@type': 'Offer', name: 'Pro', price: '25', priceCurrency: 'USD' },
-        { '@type': 'Offer', name: 'Premium', price: '40', priceCurrency: 'USD' },
+        { '@type': 'Offer', name: 'Premium', price: '45', priceCurrency: 'USD' },
       ],
     },
     {
@@ -55,7 +55,15 @@ const JSON_LD = {
           name: 'How much does iPlanit cost?',
           acceptedAnswer: {
             '@type': 'Answer',
-            text: 'Basic is $15/month, Pro is $25/month, and Premium is $40/month. Every plan includes a 30-day free trial.',
+            text: 'Basic is $15/month, Pro is $25/month, and Premium is $45/month (includes SUNAT electronic invoicing). Every plan includes a 30-day free trial.',
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'Is SUNAT electronic invoicing included?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'Yes, on the Premium plan. Issue receipts, invoices, and credit notes valid with SUNAT right from iPlanit, with up to 1,000 documents a month included, plus training and support. If you go over 1,000 in a month, you keep issuing without interruption and $10 is added per 500 extra. Available for businesses in Peru.',
           },
         },
         {

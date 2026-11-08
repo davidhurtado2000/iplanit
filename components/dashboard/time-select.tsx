@@ -25,6 +25,16 @@ function formatTime12h(hhmm: string): string {
   return `${hour12}:${String(m).padStart(2, '0')} ${period}`
 }
 
+// Built once, not on every render. Settings > Negocio has ~16 of these
+// (business hours), and Radix renders every option even while closed - so
+// rebuilding 96 options each time made typing in ANY field of that page lag.
+// Reusing the same elements lets React skip them entirely.
+const TIME_ITEMS = TIME_OPTIONS.map((opt) => (
+  <SelectItem key={opt} value={opt}>
+    {formatTime12h(opt)}
+  </SelectItem>
+))
+
 interface TimeSelectProps {
   id?: string
   value: string
@@ -35,20 +45,20 @@ interface TimeSelectProps {
 export function TimeSelect({ id, value, onChange, className }: TimeSelectProps) {
   // Keeps a value that doesn't land on a 15-min mark (an odd time set
   // before this component existed) selectable instead of silently blank.
-  const options = TIME_OPTIONS.includes(value) ? TIME_OPTIONS : [...TIME_OPTIONS, value].sort()
+  const items = TIME_OPTIONS.includes(value)
+    ? TIME_ITEMS
+    : [...TIME_OPTIONS, value].sort().map((opt) => (
+        <SelectItem key={opt} value={opt}>
+          {formatTime12h(opt)}
+        </SelectItem>
+      ))
 
   return (
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger id={id} className={className}>
         <SelectValue>{formatTime12h(value)}</SelectValue>
       </SelectTrigger>
-      <SelectContent className="max-h-64">
-        {options.map((opt) => (
-          <SelectItem key={opt} value={opt}>
-            {formatTime12h(opt)}
-          </SelectItem>
-        ))}
-      </SelectContent>
+      <SelectContent className="max-h-64">{items}</SelectContent>
     </Select>
   )
 }

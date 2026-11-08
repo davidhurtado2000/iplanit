@@ -36,6 +36,7 @@ import { UpgradeModal } from '@/components/upgrade-modal'
 import { PremiumFeature, PremiumBadge, PremiumButton } from '@/components/premium-feature'
 import { FormSection } from '@/components/dashboard/form-section'
 import { TimeSelect } from '@/components/dashboard/time-select'
+import { InvoicingSettings } from '@/components/dashboard/invoicing-settings'
 import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
@@ -76,6 +77,7 @@ import {
   Link2,
   Gift,
   Plug,
+  Receipt,
   Star,
   Palette,
 } from 'lucide-react'
@@ -190,7 +192,9 @@ function SettingsPageInner() {
   const searchParams = useSearchParams()
   const tabParam = searchParams.get('tab')
   const initialTab =
-    tabParam === 'plan' || tabParam === 'team' || tabParam === 'integrations' ? tabParam : 'profile'
+    tabParam === 'plan' || tabParam === 'team' || tabParam === 'integrations' || tabParam === 'invoicing'
+      ? tabParam
+      : 'profile'
   const [isPortalLoading, setIsPortalLoading] = useState(false)
   const [isChangingPlan, setIsChangingPlan] = useState(false)
   // Non-null opens the confirmation dialog below - set by the 3 upgrade
@@ -549,6 +553,8 @@ function SettingsPageInner() {
   // team themselves - only the owner can. Defaults to owner when there's no
   // business yet (the "create your business" flow).
   const isOwner = currentBusiness ? currentBusiness.role === 'owner' : true
+  // SUNAT invoicing only exists for Peruvian businesses.
+  const showInvoicingTab = isOwner && currentBusiness?.country === 'PE'
   // planUsage is resolved through the business owner (scripts/079) - the
   // correct source for a staff member, whose own authProfile?.plan is
   // typically 'free' (their own separate signup). Falls back to
@@ -1480,7 +1486,7 @@ function SettingsPageInner() {
         <TabsList
           className={cn(
             'grid h-auto w-full grid-cols-2 gap-2 bg-muted/50 p-2 lg:w-auto',
-            isOwner ? 'sm:grid-cols-6' : 'sm:grid-cols-3'
+            isOwner ? (showInvoicingTab ? 'sm:grid-cols-7' : 'sm:grid-cols-6') : 'sm:grid-cols-3'
           )}
         >
           <TabsTrigger
@@ -1532,6 +1538,18 @@ function SettingsPageInner() {
             >
               <Plug className="h-5 w-5 sm:h-4 sm:w-4" />
               <span className="text-xs sm:text-sm">{t.settings.integrationsTab}</span>
+            </TabsTrigger>
+          )}
+          {showInvoicingTab && (
+            <TabsTrigger
+              value="invoicing"
+              className="flex-col gap-1 py-3 data-[state=active]:bg-card data-[state=active]:shadow-sm sm:flex-row sm:gap-2 sm:py-2"
+            >
+              <Receipt className="h-5 w-5 sm:h-4 sm:w-4" />
+              <span className="flex items-center gap-1 text-xs sm:text-sm">
+                {language === 'en' ? 'Invoicing' : 'Facturacion'}
+                <PremiumBadge requiredPlan="premium" />
+              </span>
             </TabsTrigger>
           )}
         </TabsList>
@@ -3525,6 +3543,18 @@ function SettingsPageInner() {
             </CardContent>
           </Card>
         </TabsContent>
+        )}
+
+        {showInvoicingTab && currentBusiness && (
+          <TabsContent value="invoicing" className="space-y-6">
+            <InvoicingSettings
+              businessId={currentBusiness.id}
+              onUpgrade={() => {
+                setUpgradeModalPlan('premium')
+                setShowUpgradeModal(true)
+              }}
+            />
+          </TabsContent>
         )}
       </Tabs>
         </>

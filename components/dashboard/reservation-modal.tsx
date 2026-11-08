@@ -2,7 +2,7 @@
 
 import React from "react"
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -39,7 +39,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Loader2 } from 'lucide-react'
-import { Calendar, Clock, User, Briefcase, Trash2, MapPin, Repeat, DollarSign, ParkingSquare, ChevronDown, ChevronsUpDown, Check, Eye, UserPlus, Bold, List, UserCog, History, Plus, X, Users, MessageCircle, Copy, Wallet } from 'lucide-react'
+import { Calendar, Clock, User, Briefcase, Trash2, MapPin, Repeat, DollarSign, ParkingSquare, ChevronDown, ChevronsUpDown, Check, Eye, UserPlus, Bold, List, UserCog, History, Plus, X, Users, MessageCircle, Copy, Wallet, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { paymentMethodLabel, paymentMethodsFor } from '@/lib/payment-methods'
 import { expandTimeBlocks } from '@/lib/time-blocks'
@@ -67,6 +67,7 @@ import { useLanguage } from '@/context/language-context'
 import { getWorkerLabel } from '@/lib/worker-label'
 import { useDashboardData, type ClientDocumentType, type Reservation } from '@/context/dashboard-data-context'
 import { StatusBadge } from '@/components/dashboard/status-badge'
+import { ReservationInvoicing } from '@/components/dashboard/reservation-invoicing'
 import { capitalizeFirst, cn } from '@/lib/utils'
 import { toTzLocalInput, parseInTimezone, toDateStr } from '@/lib/timezone'
 import { generateAvailableSlots, isDayClosed, intersectSlots, weekParity } from '@/lib/availability'
@@ -196,7 +197,7 @@ function splitPackagePrice(total: number, count: number): number[] {
 export function ReservationModal({
   isOpen,
   onClose,
-  reservation,
+  reservation: reservationProp,
   selectedDate,
   mode,
   onSave,
@@ -212,6 +213,30 @@ export function ReservationModal({
   backdated = false,
 }: ReservationModalProps) {
   const supabase = createClient()
+  // Completing with a payment can keep this modal open (so a SUNAT
+  // comprobante can be issued right away), but the parent still holds the
+  // reservation as it was when opened. This patch shows the saved status
+  // and payment until the modal closes.
+  const [savedPatch, setSavedPatch] = useState<Partial<Reservation> & { id: string } | null>(null)
+  const reservation = useMemo(
+    () =>
+      reservationProp && savedPatch && savedPatch.id === reservationProp.id
+        ? { ...reservationProp, ...savedPatch }
+        : reservationProp,
+    [reservationProp, savedPatch]
+  )
+  useEffect(() => {
+    if (!isOpen) setSavedPatch(null)
+  }, [isOpen])
+
+  // Valid SUNAT comprobantes of this reservation (reported by
+  // ReservationInvoicing), used to warn before cancelling, reopening or
+  // repricing it - none of those void the comprobante.
+  const [liveInvoiceLabels, setLiveInvoiceLabels] = useState<string[]>([])
+  const [pendingStatusChange, setPendingStatusChange] = useState<'pending' | 'confirmed' | 'no_show' | null>(null)
+  useEffect(() => {
+    setLiveInvoiceLabels([])
+  }, [reservationProp?.id, isOpen])
   const { user, profile } = useAuth()
   const { currentBusiness, aiAddonStatus } = useBusinesses()
   const { t, locale } = useLanguage()
@@ -1456,6 +1481,18 @@ export function ReservationModal({
       if (error) throw error
       setPaymentDialogOpen(false)
       onSave?.()
+      // Peru: stay open on the completed reservation, so the SUNAT
+      // comprobante section is right there (it only shows once the
+      // reservation is completed and paid). Everywhere else: close as before.
+      if (method && currentBusiness?.country === 'PE') {
+        setSavedPatch({
+          id: reservation.id,
+          status: 'completed',
+          payment_method: method,
+          paid_at: reservation.paid_at ?? new Date().toISOString(),
+        })
+        return
+      }
       onClose()
     } catch (error) {
       console.error('[iplanit] Error saving payment method:', error)
@@ -1463,6 +1500,16 @@ export function ReservationModal({
     } finally {
       setIsLoading(false)
     }
+  }
+
+  // Leaving 'completed' when a comprobante exists asks first: the status
+  // change doesn't void it with SUNAT.
+  const requestStatusChange = (status: 'pending' | 'confirmed' | 'no_show') => {
+    if (reservation?.status === 'completed' && liveInvoiceLabels.length > 0) {
+      setPendingStatusChange(status)
+      return
+    }
+    handleUpdateStatus(status)
   }
 
   const handleUpdateStatus = async (newStatus: 'pending' | 'confirmed' | 'completed' | 'no_show') => {
@@ -1718,8 +1765,10 @@ export function ReservationModal({
             </DialogFooter>
           </div>
         ) : mode === 'view' && reservation && !isEditing ? (
-          <div className="space-y-4">
-            <div className="grid gap-3">
+          // min-w-0: the dialog is a grid, so without it any wide child
+          // (e.g. the comprobante section) stretches the whole modal sideways.
+          <div className="min-w-0 space-y-4">
+            <div className="grid min-w-0 gap-3">
               {reservation.type === 'visit' && (
                 <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
                   <Eye className="h-4 w-4 shrink-0" />
@@ -1772,6 +1821,16 @@ export function ReservationModal({
                   <span className="font-medium">{t.reservation.paymentLabel}</span>
                   <span>{paymentMethodLabel(reservation.payment_method, t.reservation.paymentGeneric)}</span>
                 </div>
+              )}
+              {/* SUNAT comprobantes (Peru only). Renders nothing unless the
+                  business has invoicing set up on a Premium plan. */}
+              {currentBusiness?.country === 'PE' && reservation.type !== 'visit' && (
+                <ReservationInvoicing
+                  businessId={reservation.business_id}
+                  reservationId={reservation.id}
+                  refreshKey={`${reservation.status}|${reservation.payment_method ?? ''}`}
+                  onLiveInvoicesChange={setLiveInvoiceLabels}
+                />
               )}
               {reservation.parking_resource_id && (
                 <div className="flex items-center gap-3 text-sm">
@@ -1862,12 +1921,12 @@ export function ReservationModal({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
                   {reservation.status !== 'pending' && (
-                    <DropdownMenuItem onClick={() => handleUpdateStatus('pending')}>
+                    <DropdownMenuItem onClick={() => requestStatusChange('pending')}>
                       {t.reservation.markPending}
                     </DropdownMenuItem>
                   )}
                   {reservation.status !== 'confirmed' && (
-                    <DropdownMenuItem onClick={() => handleUpdateStatus('confirmed')}>
+                    <DropdownMenuItem onClick={() => requestStatusChange('confirmed')}>
                       {t.reservation.markConfirmed}
                     </DropdownMenuItem>
                   )}
@@ -1887,7 +1946,7 @@ export function ReservationModal({
                     </DropdownMenuItem>
                   )}
                   {reservation.status !== 'no_show' && new Date(reservation.start_time).getTime() < Date.now() && (
-                    <DropdownMenuItem onClick={() => handleUpdateStatus('no_show')}>
+                    <DropdownMenuItem onClick={() => requestStatusChange('no_show')}>
                       {t.reservation.markNoShow}
                     </DropdownMenuItem>
                   )}
@@ -2035,7 +2094,9 @@ export function ReservationModal({
                     ...formData,
                     service_id: val,
                     resource_id: '',
-                    worker_id: '',
+                    // The worker stays (e.g. prefilled from a worker column
+                    // on the calendar). The effect after allowedWorkerIds
+                    // clears it only if they don't do the new service.
                     duration_option_id: '',
                     hours: '',
                     price: suggestedPrice,
@@ -2199,6 +2260,14 @@ export function ReservationModal({
                     setFormData({ ...formData, price: isNaN(rounded) ? '' : rounded })
                   }}
                 />
+                {/* Editing an invoiced reservation's price never touches the
+                    comprobante already sent to SUNAT. */}
+                {editingExisting && liveInvoiceLabels.length > 0 && (
+                  <p className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    {t.reservation.invoicePriceWarning.replace('{invoice}', liveInvoiceLabels.join(', '))}
+                  </p>
+                )}
               </div>
             )}
 
@@ -3022,14 +3091,21 @@ export function ReservationModal({
             </button>
           ))}
         </div>
-        <AlertDialogFooter className="gap-2 sm:justify-between">
-          {reservation?.status !== 'completed' ? (
-            <Button type="button" variant="ghost" disabled={isLoading} onClick={() => handleSavePayment(null)}>
-              {t.reservation.completeWithoutPayment}
-            </Button>
-          ) : (
-            <AlertDialogCancel disabled={isLoading}>{t.services.cancelBtn}</AlertDialogCancel>
-          )}
+        {/* The rarer path, as a quiet link instead of a third footer button
+            (three buttons overflowed the dialog). */}
+        {reservation?.status !== 'completed' && (
+          <button
+            type="button"
+            disabled={isLoading}
+            onClick={() => handleSavePayment(null)}
+            className="w-fit text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline disabled:opacity-50"
+          >
+            {t.reservation.completeWithoutPayment}
+          </button>
+        )}
+        <AlertDialogFooter className="gap-2">
+          {/* Cancel = back to the reservation without completing anything. */}
+          <AlertDialogCancel disabled={isLoading}>{t.services.cancelBtn}</AlertDialogCancel>
           <Button type="button" disabled={isLoading || !paymentChoice} onClick={() => handleSavePayment(paymentChoice)}>
             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {reservation?.status === 'completed' ? t.reservation.savePaymentBtn : t.reservation.completeWithPaymentBtn}
@@ -3047,6 +3123,7 @@ export function ReservationModal({
             {cancelConfirmType === 'series' ? t.reservation.cancelSeriesConfirmDesc : t.reservation.cancelConfirmDesc}
           </AlertDialogDescription>
         </AlertDialogHeader>
+        {liveInvoiceLabels.length > 0 && <InvoiceStillValidNotice labels={liveInvoiceLabels} />}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={isLoading}>{t.reservation.keepReservationBtn}</AlertDialogCancel>
           <AlertDialogAction
@@ -3067,6 +3144,50 @@ export function ReservationModal({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+    <AlertDialog open={pendingStatusChange !== null} onOpenChange={(open) => !open && setPendingStatusChange(null)}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t.reservation.reopenWithInvoiceTitle}</AlertDialogTitle>
+        </AlertDialogHeader>
+        <InvoiceStillValidNotice labels={liveInvoiceLabels} />
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isLoading}>{t.reservation.keepReservationBtn}</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={isLoading}
+            onClick={async () => {
+              const status = pendingStatusChange
+              setPendingStatusChange(null)
+              if (status) await handleUpdateStatus(status)
+            }}
+          >
+            {t.reservation.reopenWithInvoiceConfirm}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     </>
+  )
+}
+
+// Shown wherever an action could leave a valid comprobante behind for a sale
+// that no longer exists (cancel, reopen). Never voids anything by itself: not
+// every cancellation comes with a refund.
+function InvoiceStillValidNotice({ labels }: { labels: string[] }) {
+  const { t } = useLanguage()
+  return (
+    <div className="flex gap-2.5 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+      <div className="min-w-0 space-y-1">
+        <p className="font-medium text-foreground">{t.reservation.invoiceStillValidTitle}</p>
+        <ul className="text-muted-foreground">
+          {labels.map((label) => (
+            <li key={label} className="font-mono text-xs">
+              {label}
+            </li>
+          ))}
+        </ul>
+        <p className="text-muted-foreground">{t.reservation.invoiceStillValidDesc}</p>
+      </div>
+    </div>
   )
 }

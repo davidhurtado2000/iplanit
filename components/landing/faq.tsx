@@ -4,12 +4,12 @@ import { useLanguage } from '@/context/language-context'
 import { Reveal } from '@/components/landing/reveal'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 
-// 8 real questions/answers, grounded in the actual product (pricing,
+// 9 real questions/answers, grounded in the actual product (pricing,
 // features, sedes) - not just for visitors, this doubles as the visible
 // half of the FAQPage JSON-LD in app/page.tsx (search engines use it for
 // featured snippets, and it's exactly the clear Q&A format generative
 // engines favor when citing a source).
-const FAQ_KEYS = [1, 2, 3, 4, 5, 6, 7, 8] as const
+const FAQ_KEYS = [1, 2, 9, 3, 4, 5, 6, 7, 8] as const
 
 export function Faq() {
   const { t } = useLanguage()

@@ -107,6 +107,8 @@ alter table public.invoicing_plan_config
   check (addon_price_usd >= 0);
 
 -- Re-running this script resets the plan prices and limits to these values.
+-- Superseded by scripts/112 (invoicing is Premium-only): run 112 again after
+-- re-running this one.
 insert into public.invoicing_plan_config (plan, included_docs, addon_required, addon_price_usd)
 values ('basic', 500, true, 10), ('pro', 500, true, 10), ('premium', 1000, true, 5)
 on conflict (plan) do update

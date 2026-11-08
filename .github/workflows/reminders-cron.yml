@@ -25,3 +25,10 @@ jobs:
           # 401 after the first (incomplete) fix here.
           curl --fail-with-body -sS -X GET "https://www.iplanit.io/api/cron/send-reminders" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+      # Same hourly run (no extra Actions minutes): finish SUNAT comprobantes
+      # left pending. Runs even if the reminders step failed.
+      - name: Call /api/cron/retry-invoices
+        if: always()
+        run: |
+          curl --fail-with-body -sS -X GET "https://www.iplanit.io/api/cron/retry-invoices" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"

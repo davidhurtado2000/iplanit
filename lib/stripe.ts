@@ -38,6 +38,8 @@ if (process.env.STRIPE_PRICE_ID_BASIC) PRICE_TIER_MAP[process.env.STRIPE_PRICE_I
 if (process.env.STRIPE_PRICE_ID_PRO) PRICE_TIER_MAP[process.env.STRIPE_PRICE_ID_PRO] = 'pro'
 if (process.env.STRIPE_PRICE_ID_PREMIUM) PRICE_TIER_MAP[process.env.STRIPE_PRICE_ID_PREMIUM] = 'premium'
 if (process.env.STRIPE_PRICE_ID_PREMIUM_LEGACY) PRICE_TIER_MAP[process.env.STRIPE_PRICE_ID_PREMIUM_LEGACY] = 'premium'
+// The $40 Premium Price, replaced by $45 on 2026-11-06. Same idea as above.
+if (process.env.STRIPE_PRICE_ID_PREMIUM_LEGACY_2) PRICE_TIER_MAP[process.env.STRIPE_PRICE_ID_PREMIUM_LEGACY_2] = 'premium'
 
 export function tierFromPriceId(priceId: string | undefined | null): 'basic' | 'pro' | 'premium' | null {
   if (!priceId) return null

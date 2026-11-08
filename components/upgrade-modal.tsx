@@ -31,6 +31,7 @@ import {
   Headphones,
   MapPin,
   Car,
+  Receipt,
 } from 'lucide-react'
 import { useLanguage } from '@/context/language-context'
 import { useAuth } from '@/hooks/use-auth'
@@ -47,7 +48,7 @@ import { useHasWorkerAgenda } from '@/hooks/use-has-worker-agenda'
 // yet (unlike SALES_WHATSAPP below, which was already confirmed).
 const BASIC_PRICE_USD = 15
 const PRO_PRICE_USD = 25
-const PREMIUM_PRICE_USD = 40
+const PREMIUM_PRICE_USD = 45
 
 interface UpgradeModalProps {
   isOpen: boolean
@@ -159,6 +160,7 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
   ]
 
   const PREMIUM_FEATURES = [
+    { icon: Receipt, title: m.featureInvoicingTitle, description: m.featureInvoicingDesc },
     { icon: Clock, title: m.featureUnlimitedReservationsTitle },
     { icon: Layers, title: m.featureUnlimitedServicesTitle },
     { icon: Layers, title: m.featureUnlimitedRecordsTitle, description: m.featureUnlimitedRecordsDesc },

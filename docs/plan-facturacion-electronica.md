@@ -13,8 +13,11 @@
 - **Origen:** un negocio que hoy usa **Viutify** (que incluye facturación) quiere pasarse a
   iPlanit. Condición para cambiarse: emitir boletas y facturas válidas ante SUNAT desde
   iPlanit, sin usar otro sistema.
-- **Qué es:** un adicional opcional de **+$10 USD/mes** disponible en cualquier plan pagado
-  (Basic, Pro, Premium), **solo para negocios de Perú** (`businesses.country = 'PE'`).
+- **Qué es (actualizado 2026-11-06, ver `scripts/112`):** beneficio **exclusivo del plan
+  Premium ($45/mes)**, sin add-on: 1,000 comprobantes/mes incluidos y $10 por cada 500 extra.
+  Basic y Pro **no** tienen facturación. **Solo para negocios de Perú**
+  (`businesses.country = 'PE'`). Un plan Enterprise (2,000 comprobantes) queda como idea a futuro.
+  Lo de abajo sobre el add-on de +$10 y su cobro en Stripe ya no aplica.
 - **Quién emite:** el **negocio** (con su propio RUC) es el emisor ante SUNAT. iPlanit no emite
   nada a su nombre; solo arma los datos y los envía al proveedor (PSE) del negocio.
 - **Proveedor inicial:** **Nubefact** (PSE + OSE autorizado, API REST JSON, certificado digital

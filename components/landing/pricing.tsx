@@ -67,14 +67,18 @@ export function Pricing() {
     },
     {
       name: l.planPremiumName,
-      price: 40,
+      price: 45,
       desc: l.planPremiumDesc,
       cta: l.planPremiumCta,
       href: '/register',
       band: 'ink' as Band,
       hasAiAddon: true,
       includesLabel: l.planPremiumIncludesPro,
+      // Overage terms for invoicing, as a small footnote under the list so
+      // the card stays clean but the conditions are never hidden.
+      footnote: l.planPremiumInvoicingNote,
       features: [
+        { title: u.featureInvoicingTitle, desc: u.featureInvoicingDesc },
         { title: u.featureUnlimitedReservationsTitle, desc: u.featureUnlimitedReservationsDesc },
         { title: u.featureUnlimitedServicesTitle, desc: u.featureUnlimitedServicesDesc },
         { title: u.featureUnlimitedRecordsTitle, desc: u.featureUnlimitedRecordsDesc },
@@ -168,6 +172,9 @@ export function Pricing() {
                       </li>
                     ))}
                   </ul>
+                  {'footnote' in plan && plan.footnote && (
+                    <p className="mt-4 text-xs leading-snug text-muted-foreground">* {plan.footnote}</p>
+                  )}
                   {plan.hasAiAddon && (
                     <div className="mt-5 flex items-start gap-2.5 rounded-lg border border-dashed border-primary/30 bg-primary/5 p-3">
                       <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
