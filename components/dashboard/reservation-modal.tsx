@@ -68,6 +68,7 @@ import { getWorkerLabel } from '@/lib/worker-label'
 import { useDashboardData, type ClientDocumentType, type Reservation } from '@/context/dashboard-data-context'
 import { StatusBadge } from '@/components/dashboard/status-badge'
 import { ReservationInvoicing } from '@/components/dashboard/reservation-invoicing'
+import { markOwnReservationWrite } from '@/lib/own-actions'
 import { capitalizeFirst, cn } from '@/lib/utils'
 import { toTzLocalInput, parseInTimezone, toDateStr } from '@/lib/timezone'
 import { generateAvailableSlots, isDayClosed, intersectSlots, weekParity } from '@/lib/availability'
@@ -462,6 +463,8 @@ export function ReservationModal({
 
   // Clears (never auto-fills, unlike resource above) a worker selection
   // that the newly-picked service doesn't actually allow.
+  // (workersByDay, which orders this list by the chosen date, is defined
+  // further down, after slotDate/tz.)
   useEffect(() => {
     if (allowedWorkerIds.length === 0) return
     if (!formData.worker_id || allowedWorkerIds.includes(formData.worker_id)) return
@@ -922,6 +925,17 @@ export function ReservationModal({
   const selectedWorkerHours = formData.worker_id
     ? workerHours.filter((h) => h.worker_id === formData.worker_id)
     : []
+
+  // The worker list for the chosen date: those who work that day first (in
+  // their usual order), then the rest greyed out. A worker with no schedule
+  // of their own follows the business hours, so counts as working.
+  const workersByDay = filteredWorkers
+    .map((worker) => {
+      const hours = workerHours.filter((h) => h.worker_id === worker.id)
+      const worksThatDay = !slotDate || hours.length === 0 || !isDayClosed(slotDate, hours, tz)
+      return { worker, worksThatDay }
+    })
+    .sort((a, b) => Number(b.worksThatDay) - Number(a.worksThatDay))
 
   // Editing an appointment that already exists (as opposed to creating
   // one). Its own time has to stay pickable even when it no longer
@@ -1397,6 +1411,7 @@ export function ReservationModal({
           syncReservationToKommo(created.id)
         }
       } else if (effectiveMode === 'edit' && reservation?.id) {
+        markOwnReservationWrite()
         const { error } = await supabase
           .from('reservations')
           .update(reservationData)
@@ -1432,6 +1447,7 @@ export function ReservationModal({
 
     try {
       setIsLoading(true)
+      markOwnReservationWrite()
       const { error } = await supabase
         .from('reservations')
         .update({ status: 'cancelled', cancelled_by: 'business', cancelled_at: new Date().toISOString() })
@@ -1468,6 +1484,7 @@ export function ReservationModal({
     if (!reservation?.id) return
     try {
       setIsLoading(true)
+      markOwnReservationWrite()
       const { error } = await supabase
         .from('reservations')
         .update({
@@ -1517,6 +1534,7 @@ export function ReservationModal({
 
     try {
       setIsLoading(true)
+      markOwnReservationWrite()
       const { error } = await supabase
         .from('reservations')
         .update({ status: newStatus })
@@ -1615,6 +1633,7 @@ export function ReservationModal({
     try {
       setIsLoading(true)
       const nowIso = new Date().toISOString()
+      markOwnReservationWrite()
       const { error: resError } = await supabase
         .from('reservations')
         .update({ status: 'cancelled', cancelled_by: 'business', cancelled_at: nowIso })
@@ -2709,10 +2728,28 @@ export function ReservationModal({
               )}
             </div>
 
+            {/* Date first, then the worker, then the time: who's available
+                depends on the day (each worker has their own schedule), and
+                the free times depend on both. */}
+            <div className="space-y-2">
+              <Label htmlFor="reservation-date">{t.reservation.dateOnlyLabel}</Label>
+              <Input
+                id="reservation-date"
+                type="date"
+                value={slotDate}
+                onChange={(e) => {
+                  setSlotDate(e.target.value)
+                  setFormData({ ...formData, start_time: '' })
+                }}
+              />
+            </div>
+
             {/* Worker - who's actually doing the work, independent of
                 resource (see Worker in dashboard-data-context.tsx). Always
                 optional: unlike a resource, a service never structurally
-                requires one. */}
+                requires one. Those who don't work the chosen day go last,
+                greyed out, but stay selectable (covering a shift, logging a
+                past appointment). */}
             {workers.length > 0 && (
               <div className="space-y-2">
                 <Label htmlFor="worker">
@@ -2738,14 +2775,17 @@ export function ReservationModal({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="_none">{t.reservation.noWorker}</SelectItem>
-                    {filteredWorkers.map((worker) => (
+                    {workersByDay.map(({ worker, worksThatDay }) => (
                       <SelectItem key={worker.id} value={worker.id}>
-                        <span className="flex items-center gap-2">
+                        <span className={cn('flex items-center gap-2', !worksThatDay && 'opacity-60')}>
                           <span
                             className="h-2 w-2 shrink-0 rounded-full"
                             style={{ backgroundColor: worker.color || '#3B82F6' }}
                           />
                           <span className="font-medium">{worker.name}</span>
+                          {!worksThatDay && (
+                            <span className="text-xs text-muted-foreground">· {t.reservation.workerOffDayTag}</span>
+                          )}
                         </span>
                       </SelectItem>
                     ))}
@@ -2760,16 +2800,7 @@ export function ReservationModal({
                 datetime input that only told you about a conflict after
                 trying to save. */}
             <div className="space-y-2">
-              <Label htmlFor="reservation-date">{t.reservation.datetimeInput}</Label>
-              <Input
-                id="reservation-date"
-                type="date"
-                value={slotDate}
-                onChange={(e) => {
-                  setSlotDate(e.target.value)
-                  setFormData({ ...formData, start_time: '' })
-                }}
-              />
+              <Label>{t.reservation.timeOnlyLabel}</Label>
               {!effectiveDurationMinutes ? (
                 <p className="text-xs text-muted-foreground">{t.reservation.pickDurationFirst}</p>
               ) : availableSlots.length === 0 && !showOriginalSlot ? (

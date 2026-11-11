@@ -235,6 +235,20 @@ export function isCreditNoteReason(code: unknown): code is CreditNoteReasonCode 
   return typeof code === 'string' && code in CREDIT_NOTE_REASONS
 }
 
+// The thermal-printer PDF (72 mm wide) Lucode returns next to the A4 one.
+// Only accepted on Lucode's own hosts, since the server fetches it.
+export function ticketUrlOf(row: InvoiceRow): string | null {
+  const raw = row.provider_response as { payload?: { pdf?: { ticket?: string | null } | null } | null } | null
+  const url = raw?.payload?.pdf?.ticket
+  if (!url) return null
+  try {
+    const host = new URL(url).hostname
+    return host === 'apisunat.pe' || host.endsWith('.apisunat.pe') ? url : null
+  } catch {
+    return null
+  }
+}
+
 // What the modal shows for each comprobante (no raw provider payloads).
 export function publicInvoice(row: InvoiceRow) {
   return {
@@ -249,6 +263,9 @@ export function publicInvoice(row: InvoiceRow) {
     customerName: row.customer_name,
     customerDocNumber: row.customer_doc_number,
     pdfUrl: row.pdf_url,
+    // Lucode's 72 mm receipt-printer version (pdf_url is the A4 one). Only
+    // in the stored response, not a column of its own.
+    hasTicket: !!ticketUrlOf(row),
     xmlUrl: row.xml_url,
     cdrUrl: row.cdr_url,
     relatedInvoiceId: row.related_invoice_id,

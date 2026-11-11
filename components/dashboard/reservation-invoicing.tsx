@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { AlertCircle, Ban, Check, Clock, FileText, FlaskConical, Loader2, Mail, MessageCircle, Receipt, RotateCw, X } from 'lucide-react'
+import { AlertCircle, Ban, Check, Clock, FileText, FlaskConical, Loader2, Mail, MessageCircle, Printer, Receipt, RotateCw, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -46,6 +46,8 @@ const STRINGS = {
       voided: 'Anulado',
     } as Record<string, string>,
     pdf: 'PDF',
+    printTicket: 'Imprimir ticket',
+    printError: 'No se pudo cargar el ticket para imprimir. Intenta de nuevo o abre el PDF.',
     email: 'Correo',
     emailSent: 'Comprobante enviado a {to}',
     whatsappMessage: 'Hola {name}, gracias por tu visita a {business}. Aquí tienes tu {doc} por {total}: {url}',
@@ -108,6 +110,8 @@ const STRINGS = {
       voided: 'Voided',
     } as Record<string, string>,
     pdf: 'PDF',
+    printTicket: 'Print receipt',
+    printError: "Couldn't load the receipt to print. Try again or open the PDF.",
     email: 'Email',
     emailSent: 'Receipt sent to {to}',
     whatsappMessage: 'Hi {name}, thanks for visiting {business}. Here is your {doc} for {total}: {url}',
@@ -151,6 +155,7 @@ type Invoice = {
   currency: 'PEN' | 'USD'
   customerName: string
   pdfUrl: string | null
+  hasTicket?: boolean
   relatedInvoiceId: string | null
   lastError: string | null
   sunatDescription: string | null
@@ -318,6 +323,41 @@ export function ReservationInvoicing({
     }
   }
 
+  // Sends the 72 mm ticket PDF to the browser's print dialog (the person
+  // picks the receipt printer once; Chrome remembers it). With Chrome's
+  // --kiosk-printing flag on the front-desk PC it prints with no dialog.
+  // Falls back to opening the PDF in a tab if the browser won't print it.
+  const [printing, setPrinting] = useState<string | null>(null)
+  async function printTicket(invoiceId: string) {
+    setPrinting(invoiceId)
+    try {
+      const res = await fetch(`/api/invoicing/ticket?business_id=${businessId}&invoice_id=${invoiceId}`)
+      if (!res.ok) throw new Error('ticket_unavailable')
+      const url = URL.createObjectURL(await res.blob())
+      const frame = document.createElement('iframe')
+      frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0'
+      frame.src = url
+      frame.onload = () => {
+        try {
+          frame.contentWindow?.focus()
+          frame.contentWindow?.print()
+        } catch {
+          window.open(url, '_blank')
+        }
+        // Long enough for the print dialog to have read the document.
+        setTimeout(() => {
+          frame.remove()
+          URL.revokeObjectURL(url)
+        }, 60_000)
+      }
+      document.body.appendChild(frame)
+    } catch {
+      toast.error(s.printError)
+    } finally {
+      setPrinting(null)
+    }
+  }
+
   function whatsappHref(inv: Invoice): string | null {
     if (!clientPhone || !inv.pdfUrl) return null
     const message = s.whatsappMessage
@@ -434,6 +474,18 @@ export function ReservationInvoicing({
                   <FileText className="h-3.5 w-3.5" />
                   {s.pdf}
                 </a>
+              </Button>
+            )}
+            {inv.status === 'accepted' && inv.hasTicket && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1"
+                disabled={printing === inv.id}
+                onClick={() => printTicket(inv.id)}
+              >
+                {printing === inv.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />}
+                {s.printTicket}
               </Button>
             )}
             {inv.status === 'accepted' && whatsappHref(inv) && (

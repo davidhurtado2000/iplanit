@@ -37,6 +37,7 @@ import { PremiumFeature, PremiumBadge, PremiumButton } from '@/components/premiu
 import { FormSection } from '@/components/dashboard/form-section'
 import { TimeSelect } from '@/components/dashboard/time-select'
 import { InvoicingSettings } from '@/components/dashboard/invoicing-settings'
+import { SoundSettingsCard } from '@/components/dashboard/sound-settings-card'
 import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
@@ -2421,6 +2422,7 @@ function SettingsPageInner() {
             scripts/041-email-notifications.sql) and actually sent via Resend
             (lib/email) once RESEND_API_KEY is configured. */}
         <TabsContent value="notifications" className="space-y-6">
+          <SoundSettingsCard />
           <Card>
             <CardHeader>
               <CardTitle>{t.settings.notifTitle}</CardTitle>

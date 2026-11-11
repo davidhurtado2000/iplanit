@@ -7,7 +7,8 @@ import { CalendarPlus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useBusinessContext } from './business-context'
 import { useLanguage } from './language-context'
-import { playNotificationChime, playLostDealChime } from '@/lib/notification-sound'
+import { playNotificationChime, playLostDealChime, playCancelChime, playPublicBookingChime } from '@/lib/notification-sound'
+import { isRecentOwnWrite, markOwnReservationWrite } from '@/lib/own-actions'
 import { toDateStr } from '@/lib/timezone'
 import type { TimeBlock } from '@/lib/time-blocks'
 
@@ -435,7 +436,20 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
   // when a flush turns out to only contain one event.
   const insertBufferRef = useRef<Reservation[]>([])
   const insertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  type StatusUpdateEvent = { reservation: Reservation; previousStatus: Reservation['status'] | undefined }
+  type StatusUpdateEvent = {
+    reservation: Reservation
+    previousStatus: Reservation['status'] | undefined
+    // Made from this tab moments ago (lib/own-actions.ts): no sound.
+    own: boolean
+  }
+  // Signed-in user, to tell your own new bookings (sold_by = you) apart.
+  const userIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      userIdRef.current = data.user?.id ?? null
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const updateBufferRef = useRef<StatusUpdateEvent[]>([])
   const updateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const BATCH_DEBOUNCE_MS = 600
@@ -462,7 +476,11 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
       insertTimerRef.current = null
       if (batch.length === 0) return
 
-      playNotificationChime()
+      // Sound only for bookings someone ELSE made: a client on the public
+      // page (sold_by null) gets its own brighter chime; a teammate's gets
+      // the routine one; your own gets none (you just made it).
+      if (batch.some((r) => !r.sold_by)) playPublicBookingChime()
+      else if (batch.some((r) => r.sold_by !== userIdRef.current)) playNotificationChime()
 
       const toastStyle = {
         background: 'var(--primary)',
@@ -520,9 +538,16 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
       // through" rather than a normal status change - but only when the
       // WHOLE batch is that (a mixed batch, unlikely in practice, falls
       // back to the routine chime rather than picking one arbitrarily).
-      const isAllKommoLost = batch.every((i) => i.reservation.status === 'cancelled' && i.reservation.cancelled_by === 'kommo')
-      if (isAllKommoLost) playLostDealChime()
-      else playNotificationChime()
+      // Your own changes from this tab play nothing (lib/own-actions.ts);
+      // the toast still shows, since it carries Undo.
+      const others = batch.filter((i) => !i.own)
+      if (others.length > 0) {
+        const isAllKommoLost = others.every((i) => i.reservation.status === 'cancelled' && i.reservation.cancelled_by === 'kommo')
+        const isAllNegative = others.every((i) => i.reservation.status === 'cancelled' || i.reservation.status === 'no_show')
+        if (isAllKommoLost) playLostDealChime()
+        else if (isAllNegative) playCancelChime()
+        else playNotificationChime()
+      }
 
       // 'cancelled_kommo' is a synthetic key, not a real reservation.status
       // value - splits a Kommo-triggered cancellation (lead marked Lost)
@@ -570,6 +595,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
             ? {
                 label: t.reservation.undoBtn,
                 onClick: async () => {
+                  markOwnReservationWrite()
                   const results = await Promise.all(
                     revertable.map(({ reservation, previousStatus }) =>
                       supabase.from('reservations').update({ status: previousStatus }).eq('id', reservation.id)
@@ -645,7 +671,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
           // Same status = some other column changed: no chime, no toast.
           if (previousStatus === updated.status) return
 
-          updateBufferRef.current.push({ reservation: updated, previousStatus })
+          updateBufferRef.current.push({ reservation: updated, previousStatus, own: isRecentOwnWrite() })
           if (updateTimerRef.current) clearTimeout(updateTimerRef.current)
           updateTimerRef.current = setTimeout(flushUpdateBuffer, BATCH_DEBOUNCE_MS)
         }
