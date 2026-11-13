@@ -19,6 +19,7 @@ import { HeroKpiCard } from '@/components/dashboard/hero-kpi-card'
 import { CountUp } from '@/components/dashboard/count-up'
 import { AnalyticsAiSummary } from '@/components/dashboard/analytics-ai-summary'
 import { AnalyticsAiChat } from '@/components/dashboard/analytics-ai-chat'
+import { WorkerPayReport } from '@/components/dashboard/worker-pay-report'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -240,7 +241,13 @@ function AnalyticsPageInner() {
   // its default landing tab can't be 'overview' the way every other tier's
   // is - Tabs would render with no trigger visually marked active.
   const initialTab =
-    searchParams.get('tab') === 'ai-chat' ? 'ai-chat' : meetsPlan(plan, 'pro') ? 'overview' : 'services'
+    searchParams.get('tab') === 'ai-chat'
+      ? 'ai-chat'
+      : searchParams.get('tab') === 'pay' && meetsPlan(plan, 'pro')
+        ? 'pay'
+        : meetsPlan(plan, 'pro')
+          ? 'overview'
+          : 'services'
   const {
     reservations: businessReservations,
     clients: businessClients,
@@ -780,6 +787,11 @@ function AnalyticsPageInner() {
               (filterableResources.length > 0 || filterableWorkers.length > 0 || sellerBreakdown.length > 0) && (
                 <TabsTrigger value="team">{tr.tabTeam}</TabsTrigger>
               )}
+            {/* Commissions and tips (scripts/114) - Pro+, per sede (workers
+                aren't org-wide, see filterableWorkers). */}
+            {meetsPlan(plan, 'pro') && filterableWorkers.length > 0 && (
+              <TabsTrigger value="pay">{t.pay.tab}</TabsTrigger>
+            )}
             {hasMultipleSedes && <TabsTrigger value="compare">{tr.tabCompareSedes}</TabsTrigger>}
             <TabsTrigger value="ai-chat" className="gap-1.5">
               <Sparkles className="h-3.5 w-3.5" />
@@ -1324,6 +1336,21 @@ function AnalyticsPageInner() {
                   </Card>
                 </div>
               )}
+            </TabsContent>
+          )}
+
+          {meetsPlan(plan, 'pro') && filterableWorkers.length > 0 && (
+            <TabsContent value="pay" className="space-y-4">
+              <WorkerPayReport
+                reservations={businessReservations}
+                workers={filterableWorkers}
+                from={from}
+                to={to}
+                currencySymbol={currencySymbol}
+                tipWorkerPct={Number(currentBusiness?.tip_worker_pct ?? 100)}
+                excludesTax={Boolean(currentBusiness?.pay_excludes_tax)}
+                fileSlug={currentBusiness?.slug || 'negocio'}
+              />
             </TabsContent>
           )}
 

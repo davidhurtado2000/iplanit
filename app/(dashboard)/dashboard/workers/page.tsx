@@ -39,6 +39,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useBusinesses } from '@/hooks/use-businesses'
+import { useAuth } from '@/hooks/use-auth'
+import { meetsPlan } from '@/lib/plan-limits'
+import { WorkerPaySettingsDialog } from '@/components/dashboard/worker-pay-settings-dialog'
 import { useLanguage } from '@/context/language-context'
 import { getWorkerLabel } from '@/lib/worker-label'
 import { useDashboardData } from '@/context/dashboard-data-context'
@@ -60,6 +63,7 @@ import {
   Palette,
   Clock,
   Building,
+  Banknote,
   CalendarDays,
   Copy,
   Check,
@@ -108,10 +112,19 @@ interface Worker {
   photo_url: string | null
   user_id?: string | null
   invite_email?: string | null
+  pay_type?: 'commission' | 'salary' | null
+  commission_pct?: number | null
 }
 
+type PayTypeChoice = 'none' | 'commission' | 'salary'
+
 export default function WorkersPage() {
-  const { currentBusiness, businesses } = useBusinesses()
+  const { currentBusiness, businesses, aiAddonStatus } = useBusinesses()
+  const { profile } = useAuth()
+  // Resolved through the business owner, same as Analytics - a staff
+  // member's own profile.plan is usually 'free'.
+  const payEnabled = meetsPlan(aiAddonStatus?.plan ?? profile?.plan, 'pro')
+  const [paySettingsOpen, setPaySettingsOpen] = useState(false)
   const { t, language, locale } = useLanguage()
   const workerLabel = getWorkerLabel(currentBusiness, t)
   const {
@@ -196,6 +209,10 @@ export default function WorkersPage() {
     isActive: true,
     allowsConcurrentServices: false,
     photoUrl: null as string | null,
+    // Pay (scripts/114, lib/worker-pay.ts). Commission kept as text so the
+    // field can be empty while typing.
+    payType: 'none' as PayTypeChoice,
+    commissionPct: '',
   })
   // Shown to clients on the public link's "¿Con quién?" step
   // (scripts/102) so they can recognize their barber.
@@ -438,6 +455,8 @@ export default function WorkersPage() {
         isActive: worker.is_active,
         allowsConcurrentServices: worker.allows_concurrent_services,
         photoUrl: worker.photo_url,
+        payType: worker.pay_type ?? 'none',
+        commissionPct: worker.commission_pct === null || worker.commission_pct === undefined ? '' : String(worker.commission_pct),
       })
       stagedPhoto.begin(worker.photo_url)
       setSelectedServiceIds(workerServices.filter((ws) => ws.worker_id === worker.id).map((ws) => ws.service_id))
@@ -458,7 +477,15 @@ export default function WorkersPage() {
       }
     } else {
       setEditingWorker(null)
-      setWorkerForm({ name: '', color: WORKER_COLORS[0], isActive: true, allowsConcurrentServices: false, photoUrl: null })
+      setWorkerForm({
+        name: '',
+        color: WORKER_COLORS[0],
+        isActive: true,
+        allowsConcurrentServices: false,
+        photoUrl: null,
+        payType: 'none',
+        commissionPct: '',
+      })
       stagedPhoto.begin(null)
       setSelectedServiceIds([])
       setUseCustomHours(false)
@@ -469,13 +496,30 @@ export default function WorkersPage() {
     setIsWorkerModalOpen(true)
   }
 
+  const commissionNum = Number(workerForm.commissionPct.replace(',', '.'))
+  const commissionInvalid =
+    payEnabled &&
+    workerForm.payType === 'commission' &&
+    (workerForm.commissionPct.trim() === '' || !Number.isFinite(commissionNum) || commissionNum < 0 || commissionNum > 100)
+
   const handleSaveWorker = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!currentBusiness) return
 
     setSaveError('')
+    if (commissionInvalid) {
+      setSaveError(t.pay.invalidPct)
+      return
+    }
     setSaving(true)
     try {
+      const payType = workerForm.payType === 'none' ? null : workerForm.payType
+      const commissionPct = payType === 'commission' ? Number(workerForm.commissionPct.replace(',', '.')) : null
+      const previousPct =
+        editingWorker?.commission_pct === undefined || editingWorker?.commission_pct === null
+          ? null
+          : Number(editingWorker.commission_pct)
+      const payChanged = payType !== (editingWorker?.pay_type ?? null) || commissionPct !== previousPct
       const workerData = {
         name: workerForm.name,
         color: workerForm.color,
@@ -484,6 +528,9 @@ export default function WorkersPage() {
         // Only sent when it changed, so saving a worker keeps working even
         // if this deploys before scripts/102 adds the column.
         ...(workerForm.photoUrl !== (editingWorker?.photo_url ?? null) ? { photo_url: workerForm.photoUrl } : {}),
+        // Same for pay: only sent when changed, so saving keeps working
+        // before scripts/114 adds the columns.
+        ...(payEnabled && payChanged ? { pay_type: payType, commission_pct: commissionPct } : {}),
       }
 
       let workerId: string
@@ -621,10 +668,18 @@ export default function WorkersPage() {
           </div>
         }
         actions={
-          <Button onClick={() => handleOpenWorkerModal()} className="w-full gap-2 sm:w-auto">
-            <Plus className="h-4 w-4" />
-            {t.workers.newWorker}
-          </Button>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            {payEnabled && (
+              <Button variant="outline" onClick={() => setPaySettingsOpen(true)} className="w-full gap-2 sm:w-auto">
+                <Banknote className="h-4 w-4" />
+                {t.pay.settingsBtn}
+              </Button>
+            )}
+            <Button onClick={() => handleOpenWorkerModal()} className="w-full gap-2 sm:w-auto">
+              <Plus className="h-4 w-4" />
+              {t.workers.newWorker}
+            </Button>
+          </div>
         }
       />
 
@@ -682,6 +737,14 @@ export default function WorkersPage() {
                             <p className="flex items-center gap-1 text-xs text-muted-foreground">
                               <Clock className="h-3 w-3" />
                               {t.workers.customScheduleBadge}
+                            </p>
+                          )}
+                          {payEnabled && worker.pay_type && (
+                            <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <Banknote className="h-3 w-3" />
+                              {worker.pay_type === 'salary'
+                                ? t.pay.typeSalary
+                                : `${t.pay.typeCommission} ${Number(worker.commission_pct ?? 0)}%`}
                             </p>
                           )}
                           {(worker.user_id || worker.invite_email) && (
@@ -953,6 +1016,57 @@ export default function WorkersPage() {
                 checked={workerForm.allowsConcurrentServices}
                 onCheckedChange={(checked) => setWorkerForm({ ...workerForm, allowsConcurrentServices: checked })}
               />
+            </div>
+
+            <div className="space-y-3 rounded-lg border p-4">
+              <div>
+                <Label className="flex items-center gap-2">
+                  <Banknote className="h-4 w-4 text-muted-foreground" />
+                  {t.pay.sectionTitle}
+                </Label>
+                <p className="text-xs text-muted-foreground">{payEnabled ? t.pay.sectionDesc : t.pay.proOnly}</p>
+              </div>
+              {payEnabled && (
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                  <div className="space-y-1.5 sm:w-56">
+                    <Label htmlFor="worker-pay-type" className="text-xs">{t.pay.typeLabel}</Label>
+                    <select
+                      id="worker-pay-type"
+                      value={workerForm.payType}
+                      onChange={(e) => setWorkerForm({ ...workerForm, payType: e.target.value as PayTypeChoice })}
+                      className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                    >
+                      <option value="none" className="bg-popover text-popover-foreground">{t.pay.typeNone}</option>
+                      <option value="commission" className="bg-popover text-popover-foreground">{t.pay.typeCommission}</option>
+                      <option value="salary" className="bg-popover text-popover-foreground">{t.pay.typeSalary}</option>
+                    </select>
+                  </div>
+                  {workerForm.payType === 'commission' ? (
+                    <div className="flex-1 space-y-1.5">
+                      <Label htmlFor="worker-commission" className="text-xs">{t.pay.commissionLabel}</Label>
+                      <div className="relative w-28">
+                        <Input
+                          id="worker-commission"
+                          inputMode="decimal"
+                          placeholder="40"
+                          value={workerForm.commissionPct}
+                          onChange={(e) => setWorkerForm({ ...workerForm, commissionPct: e.target.value.replace(/[^\d.,]/g, '') })}
+                          aria-invalid={commissionInvalid || undefined}
+                          className={cn('h-9 pr-8', commissionInvalid && 'border-destructive focus-visible:ring-destructive')}
+                        />
+                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">%</span>
+                      </div>
+                      <p className={cn('text-xs', commissionInvalid ? 'text-destructive' : 'text-muted-foreground')}>
+                        {commissionInvalid ? t.pay.invalidPct : t.pay.commissionHint}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="flex-1 text-xs text-muted-foreground sm:pt-7">
+                      {workerForm.payType === 'salary' ? t.pay.salaryHint : t.pay.noneHint}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="space-y-3 rounded-lg border p-4">
@@ -1238,6 +1352,8 @@ export default function WorkersPage() {
           <p className="text-xs text-muted-foreground">{t.workers.calendarLinkInstructions}</p>
         </DialogContent>
       </Dialog>
+
+      {payEnabled && <WorkerPaySettingsDialog open={paySettingsOpen} onOpenChange={setPaySettingsOpen} />}
     </div>
   )
 }

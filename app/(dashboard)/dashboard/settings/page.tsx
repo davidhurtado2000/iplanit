@@ -193,9 +193,13 @@ function SettingsPageInner() {
   const searchParams = useSearchParams()
   const tabParam = searchParams.get('tab')
   const initialTab =
-    tabParam === 'plan' || tabParam === 'team' || tabParam === 'integrations' || tabParam === 'invoicing'
+    tabParam === 'plan' || tabParam === 'team' || tabParam === 'integrations' || tabParam === 'invoicing' || tabParam === 'notifications'
       ? tabParam
-      : 'profile'
+      : // Help-center links (lib/help/articles.ts) - the Negocio tab only
+        // exists for the owner, everyone else lands on Perfil.
+        tabParam === 'business' && (!currentBusiness || currentBusiness.role === 'owner')
+        ? 'business'
+        : 'profile'
   const [isPortalLoading, setIsPortalLoading] = useState(false)
   const [isChangingPlan, setIsChangingPlan] = useState(false)
   // Non-null opens the confirmation dialog below - set by the 3 upgrade

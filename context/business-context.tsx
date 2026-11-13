@@ -74,6 +74,11 @@ interface Business {
   booking_accent_color: string | null
   /** Public booking page background - scripts/109. Null = default look. */
   booking_bg_color: string | null
+  /** Worker pay rules - scripts/114-worker-pay.sql, lib/worker-pay.ts.
+   * Undefined until that script runs. */
+  tip_worker_pct?: number
+  pay_excludes_tax?: boolean
+  workers_see_sales?: boolean
   /** Client birthday emails - see scripts/071-client-birthdays.sql. The
    * discount is informational only (mentioned in the email, applied
    * manually by the business) - nothing here touches pricing/checkout. */

@@ -9,6 +9,7 @@ import {
   BarChart3,
   History,
   Settings,
+  HelpCircle,
 } from 'lucide-react'
 
 // Single source for the dashboard menu, so the desktop sidebar and the
@@ -25,6 +26,8 @@ export const NAV_ITEMS = [
   { key: 'analytics' as const, href: '/dashboard/analytics', icon: BarChart3 },
   { key: 'activity' as const, href: '/dashboard/activity', icon: History },
   { key: 'settings' as const, href: '/dashboard/settings', icon: Settings },
+  // Help center (lib/help/articles.ts) - everyone sees it.
+  { key: 'help' as const, href: '/dashboard/ayuda', icon: HelpCircle },
 ]
 
 export type NavItem = (typeof NAV_ITEMS)[number]

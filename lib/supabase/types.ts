@@ -372,6 +372,9 @@ export interface Database {
           reminder_email_message: string | null
           reminder_whatsapp_message: string | null
           google_review_url: string | null
+          tip_worker_pct: number
+          pay_excludes_tax: boolean
+          workers_see_sales: boolean
           client_chooses_worker: boolean
           booking_font: string | null
           booking_accent_color: string | null
@@ -412,6 +415,9 @@ export interface Database {
           reminder_email_message?: string | null
           reminder_whatsapp_message?: string | null
           google_review_url?: string | null
+          tip_worker_pct?: number
+          pay_excludes_tax?: boolean
+          workers_see_sales?: boolean
           client_chooses_worker?: boolean
           booking_font?: string | null
           booking_accent_color?: string | null
@@ -452,6 +458,9 @@ export interface Database {
           reminder_email_message?: string | null
           reminder_whatsapp_message?: string | null
           google_review_url?: string | null
+          tip_worker_pct?: number
+          pay_excludes_tax?: boolean
+          workers_see_sales?: boolean
           client_chooses_worker?: boolean
           booking_font?: string | null
           booking_accent_color?: string | null
@@ -703,6 +712,10 @@ export interface Database {
           day_of_reminder_sent_at: string | null
           review_requested_at: string | null
           payment_method: string | null
+          tip_amount: number | null
+          worker_pay_pct: number | null
+          tip_worker_pct: number | null
+          pay_excludes_tax: boolean | null
           paid_at: string | null
           invoice_type_requested: 'boleta' | 'factura' | null
           notes: string | null
@@ -734,6 +747,10 @@ export interface Database {
           day_of_reminder_sent_at?: string | null
           review_requested_at?: string | null
           payment_method?: string | null
+          tip_amount?: number | null
+          worker_pay_pct?: number | null
+          tip_worker_pct?: number | null
+          pay_excludes_tax?: boolean | null
           paid_at?: string | null
           invoice_type_requested?: 'boleta' | 'factura' | null
           notes?: string | null
@@ -765,6 +782,10 @@ export interface Database {
           day_of_reminder_sent_at?: string | null
           review_requested_at?: string | null
           payment_method?: string | null
+          tip_amount?: number | null
+          worker_pay_pct?: number | null
+          tip_worker_pct?: number | null
+          pay_excludes_tax?: boolean | null
           paid_at?: string | null
           invoice_type_requested?: 'boleta' | 'factura' | null
           notes?: string | null
@@ -1225,6 +1246,8 @@ export interface Database {
           is_active: boolean
           worker_group_id: string
           allows_concurrent_services: boolean
+          pay_type: "commission" | "salary" | null
+          commission_pct: number | null
           calendar_feed_token: string
           photo_url: string | null
           user_id: string | null
@@ -1241,6 +1264,8 @@ export interface Database {
           is_active?: boolean
           worker_group_id?: string
           allows_concurrent_services?: boolean
+          pay_type?: "commission" | "salary" | null
+          commission_pct?: number | null
           calendar_feed_token?: string
           photo_url?: string | null
           user_id?: string | null
@@ -1257,6 +1282,8 @@ export interface Database {
           is_active?: boolean
           worker_group_id?: string
           allows_concurrent_services?: boolean
+          pay_type?: "commission" | "salary" | null
+          commission_pct?: number | null
           calendar_feed_token?: string
           photo_url?: string | null
           user_id?: string | null

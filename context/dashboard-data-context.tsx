@@ -57,6 +57,12 @@ export interface Reservation {
    * lib/payment-methods.ts). Undefined until that script runs. */
   payment_method?: string | null
   paid_at?: string | null
+  /** Tip and the worker pay rule snapshotted at completion (scripts/114,
+   * lib/worker-pay.ts). Undefined until that script runs. */
+  tip_amount?: number | null
+  worker_pay_pct?: number | null
+  tip_worker_pct?: number | null
+  pay_excludes_tax?: boolean | null
   /** 'kommo' = the Kommo integration's webhook cancelled this after its
    * matching lead was marked Lost (see app/api/integrations/kommo/webhook) -
    * distinct from 'business' (staff cancelled it themselves in iPlanit) so
@@ -193,6 +199,9 @@ export interface Worker {
   /** Worker account link (scripts/104) - undefined until that script runs. */
   user_id?: string | null
   invite_email?: string | null
+  /** Pay (scripts/114, lib/worker-pay.ts) - null = not set up. */
+  pay_type?: 'commission' | 'salary' | null
+  commission_pct?: number | null
 }
 
 /** A worker's own work schedule - no rows means "follows business_hours",

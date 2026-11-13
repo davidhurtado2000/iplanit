@@ -13,6 +13,7 @@ import { useLanguage } from '@/context/language-context'
 import { createClient } from '@/lib/supabase/client'
 import { parseInTimezone, toDateStr } from '@/lib/timezone'
 import { capitalizeFirst, cn } from '@/lib/utils'
+import { countsAsServed, earningFor, formatMoney, summarizeEarnings, type PaySettings } from '@/lib/worker-pay'
 
 // Read-only portal for worker accounts (scripts/104-worker-accounts.sql).
 // Lives outside the (dashboard) route group on purpose: a worker account
@@ -31,6 +32,12 @@ interface WorkerLink {
   business_logo_url: string | null
   timezone: string
   currency: 'PEN' | 'USD'
+  /** Pay settings (scripts/114) - undefined until that script runs. */
+  pay_type?: 'commission' | 'salary' | null
+  commission_pct?: number | null
+  tip_worker_pct?: number | null
+  pay_excludes_tax?: boolean | null
+  workers_see_sales?: boolean | null
 }
 
 interface AgendaRow {
@@ -45,6 +52,10 @@ interface AgendaRow {
   notes: string | null
   price: number | null
   price_usd: number | null
+  tip_amount?: number | null
+  worker_pay_pct?: number | null
+  tip_worker_pct?: number | null
+  pay_excludes_tax?: boolean | null
 }
 
 type View = 'day' | 'week' | 'month'
@@ -191,6 +202,18 @@ export default function WorkerAgendaPage() {
     earned: served.reduce((sum, r) => sum + money(r), 0),
     noShows: rows.filter((r) => r.status === 'no_show').length,
   }
+  // Commissions and tips (scripts/114, lib/worker-pay.ts) - once the
+  // business sets up this worker's pay, "Generado" (full price) becomes
+  // "Tu ganancia" (their share). Same maths as the owner's Analytics -> Pagos.
+  const paySettings: PaySettings = {
+    payType: link.pay_type ?? null,
+    commissionPct: link.commission_pct ?? null,
+    tipWorkerPct: Number(link.tip_worker_pct ?? 100),
+    excludesTax: Boolean(link.pay_excludes_tax),
+  }
+  const payConfigured = Boolean(link.pay_type) || served.some((r) => r.worker_pay_pct !== null && r.worker_pay_pct !== undefined)
+  const payRow = (r: AgendaRow) => ({ ...r, price: link.currency === 'USD' ? null : r.price, price_usd: link.currency === 'USD' ? r.price_usd ?? r.price : null })
+  const earnings = summarizeEarnings(rows.map(payRow), paySettings, now)
 
   const fmtTime = (iso: string) =>
     new Date(iso).toLocaleTimeString(locale, { timeZone: tz, hour: '2-digit', minute: '2-digit' })
@@ -316,7 +339,9 @@ export default function WorkerAgendaPage() {
           {[
             { label: tr.statAppointments, value: String(stats.appointments) },
             { label: tr.statServed, value: String(stats.served) },
-            { label: tr.statEarned, value: `${currencySymbol} ${stats.earned.toFixed(0)}` },
+            payConfigured
+              ? { label: t.pay.portalEarnedTitle, value: formatMoney(earnings.total, currencySymbol) }
+              : { label: tr.statEarned, value: `${currencySymbol} ${stats.earned.toFixed(0)}` },
             { label: tr.statNoShows, value: String(stats.noShows) },
           ].map((s) => (
             <div key={s.label} className="rounded-lg border bg-card p-3">
@@ -325,6 +350,25 @@ export default function WorkerAgendaPage() {
             </div>
           ))}
         </div>
+
+        {payConfigured && earnings.served > 0 && (
+          <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 rounded-lg border bg-card px-3 py-2 text-sm">
+            <span>
+              <span className="text-muted-foreground">{t.pay.portalServices}: </span>
+              <span className="font-medium tabular-nums">{formatMoney(earnings.serviceShare, currencySymbol)}</span>
+            </span>
+            <span>
+              <span className="text-muted-foreground">{t.pay.portalTips}: </span>
+              <span className="font-medium tabular-nums">{formatMoney(earnings.tipShare, currencySymbol)}</span>
+            </span>
+            {link.workers_see_sales && (
+              <span>
+                <span className="text-muted-foreground">{t.pay.portalSales}: </span>
+                <span className="font-medium tabular-nums">{formatMoney(earnings.sales + earnings.tips, currencySymbol)}</span>
+              </span>
+            )}
+          </div>
+        )}
 
         {loadingRows ? (
           <div className="flex justify-center py-10">
@@ -379,6 +423,14 @@ export default function WorkerAgendaPage() {
                             {row.service_name || (row.type === 'visit' ? tr.visit : '—')}
                           </span>
                         </p>
+                        {payConfigured && countsAsServed(row, now) && (
+                          <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                            {t.pay.rowShare.replace(
+                              '{amount}',
+                              formatMoney(earningFor(payRow(row), paySettings).total, currencySymbol)
+                            )}
+                          </p>
+                        )}
                         {row.notes && (
                           <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
                             <StickyNote className="mt-0.5 h-3 w-3 shrink-0" />
@@ -394,7 +446,12 @@ export default function WorkerAgendaPage() {
           </div>
         )}
 
-        <p className="text-center text-xs text-muted-foreground">{tr.readOnlyNote}</p>
+        <p className="text-center text-xs text-muted-foreground">
+          {tr.readOnlyNote}{' '}
+          <Link href="/mi-agenda/ayuda" className="text-primary hover:underline">
+            {locale.startsWith('en') ? 'How does it work?' : '¿Cómo funciona?'}
+          </Link>
+        </p>
 
         {ownsBusiness && (
           <div className="pb-6 text-center">

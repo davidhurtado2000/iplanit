@@ -1468,12 +1468,23 @@ export function ReservationModal({
   // desk; also reachable later from the menu to fill in or fix it.
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false)
   const [paymentChoice, setPaymentChoice] = useState<string | null>(null)
+  // Tip (scripts/114, lib/worker-pay.ts) - split with the worker in
+  // Analytics -> Pagos and /mi-agenda. Kept as text so "" means "no tip".
+  const [tipInput, setTipInput] = useState('')
   const openPaymentDialog = () => {
     setPaymentChoice(reservation?.payment_method ?? null)
+    setTipInput(reservation?.tip_amount ? String(reservation.tip_amount) : '')
     setPaymentDialogOpen(true)
   }
+  const parsedTip = tipInput.trim() === '' ? null : Number(tipInput.replace(',', '.'))
+  const tipInvalid = parsedTip !== null && (!Number.isFinite(parsedTip) || parsedTip < 0 || parsedTip > 99999)
   const handleSavePayment = async (method: string | null) => {
     if (!reservation?.id) return
+    if (tipInvalid) {
+      toast.error(t.pay.invalidTip)
+      return
+    }
+    const tip = parsedTip === null ? null : Math.round(parsedTip * 100) / 100
     try {
       setIsLoading(true)
       markOwnReservationWrite()
@@ -1485,6 +1496,9 @@ export function ReservationModal({
           // picked - completing "sin registrar pago" keeps working even
           // before scripts/106 adds them.
           ...(method ? { payment_method: method, paid_at: reservation.paid_at ?? new Date().toISOString() } : {}),
+          // Same idea for the tip: only sent when it changed, so this keeps
+          // working before scripts/114 adds the column.
+          ...(tip !== (reservation.tip_amount ?? null) ? { tip_amount: tip } : {}),
         })
         .eq('id', reservation.id)
       if (error) throw error
@@ -1499,6 +1513,7 @@ export function ReservationModal({
           status: 'completed',
           payment_method: method,
           paid_at: reservation.paid_at ?? new Date().toISOString(),
+          tip_amount: tip,
         })
         return
       }
@@ -1840,6 +1855,13 @@ export function ReservationModal({
                   <Wallet className="h-4 w-4 text-muted-foreground" />
                   <span className="font-medium">{t.reservation.paymentLabel}</span>
                   <span>{paymentMethodLabel(reservation.payment_method, t.reservation.paymentGeneric)}</span>
+                </div>
+              )}
+              {!!reservation.tip_amount && (
+                <div className="flex items-center gap-3 text-sm">
+                  <Wallet className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-medium">{t.pay.tipView}</span>
+                  <span>{isUSD ? '$' : 'S/'} {reservation.tip_amount}</span>
                 </div>
               )}
               {/* SUNAT comprobantes (Peru only). Renders nothing unless the
@@ -3131,6 +3153,24 @@ export function ReservationModal({
               {paymentMethodLabel(method, t.reservation.paymentGeneric)}
             </button>
           ))}
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="payment-tip">{t.pay.tipLabel}</Label>
+          <div className="relative w-40">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+              {isUSD ? '$' : 'S/'}
+            </span>
+            <Input
+              id="payment-tip"
+              inputMode="decimal"
+              placeholder="0"
+              value={tipInput}
+              onChange={(e) => setTipInput(e.target.value.replace(/[^\d.,]/g, ''))}
+              aria-invalid={tipInvalid || undefined}
+              className={cn('pl-9', tipInvalid && 'border-destructive focus-visible:ring-destructive')}
+            />
+          </div>
+          {tipInvalid && <p className="text-xs text-destructive">{t.pay.invalidTip}</p>}
         </div>
         {/* The rarer path, as a quiet link instead of a third footer button
             (three buttons overflowed the dialog). */}
