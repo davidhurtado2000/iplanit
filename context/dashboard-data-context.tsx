@@ -280,6 +280,25 @@ const supabase = createClient()
 const RESERVATION_WINDOW_DAYS = 90
 const DAY_MS = 24 * 60 * 60 * 1000
 
+// Supabase returns at most 1,000 rows per request. A busy business easily
+// passes that (thousands of clients; a barbershop with 30 bookings a day has
+// 5,000+ reservations in the ±90-day window), and everything past row 1,000
+// silently went missing - clients not found, today's bookings not on the
+// calendar. This pages through until a short page comes back. The query must
+// have a stable order (ending in a unique column) so pages don't overlap.
+const PAGE_SIZE = 1000
+async function fetchAllPages<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>
+): Promise<{ data: T[]; error: unknown }> {
+  const all: T[] = []
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await page(from, from + PAGE_SIZE - 1)
+    if (error) return { data: all, error }
+    all.push(...(data ?? []))
+    if (!data || data.length < PAGE_SIZE) return { data: all, error: null }
+  }
+}
+
 function getDefaultReservationWindow() {
   const now = Date.now()
   return {
@@ -341,18 +360,26 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
       try {
         const defaultWindow = getDefaultReservationWindow()
         const [reservationsRes, clientsRes, servicesRes, resourcesRes, hoursRes, workersRes, workerHoursRes, workerServicesRes, serviceResourcesRes, durationOptionsRes, reservationAttendeesRes] = await Promise.all([
-          supabase
-            .from('reservations')
-            .select('*')
-            .eq('business_id', currentBusiness.id)
-            .gte('start_time', defaultWindow.from.toISOString())
-            .lte('start_time', defaultWindow.to.toISOString())
-            .order('start_time', { ascending: true }),
-          supabase
-            .from('clients')
-            .select('*')
-            .eq('organization_id', currentBusiness.organization_id)
-            .order('name'),
+          fetchAllPages<Reservation>((from, to) =>
+            supabase
+              .from('reservations')
+              .select('*')
+              .eq('business_id', currentBusiness.id)
+              .gte('start_time', defaultWindow.from.toISOString())
+              .lte('start_time', defaultWindow.to.toISOString())
+              .order('start_time', { ascending: true })
+              .order('id')
+              .range(from, to)
+          ),
+          fetchAllPages((from, to) =>
+            supabase
+              .from('clients')
+              .select('*')
+              .eq('organization_id', currentBusiness.organization_id)
+              .order('name')
+              .order('id')
+              .range(from, to)
+          ),
           supabase
             .from('services')
             .select('*')
@@ -388,15 +415,19 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
             .from('service_duration_options')
             .select('*')
             .eq('business_id', currentBusiness.id),
-          supabase
-            .from('reservation_attendees')
-            .select('*')
-            .eq('business_id', currentBusiness.id),
+          fetchAllPages<ReservationAttendee>((from, to) =>
+            supabase
+              .from('reservation_attendees')
+              .select('*')
+              .eq('business_id', currentBusiness.id)
+              .order('id')
+              .range(from, to)
+          ),
         ])
 
         setReservations(reservationsRes.data || [])
         setLoadedRange(defaultWindow)
-        setClients(clientsRes.data || [])
+        setClients(clientsRes.data as unknown as Client[])
         setServices(servicesRes.data || [])
         setResources(resourcesRes.data || [])
         setServiceResources(serviceResourcesRes.data || [])
@@ -734,14 +765,18 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
     // wider if ensureReservationsInRange already expanded it) rather than
     // the whole table, so this stays cheap after a create/update/delete.
     const range = loadedRange ?? getDefaultReservationWindow()
-    const { data } = await supabase
-      .from('reservations')
-      .select('*')
-      .eq('business_id', currentBusiness.id)
-      .gte('start_time', range.from.toISOString())
-      .lte('start_time', range.to.toISOString())
-      .order('start_time', { ascending: true })
-    setReservations(data || [])
+    const { data } = await fetchAllPages<Reservation>((from, to) =>
+      supabase
+        .from('reservations')
+        .select('*')
+        .eq('business_id', currentBusiness.id)
+        .gte('start_time', range.from.toISOString())
+        .lte('start_time', range.to.toISOString())
+        .order('start_time', { ascending: true })
+        .order('id')
+        .range(from, to)
+    )
+    setReservations(data)
   }, [currentBusiness?.id, loadedRange])
 
   const ensureReservationsInRange = useCallback(async (from: Date, to: Date) => {
@@ -758,15 +793,19 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
 
     setLoadingMoreReservations(true)
     try {
-      const { data } = await supabase
-        .from('reservations')
-        .select('*')
-        .eq('business_id', currentBusiness.id)
-        .gte('start_time', nextFrom.toISOString())
-        .lte('start_time', nextTo.toISOString())
-        .order('start_time', { ascending: true })
+      const { data, error } = await fetchAllPages<Reservation>((from, to) =>
+        supabase
+          .from('reservations')
+          .select('*')
+          .eq('business_id', currentBusiness.id)
+          .gte('start_time', nextFrom.toISOString())
+          .lte('start_time', nextTo.toISOString())
+          .order('start_time', { ascending: true })
+          .order('id')
+          .range(from, to)
+      )
 
-      if (data) {
+      if (!error) {
         setReservations(data)
         setLoadedRange({ from: nextFrom, to: nextTo })
       }
@@ -777,12 +816,16 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
 
   const refetchClients = useCallback(async () => {
     if (!currentBusiness) return
-    const { data } = await supabase
-      .from('clients')
-      .select('*')
-      .eq('organization_id', currentBusiness.organization_id)
-      .order('name')
-    setClients(data || [])
+    const { data } = await fetchAllPages((from, to) =>
+      supabase
+        .from('clients')
+        .select('*')
+        .eq('organization_id', currentBusiness.organization_id)
+        .order('name')
+        .order('id')
+        .range(from, to)
+    )
+    setClients(data as unknown as Client[])
   }, [currentBusiness?.id, currentBusiness?.organization_id])
 
   const refetchServicesAndResources = useCallback(async () => {

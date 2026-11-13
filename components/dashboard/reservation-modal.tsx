@@ -69,6 +69,7 @@ import { useDashboardData, type ClientDocumentType, type Reservation } from '@/c
 import { StatusBadge } from '@/components/dashboard/status-badge'
 import { ReservationInvoicing } from '@/components/dashboard/reservation-invoicing'
 import { markOwnReservationWrite } from '@/lib/own-actions'
+import { matchesClientSearch, MAX_CLIENT_PICKER_RESULTS } from '@/lib/client-search'
 import { capitalizeFirst, cn } from '@/lib/utils'
 import { toTzLocalInput, parseInTimezone, toDateStr } from '@/lib/timezone'
 import { generateAvailableSlots, isDayClosed, intersectSlots, weekParity } from '@/lib/availability'
@@ -610,16 +611,9 @@ export function ReservationModal({
   const activeClients = clients.filter((c) => c.is_active)
   // Same fields/matching as clients/page.tsx's own search, kept consistent
   // rather than introducing a second fuzzy-match algorithm for the same data.
-  const clientSearchResults = (() => {
-    const q = clientSearch.trim().toLowerCase()
-    if (!q) return activeClients
-    return activeClients.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        (c.email && c.email.toLowerCase().includes(q)) ||
-        (c.document_number && c.document_number.toLowerCase().includes(q))
-    )
-  })()
+  const clientSearchMatches = activeClients.filter((c) => matchesClientSearch(c, clientSearch))
+  const clientSearchResults = clientSearchMatches.slice(0, MAX_CLIENT_PICKER_RESULTS)
+  const clientSearchHidden = clientSearchMatches.length - clientSearchResults.length
 
   // Group reservations - only offered for services marked as group-capable
   // (max_attendees set) on a Pro/Premium business. Staff-only, see
@@ -651,11 +645,9 @@ export function ReservationModal({
   const attendeeSearchResults = (() => {
     const q = attendeeSearch.trim().toLowerCase()
     const excluded = new Set([formData.client_id, ...existingAttendeeClientIds, ...additionalAttendeeIds])
-    const candidates = activeClients.filter((c) => !excluded.has(c.id))
-    if (!q) return candidates
-    return candidates.filter(
-      (c) => c.name.toLowerCase().includes(q) || (c.email && c.email.toLowerCase().includes(q))
-    )
+    return activeClients
+      .filter((c) => !excluded.has(c.id) && matchesClientSearch(c, q))
+      .slice(0, MAX_CLIENT_PICKER_RESULTS)
   })()
   // Same default-by-country logic as clients/page.tsx's own form.
   const defaultDocumentType: ClientDocumentType = currentBusiness?.country === 'US' ? 'ein' : 'dni'
@@ -2367,12 +2359,19 @@ export function ReservationModal({
                               />
                               <div className="flex min-w-0 flex-col">
                                 <span className="truncate font-medium">{client.name}</span>
-                                {client.email && (
-                                  <span className="truncate text-xs text-muted-foreground">{client.email}</span>
+                                {(client.email || client.phone) && (
+                                  <span className="truncate text-xs text-muted-foreground">
+                                    {[client.phone, client.email].filter(Boolean).join(' · ')}
+                                  </span>
                                 )}
                               </div>
                             </CommandItem>
                           ))}
+                          {clientSearchHidden > 0 && (
+                            <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                              {t.reservation.clientPickerMore.replace('{count}', clientSearchHidden.toLocaleString())}
+                            </p>
+                          )}
                         </CommandGroup>
                         <CommandGroup>
                           <CommandItem

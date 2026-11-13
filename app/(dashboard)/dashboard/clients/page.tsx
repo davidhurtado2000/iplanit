@@ -56,6 +56,7 @@ import { useBusinesses } from '@/hooks/use-businesses'
 import { useAuth } from '@/hooks/use-auth'
 import { useLanguage } from '@/context/language-context'
 import { useDashboardData, type Reservation } from '@/context/dashboard-data-context'
+import { matchesClientSearch } from '@/lib/client-search'
 import { createClient } from '@/lib/supabase/client'
 import { StatusBadge } from '@/components/dashboard/status-badge'
 import { capitalizeFirst, cn } from '@/lib/utils'
@@ -381,15 +382,10 @@ export default function ClientsPage() {
     setCurrentPage(1)
   }, [searchQuery])
 
-  const filteredClients = useMemo(() => {
-    const q = searchQuery.toLowerCase()
-    return clients.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        (c.email && c.email.toLowerCase().includes(q)) ||
-        (c.document_number && c.document_number.toLowerCase().includes(q))
-    )
-  }, [clients, searchQuery])
+  const filteredClients = useMemo(
+    () => clients.filter((c) => matchesClientSearch(c, searchQuery)),
+    [clients, searchQuery]
+  )
 
   const sortedClients = useMemo(() => {
     const arr = [...filteredClients]
