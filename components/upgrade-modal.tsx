@@ -32,6 +32,7 @@ import {
   MapPin,
   Car,
   Receipt,
+  Banknote,
 } from 'lucide-react'
 import { useLanguage } from '@/context/language-context'
 import { useAuth } from '@/hooks/use-auth'
@@ -156,6 +157,7 @@ export function UpgradeModal({ isOpen, onClose, feature, requiredPlan, isOnboard
     { icon: Layers, title: m.featureProCapTitle, description: m.featureProCapDesc },
     { icon: UserPlus, title: m.featureProSeatsTitle, description: m.featureProSeatsDesc },
     { icon: Repeat, title: m.featureProRecurringTitle, description: m.featureProRecurringDesc },
+    { icon: Banknote, title: m.featureProCommissionsTitle, description: m.featureProCommissionsDesc },
     { icon: FileSpreadsheet, title: m.featureImportCsvTitle, description: m.featureImportCsvDesc },
   ]
 

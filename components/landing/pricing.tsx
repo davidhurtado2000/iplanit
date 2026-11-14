@@ -63,6 +63,7 @@ export function Pricing() {
         { title: u.featureProCapTitle, desc: u.featureProCapDesc },
         { title: u.featureProSeatsTitle, desc: u.featureProSeatsDesc },
         { title: u.featureProRecurringTitle, desc: u.featureProRecurringDesc },
+        { title: u.featureProCommissionsTitle, desc: u.featureProCommissionsDesc },
       ] as PlanFeature[],
     },
     {
