@@ -63,6 +63,9 @@ export interface Reservation {
   worker_pay_pct?: number | null
   tip_worker_pct?: number | null
   pay_excludes_tax?: boolean | null
+  /** Done outside the business's opening hours - changes the commission
+   * (scripts/115, lib/worker-pay.ts). Undefined until that script runs. */
+  off_hours?: boolean
   /** 'kommo' = the Kommo integration's webhook cancelled this after its
    * matching lead was marked Lost (see app/api/integrations/kommo/webhook) -
    * distinct from 'business' (staff cancelled it themselves in iPlanit) so
@@ -100,6 +103,9 @@ export interface Client {
    * this feature doesn't need the client's age. */
   birthday_month: number | null
   birthday_day: number | null
+  /** The shared "Cliente de paso" for walk-ins who give no details
+   * (scripts/115) - kept out of the client list and client reports. */
+  is_walk_in?: boolean
 }
 
 export interface Service {
@@ -131,6 +137,9 @@ export interface Service {
    * group-reservations.sql. Staff-only capability, Pro/Premium-gated in
    * reservation-modal.tsx and the services edit form. */
   max_attendees: number | null
+  /** Fixed worker commission for this service, for everyone (scripts/115,
+   * lib/worker-pay.ts). Null = each worker's own %. */
+  worker_commission_pct?: number | null
   is_active: boolean
   /** When false, hidden from the public booking link (app/reservar) but
    * still usable for reservations created internally - see scripts/095. */

@@ -200,6 +200,12 @@ function RegisterForm() {
   }
 
   const handleSkipBusiness = async () => {
+    // The link stays clickable and explains what is missing - it used to be
+    // silently disabled until the terms box was ticked, which looked broken.
+    if (!formData.name || !formData.email || !formData.password) {
+      setError(tr.fillAllFields)
+      return
+    }
     if (!acceptedTerms) {
       setError(tr.acceptTermsRequired)
       return
@@ -500,11 +506,14 @@ function RegisterForm() {
                 <button
                   type="button"
                   onClick={handleSkipBusiness}
-                  disabled={isLoading || !formData.name || !formData.email || !formData.password || !acceptedTerms}
+                  disabled={isLoading}
                   className="w-full text-center text-sm text-muted-foreground hover:text-foreground hover:underline disabled:opacity-50 disabled:hover:no-underline"
                 >
                   {tr.skipBusiness}
                 </button>
+                {/* Repeated here: the main error box is at the top of this
+                    long step, out of view from these buttons. */}
+                {error && <p className="text-center text-sm text-destructive">{error}</p>}
               </>
             )}
           </form>

@@ -33,6 +33,7 @@ export function WorkerPaySettingsDialog({ open, onOpenChange }: { open: boolean;
   const [tipPct, setTipPct] = useState('100')
   const [excludesTax, setExcludesTax] = useState(false)
   const [seeSales, setSeeSales] = useState(false)
+  const [offHoursPct, setOffHoursPct] = useState('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -40,19 +41,32 @@ export function WorkerPaySettingsDialog({ open, onOpenChange }: { open: boolean;
     setTipPct(String(currentBusiness.tip_worker_pct ?? 100))
     setExcludesTax(Boolean(currentBusiness.pay_excludes_tax))
     setSeeSales(Boolean(currentBusiness.workers_see_sales))
+    setOffHoursPct(
+      currentBusiness.off_hours_commission_pct === null || currentBusiness.off_hours_commission_pct === undefined
+        ? ''
+        : String(currentBusiness.off_hours_commission_pct)
+    )
   }, [open, currentBusiness])
 
   const tipNum = Number(tipPct.replace(',', '.'))
   const tipInvalid = tipPct.trim() === '' || !Number.isFinite(tipNum) || tipNum < 0 || tipNum > 100
+  const offHoursNum = Number(offHoursPct.replace(',', '.'))
+  const offHoursInvalid = offHoursPct.trim() !== '' && (!Number.isFinite(offHoursNum) || offHoursNum < 0 || offHoursNum > 100)
+  const offHoursValue = offHoursPct.trim() === '' ? null : Math.round(offHoursNum * 100) / 100
 
   const handleSave = async () => {
-    if (!currentBusiness || tipInvalid) return
+    if (!currentBusiness || tipInvalid || offHoursInvalid) return
     setSaving(true)
     try {
       await updateBusiness(currentBusiness.id, {
         tip_worker_pct: Math.round(tipNum * 100) / 100,
         pay_excludes_tax: isPeru ? excludesTax : false,
         workers_see_sales: seeSales,
+        // scripts/115 - only sent when changed, so this dialog keeps
+        // saving before that script runs.
+        ...(offHoursValue !== (currentBusiness.off_hours_commission_pct ?? null)
+          ? { off_hours_commission_pct: offHoursValue }
+          : {}),
       })
       toast.success(tr.saved)
       onOpenChange(false)
@@ -92,6 +106,26 @@ export function WorkerPaySettingsDialog({ open, onOpenChange }: { open: boolean;
             </p>
           </div>
 
+          <div className="space-y-1.5">
+            <Label htmlFor="off-hours-pct">{tr.offHoursPctLabel}</Label>
+            <div className="relative w-28">
+              <Input
+                id="off-hours-pct"
+                inputMode="decimal"
+                placeholder="—"
+                value={offHoursPct}
+                disabled={!isOwner}
+                onChange={(e) => setOffHoursPct(e.target.value.replace(/[^\d.,]/g, ''))}
+                aria-invalid={offHoursInvalid || undefined}
+                className={cn('pr-8', offHoursInvalid && 'border-destructive focus-visible:ring-destructive')}
+              />
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">%</span>
+            </div>
+            <p className={cn('text-xs', offHoursInvalid ? 'text-destructive' : 'text-muted-foreground')}>
+              {offHoursInvalid ? tr.invalidPct : tr.offHoursPctHint}
+            </p>
+          </div>
+
           {isPeru && (
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-0.5">
@@ -120,7 +154,7 @@ export function WorkerPaySettingsDialog({ open, onOpenChange }: { open: boolean;
             {t.services.cancelBtn}
           </Button>
           {isOwner && (
-            <Button onClick={handleSave} disabled={saving || tipInvalid}>
+            <Button onClick={handleSave} disabled={saving || tipInvalid || offHoursInvalid}>
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {t.services.saveBtn}
             </Button>

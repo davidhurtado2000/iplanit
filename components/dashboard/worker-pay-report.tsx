@@ -6,9 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useLanguage } from '@/context/language-context'
-import type { Reservation, Worker } from '@/context/dashboard-data-context'
+import type { Reservation, Service, Worker } from '@/context/dashboard-data-context'
 import { downloadCsv, toCsv } from '@/lib/csv'
-import { currentServicePct, formatMoney, summarizeEarnings, type EarningSummary, type PaySettings } from '@/lib/worker-pay'
+import { countsAsServed, currentServicePct, formatMoney, summarizeEarnings, type EarningSummary, type PaySettings } from '@/lib/worker-pay'
 
 // Analytics -> Pagos (scripts/114, lib/worker-pay.ts): what the owner owes
 // each worker for the selected period. Same maths as the worker's own
@@ -17,11 +17,14 @@ import { currentServicePct, formatMoney, summarizeEarnings, type EarningSummary,
 interface Props {
   reservations: Reservation[]
   workers: Worker[]
+  /** For each service's fixed commission (scripts/115). */
+  services: Service[]
   from: Date
   to: Date
   currencySymbol: string
   tipWorkerPct: number
   excludesTax: boolean
+  offHoursPct: number | null
   fileSlug: string
 }
 
@@ -30,33 +33,54 @@ interface Line extends EarningSummary {
   pctLabel: string
 }
 
-export function WorkerPayReport({ reservations, workers, from, to, currencySymbol, tipWorkerPct, excludesTax, fileSlug }: Props) {
+export function WorkerPayReport({
+  reservations,
+  workers,
+  services,
+  from,
+  to,
+  currencySymbol,
+  tipWorkerPct,
+  excludesTax,
+  offHoursPct,
+  fileSlug,
+}: Props) {
   const { t } = useLanguage()
   const tr = t.pay
   const money = (n: number) => formatMoney(n, currencySymbol)
 
-  const lines = useMemo<Line[]>(() => {
+  const { lines, withoutWorker } = useMemo(() => {
     const now = new Date()
-    const inRange = reservations.filter((r) => {
-      const start = new Date(r.start_time)
-      return r.worker_id && r.type !== 'visit' && start >= from && start <= to
-    })
-    return workers
+    const serviceCommission = new Map(services.map((s) => [s.id, s.worker_commission_pct ?? null]))
+    const periodRows = reservations
+      .filter((r) => {
+        const start = new Date(r.start_time)
+        return r.type !== 'visit' && start >= from && start <= to
+      })
+      .map((r) => ({ ...r, service_commission_pct: r.service_id ? serviceCommission.get(r.service_id) ?? null : null }))
+    const inRange = periodRows.filter((r) => r.worker_id)
+    // Served appointments nobody was assigned to: their commission goes
+    // to no one, so the owner should know they exist.
+    const withoutWorker = periodRows.filter((r) => !r.worker_id && countsAsServed(r, now)).length
+    const workerLines = workers
       .map((worker) => {
         const settings: PaySettings = {
           payType: worker.pay_type ?? null,
           commissionPct: worker.commission_pct ?? null,
           tipWorkerPct,
           excludesTax,
+          offHoursPct,
         }
         const summary = summarizeEarnings(inRange.filter((r) => r.worker_id === worker.id), settings, now)
         const pct = currentServicePct(settings)
         const pctLabel = worker.pay_type === 'salary' ? tr.salary : pct === null ? tr.notSetUp : `${pct}%`
         return { ...summary, worker, pctLabel }
       })
+    const lines: Line[] = workerLines
       .filter((l) => l.served > 0)
       .sort((a, b) => b.total - a.total)
-  }, [reservations, workers, from, to, tipWorkerPct, excludesTax, tr.salary, tr.notSetUp])
+    return { lines, withoutWorker }
+  }, [reservations, workers, services, from, to, tipWorkerPct, excludesTax, offHoursPct, tr.salary, tr.notSetUp])
 
   const totals = useMemo(
     () =>
@@ -112,6 +136,12 @@ export function WorkerPayReport({ reservations, workers, from, to, currencySymbo
           <p className="flex items-start gap-2 rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             {tr.notSetUpWarning.replace('{n}', String(unconfigured))}
+          </p>
+        )}
+        {withoutWorker > 0 && (
+          <p className="flex items-start gap-2 rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            {tr.noWorkerWarning.replace('{n}', String(withoutWorker))}
           </p>
         )}
         {lines.length === 0 ? (

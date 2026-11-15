@@ -513,13 +513,21 @@ function AnalyticsPageInner() {
     () => getAverageTicket(filteredReservations, from, to),
     [filteredReservations, from, to]
   )
+  // The shared "Cliente de paso" (scripts/115) would otherwise show up as
+  // the most loyal client - client-centric reports skip it; revenue,
+  // occupancy and service reports still count those appointments.
+  const walkInClientIds = useMemo(() => new Set(clients.filter((c) => c.is_walk_in).map((c) => c.id)), [clients])
+  const clientReservations = useMemo(
+    () => (walkInClientIds.size === 0 ? filteredReservations : filteredReservations.filter((r) => !walkInClientIds.has(r.client_id))),
+    [filteredReservations, walkInClientIds]
+  )
   const clientRetention = useMemo(
-    () => getClientRetention(filteredReservations, clients, from, to),
-    [filteredReservations, clients, from, to]
+    () => getClientRetention(clientReservations, clients, from, to),
+    [clientReservations, clients, from, to]
   )
   const topClients = useMemo(
-    () => getTopClients(filteredReservations, clients, from, to),
-    [filteredReservations, clients, from, to]
+    () => getTopClients(clientReservations, clients, from, to),
+    [clientReservations, clients, from, to]
   )
   const resourceBreakdown = useMemo(
     () => getResourceBreakdown(filteredReservations, filterableResources, from, to),
@@ -546,15 +554,18 @@ function AnalyticsPageInner() {
     [filteredReservations, clients, from, to]
   )
   const clientReliability = useMemo(
-    () => getClientReliability(filteredReservations, clients, from, to),
-    [filteredReservations, clients, from, to]
+    () => getClientReliability(clientReservations, clients, from, to),
+    [clientReservations, clients, from, to]
   )
   // Deliberately the raw, unfiltered `reservations` (not filteredReservations
   // and not range-scoped) - see getAtRiskClients's own doc comment: "who am
   // I about to lose" is a question about the whole client relationship,
   // not one narrowed to whichever service/resource/date-range happens to be
   // selected elsewhere on this page.
-  const atRiskClients = useMemo(() => getAtRiskClients(reservations, clients), [reservations, clients])
+  const atRiskClients = useMemo(
+    () => getAtRiskClients(reservations.filter((r) => !walkInClientIds.has(r.client_id)), clients),
+    [reservations, clients, walkInClientIds]
+  )
 
   // Previous-period equivalents, purely to compute the trend badges below -
   // none of these are rendered on their own.
@@ -1344,11 +1355,13 @@ function AnalyticsPageInner() {
               <WorkerPayReport
                 reservations={businessReservations}
                 workers={filterableWorkers}
+                services={businessServices}
                 from={from}
                 to={to}
                 currencySymbol={currencySymbol}
                 tipWorkerPct={Number(currentBusiness?.tip_worker_pct ?? 100)}
                 excludesTax={Boolean(currentBusiness?.pay_excludes_tax)}
+                offHoursPct={currentBusiness?.off_hours_commission_pct ?? null}
                 fileSlug={currentBusiness?.slug || 'negocio'}
               />
             </TabsContent>

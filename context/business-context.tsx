@@ -79,6 +79,8 @@ interface Business {
   tip_worker_pct?: number
   pay_excludes_tax?: boolean
   workers_see_sales?: boolean
+  /** Commission for work outside opening hours (scripts/115) - null = unused. */
+  off_hours_commission_pct?: number | null
   /** Client birthday emails - see scripts/071-client-birthdays.sql. The
    * discount is informational only (mentioned in the email, applied
    * manually by the business) - nothing here touches pricing/checkout. */

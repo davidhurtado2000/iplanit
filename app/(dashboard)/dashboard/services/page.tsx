@@ -95,6 +95,7 @@ interface Service {
   buffer_before_min: number
   buffer_after_min: number
   max_attendees: number | null
+  worker_commission_pct?: number | null
   is_active: boolean
   visible_on_public_link: boolean
   client_chooses_resource: boolean
@@ -201,6 +202,7 @@ export default function ServicesPage() {
     // '' = not a group service (max_attendees null), unchanged behavior -
     // see scripts/081-group-reservations.sql.
     maxAttendees: '' as number | '',
+    workerCommissionPct: '' as number | '',
   })
   const [durationOptions, setDurationOptions] = useState<DurationOptionForm[]>([])
   const [selectedResourceIds, setSelectedResourceIds] = useState<string[]>([])
@@ -364,6 +366,7 @@ export default function ServicesPage() {
         bufferBeforeMin: service.buffer_before_min ?? 0,
         bufferAfterMin: service.buffer_after_min ?? 0,
         maxAttendees: service.max_attendees ?? '',
+        workerCommissionPct: service.worker_commission_pct ?? ('' as number | ''),
       }
       nextDurationOptions = serviceDurationOptions
         .filter((o) => o.service_id === service.id)
@@ -394,6 +397,7 @@ export default function ServicesPage() {
         bufferBeforeMin: 0,
         bufferAfterMin: 0,
         maxAttendees: '',
+        workerCommissionPct: '' as number | '',
       }
       nextDurationOptions = []
       nextResourceIds = []
@@ -436,6 +440,7 @@ export default function ServicesPage() {
       bufferBeforeMin: service.buffer_before_min ?? 0,
       bufferAfterMin: service.buffer_after_min ?? 0,
       maxAttendees: service.max_attendees ?? '',
+      workerCommissionPct: service.worker_commission_pct ?? ('' as number | ''),
     }
     const nextDurationOptions: DurationOptionForm[] = serviceDurationOptions
       .filter((o) => o.service_id === service.id)
@@ -557,6 +562,9 @@ export default function ServicesPage() {
       }
     }
 
+    const commissionValue =
+      serviceForm.workerCommissionPct === '' ? null : Math.min(100, Math.max(0, Number(serviceForm.workerCommissionPct)))
+
     setSaving(true)
     try {
       // Only one currency is ever editable at a time (matches the
@@ -590,6 +598,11 @@ export default function ServicesPage() {
         // null (not 0) - 0 isn't a valid class size, null means "not a
         // group service" (scripts/081-group-reservations.sql).
         max_attendees: serviceForm.maxAttendees !== '' ? serviceForm.maxAttendees : null,
+        // Fixed worker commission (scripts/115) - only sent when it changed,
+        // so saving a service keeps working before that script runs.
+        ...(commissionValue !== (editingService?.worker_commission_pct ?? null)
+          ? { worker_commission_pct: commissionValue }
+          : {}),
       }
 
       let serviceId: string
@@ -1179,6 +1192,34 @@ export default function ServicesPage() {
                     }
                   />
                   <p className="text-xs text-muted-foreground">{t.services.maxAttendeesHint}</p>
+                </div>
+              </PremiumFeature>
+
+              {/* Fixed commission for everyone who does this service
+                  (scripts/115, lib/worker-pay.ts) - e.g. Decoloracion 70%. */}
+              <PremiumFeature featureName={t.pay.serviceCommissionLabel} requiredPlan="pro">
+                <div className="space-y-2">
+                  <Label htmlFor="service-worker-commission">{t.pay.serviceCommissionLabel}</Label>
+                  <div className="relative w-28">
+                    <Input
+                      id="service-worker-commission"
+                      type="number"
+                      min={0}
+                      max={100}
+                      placeholder="—"
+                      value={serviceForm.workerCommissionPct}
+                      onChange={(e) =>
+                        setServiceForm({
+                          ...serviceForm,
+                          workerCommissionPct:
+                            e.target.value !== '' ? Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)) : '',
+                        })
+                      }
+                      className="pr-8"
+                    />
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">%</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{t.pay.serviceCommissionHint}</p>
                 </div>
               </PremiumFeature>
 

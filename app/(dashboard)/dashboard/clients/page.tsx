@@ -225,7 +225,10 @@ export default function ClientsPage() {
   const { currentBusiness, businesses } = useBusinesses()
   const { profile } = useAuth()
   const { t, locale } = useLanguage()
-  const { clients, services, workers, loading, refetchClients } = useDashboardData()
+  const { clients: allClients, services, workers, loading, refetchClients } = useDashboardData()
+  // The shared "Cliente de paso" (scripts/115) isn't a real client - kept
+  // out of this list, its counts and exports.
+  const clients = useMemo(() => allClients.filter((c) => !c.is_walk_in), [allClients])
   const [saving, setSaving] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isDetailOpen, setIsDetailOpen] = useState(false)

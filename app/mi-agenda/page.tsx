@@ -38,6 +38,7 @@ interface WorkerLink {
   tip_worker_pct?: number | null
   pay_excludes_tax?: boolean | null
   workers_see_sales?: boolean | null
+  off_hours_commission_pct?: number | null
 }
 
 interface AgendaRow {
@@ -56,6 +57,8 @@ interface AgendaRow {
   worker_pay_pct?: number | null
   tip_worker_pct?: number | null
   pay_excludes_tax?: boolean | null
+  off_hours?: boolean | null
+  service_commission_pct?: number | null
 }
 
 type View = 'day' | 'week' | 'month'
@@ -210,6 +213,7 @@ export default function WorkerAgendaPage() {
     commissionPct: link.commission_pct ?? null,
     tipWorkerPct: Number(link.tip_worker_pct ?? 100),
     excludesTax: Boolean(link.pay_excludes_tax),
+    offHoursPct: link.off_hours_commission_pct ?? null,
   }
   const payConfigured = Boolean(link.pay_type) || served.some((r) => r.worker_pay_pct !== null && r.worker_pay_pct !== undefined)
   const payRow = (r: AgendaRow) => ({ ...r, price: link.currency === 'USD' ? null : r.price, price_usd: link.currency === 'USD' ? r.price_usd ?? r.price : null })

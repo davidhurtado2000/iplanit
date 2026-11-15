@@ -373,6 +373,7 @@ export interface Database {
           reminder_whatsapp_message: string | null
           google_review_url: string | null
           tip_worker_pct: number
+          off_hours_commission_pct: number | null
           pay_excludes_tax: boolean
           workers_see_sales: boolean
           client_chooses_worker: boolean
@@ -416,6 +417,7 @@ export interface Database {
           reminder_whatsapp_message?: string | null
           google_review_url?: string | null
           tip_worker_pct?: number
+          off_hours_commission_pct?: number | null
           pay_excludes_tax?: boolean
           workers_see_sales?: boolean
           client_chooses_worker?: boolean
@@ -459,6 +461,7 @@ export interface Database {
           reminder_whatsapp_message?: string | null
           google_review_url?: string | null
           tip_worker_pct?: number
+          off_hours_commission_pct?: number | null
           pay_excludes_tax?: boolean
           workers_see_sales?: boolean
           client_chooses_worker?: boolean
@@ -491,6 +494,7 @@ export interface Database {
           max_hours: number | null
           buffer_before_min: number
           buffer_after_min: number
+          worker_commission_pct: number | null
           max_attendees: number | null
           is_active: boolean
           visible_on_public_link: boolean
@@ -516,6 +520,7 @@ export interface Database {
           max_hours?: number | null
           buffer_before_min?: number
           buffer_after_min?: number
+          worker_commission_pct?: number | null
           max_attendees?: number | null
           is_active?: boolean
           visible_on_public_link?: boolean
@@ -541,6 +546,7 @@ export interface Database {
           max_hours?: number | null
           buffer_before_min?: number
           buffer_after_min?: number
+          worker_commission_pct?: number | null
           max_attendees?: number | null
           is_active?: boolean
           visible_on_public_link?: boolean
@@ -636,6 +642,7 @@ export interface Database {
           is_active: boolean
           birthday_month: number | null
           birthday_day: number | null
+          is_walk_in: boolean
           last_birthday_email_sent_year: number | null
           kommo_contact_id: string | null
           created_at: string
@@ -661,6 +668,7 @@ export interface Database {
           is_active?: boolean
           birthday_month?: number | null
           birthday_day?: number | null
+          is_walk_in?: boolean
           last_birthday_email_sent_year?: number | null
           kommo_contact_id?: string | null
           created_at?: string
@@ -681,6 +689,7 @@ export interface Database {
           is_active?: boolean
           birthday_month?: number | null
           birthday_day?: number | null
+          is_walk_in?: boolean
           last_birthday_email_sent_year?: number | null
           kommo_contact_id?: string | null
           created_at?: string
@@ -713,6 +722,7 @@ export interface Database {
           review_requested_at: string | null
           payment_method: string | null
           tip_amount: number | null
+          off_hours: boolean
           worker_pay_pct: number | null
           tip_worker_pct: number | null
           pay_excludes_tax: boolean | null
@@ -748,6 +758,7 @@ export interface Database {
           review_requested_at?: string | null
           payment_method?: string | null
           tip_amount?: number | null
+          off_hours?: boolean
           worker_pay_pct?: number | null
           tip_worker_pct?: number | null
           pay_excludes_tax?: boolean | null
@@ -783,6 +794,7 @@ export interface Database {
           review_requested_at?: string | null
           payment_method?: string | null
           tip_amount?: number | null
+          off_hours?: boolean
           worker_pay_pct?: number | null
           tip_worker_pct?: number | null
           pay_excludes_tax?: boolean | null
@@ -1505,6 +1517,10 @@ export interface Database {
       clear_demo_invoices: {
         Args: { p_ruc: string }
         Returns: Json
+      }
+      get_walk_in_client: {
+        Args: { p_business_id: string }
+        Returns: string
       }
       is_platform_admin: {
         Args: Record<PropertyKey, never>

@@ -322,6 +322,11 @@ export function ReservationModal({
   // slot is picked. Named slotDate (not selectedDate) since that name is
   // already taken by this component's own selectedDate prop.
   const [slotDate, setSlotDate] = useState('')
+  // "Atención fuera de horario" (scripts/115): lets staff record work done
+  // while the business is closed (e.g. a walk-in after closing) - any time
+  // can be picked, and the after-hours commission applies.
+  const [offHours, setOffHours] = useState(false)
+  const [walkInLoading, setWalkInLoading] = useState(false)
 
   const isUSD = currentBusiness?.currency === 'USD'
   const [isEditing, setIsEditing] = useState(mode === 'create')
@@ -461,6 +466,10 @@ export function ReservationModal({
   const filteredWorkers = allowedWorkerIds.length > 0
     ? workers.filter((w) => allowedWorkerIds.includes(w.id) && w.is_active)
     : workers.filter((w) => w.is_active)
+  // A booking must say who does it once the business has someone who can
+  // (otherwise commissions and the worker's own agenda silently miss it).
+  // Visits stay optional - nobody performs a service on a showroom visit.
+  const workerRequired = formData.type === 'booking' && filteredWorkers.length > 0
 
   // Clears (never auto-fills, unlike resource above) a worker selection
   // that the newly-picked service doesn't actually allow.
@@ -508,6 +517,7 @@ export function ReservationModal({
         needsParking: !!reservation.parking_resource_id,
       })
       setSlotDate(toDateStr(reservation.start_time, tz))
+      setOffHours(!!reservation.off_hours)
       setIsEditing(mode === 'edit')
     } else {
       // Both hints share the same "YYYY-MM-DDTHH:MM" business-local shape
@@ -542,6 +552,7 @@ export function ReservationModal({
         needsParking: false,
       })
       setSlotDate(selectedDate || toDateStr(new Date().toISOString(), tz))
+      setOffHours(false)
       setIsEditing(true)
     }
     setError('')
@@ -608,7 +619,9 @@ export function ReservationModal({
   const selectedService = services.find((s) => s.id === formData.service_id)
   const selectedClient = clients.find((c) => c.id === formData.client_id)
   const selectedResource = resources.find((r) => r.id === formData.resource_id)
-  const activeClients = clients.filter((c) => c.is_active)
+  // The shared "Cliente de paso" (scripts/115) has its own entry at the top
+  // of the picker instead of showing up as a regular client.
+  const activeClients = clients.filter((c) => c.is_active && !c.is_walk_in)
   // Same fields/matching as clients/page.tsx's own search, kept consistent
   // rather than introducing a second fuzzy-match algorithm for the same data.
   const clientSearchMatches = activeClients.filter((c) => matchesClientSearch(c, clientSearch))
@@ -1302,6 +1315,9 @@ export function ReservationModal({
         price: isUSD ? null : formData.price || null,
         price_usd: isUSD ? formData.price || null : null,
         notes: formData.notes || null,
+        // Only sent when it changed, so saving keeps working before
+        // scripts/115 adds the column.
+        ...(offHours !== (reservation?.off_hours ?? false) ? { off_hours: offHours } : {}),
       }
 
       // Pre-flight overlap check for a fast, friendly error message. Strict
@@ -2357,6 +2373,40 @@ export function ReservationModal({
                         onValueChange={setClientSearch}
                       />
                       <CommandList>
+                        <CommandGroup>
+                          <CommandItem
+                            value="__walk_in__"
+                            disabled={walkInLoading}
+                            onSelect={async () => {
+                              if (!currentBusiness) return
+                              setWalkInLoading(true)
+                              const { data: walkInId, error: walkInError } = await supabase.rpc('get_walk_in_client', {
+                                p_business_id: currentBusiness.id,
+                              })
+                              if (walkInError || !walkInId) {
+                                console.error('[iplanit] walk-in client:', walkInError)
+                                toast.error(t.pay.walkInError)
+                                setWalkInLoading(false)
+                                return
+                              }
+                              await refetchClients()
+                              setFormData((prev) => ({ ...prev, client_id: walkInId as string }))
+                              setWalkInLoading(false)
+                              setClientComboOpen(false)
+                              setClientSearch('')
+                            }}
+                          >
+                            {walkInLoading ? (
+                              <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                            ) : (
+                              <User className="h-4 w-4 shrink-0" />
+                            )}
+                            <div className="flex min-w-0 flex-col">
+                              <span className="truncate font-medium">{t.pay.walkInOption}</span>
+                              <span className="truncate text-xs text-muted-foreground">{t.pay.walkInHint}</span>
+                            </div>
+                          </CommandItem>
+                        </CommandGroup>
                         {clientSearchResults.length === 0 && (
                           <p className="px-2 py-3 text-center text-sm text-muted-foreground">
                             {activeClients.length === 0 ? t.reservation.noClients : t.reservation.noClientsFound}
@@ -2774,8 +2824,13 @@ export function ReservationModal({
             {workers.length > 0 && (
               <div className="space-y-2">
                 <Label htmlFor="worker">
-                  {workerLabel.singular}{' '}
-                  <span className="text-muted-foreground font-normal">{t.reservation.resourceOptional}</span>
+                  {workerLabel.singular}
+                  {!workerRequired && (
+                    <>
+                      {' '}
+                      <span className="text-muted-foreground font-normal">{t.reservation.resourceOptional}</span>
+                    </>
+                  )}
                 </Label>
                 <Select
                   value={formData.worker_id || '_none'}
@@ -2795,7 +2850,7 @@ export function ReservationModal({
                     <SelectValue placeholder={t.reservation.selectWorker} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="_none">{t.reservation.noWorker}</SelectItem>
+                    {!workerRequired && <SelectItem value="_none">{t.reservation.noWorker}</SelectItem>}
                     {workersByDay.map(({ worker, worksThatDay }) => (
                       <SelectItem key={worker.id} value={worker.id}>
                         <span className={cn('flex items-center gap-2', !worksThatDay && 'opacity-60')}>
@@ -2812,6 +2867,36 @@ export function ReservationModal({
                     ))}
                   </SelectContent>
                 </Select>
+                {workerRequired && !formData.worker_id && (
+                  <p className="text-xs text-muted-foreground">{t.pay.workerRequired}</p>
+                )}
+              </div>
+            )}
+
+            {/* After hours (scripts/115) - bookings only. */}
+            {formData.type === 'booking' && (
+              <div className="flex items-start justify-between gap-3 rounded-lg border p-3">
+                <div className="space-y-0.5">
+                  <Label htmlFor="off-hours" className="flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                    {t.pay.offHoursToggle}
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    {currentBusiness?.off_hours_commission_pct !== null && currentBusiness?.off_hours_commission_pct !== undefined
+                      ? t.pay.offHoursToggleDescPct.replace('{pct}', String(Number(currentBusiness.off_hours_commission_pct)))
+                      : t.pay.offHoursToggleDesc}
+                  </p>
+                </div>
+                <Switch
+                  id="off-hours"
+                  checked={offHours}
+                  onCheckedChange={(checked) => {
+                    setOffHours(checked)
+                    // Switching modes invalidates a slot picked from the
+                    // other one - except on an existing appointment.
+                    if (!editingExisting) setFormData((prev) => ({ ...prev, start_time: '' }))
+                  }}
+                />
               </div>
             )}
 
@@ -2821,8 +2906,17 @@ export function ReservationModal({
                 datetime input that only told you about a conflict after
                 trying to save. */}
             <div className="space-y-2">
-              <Label>{t.reservation.timeOnlyLabel}</Label>
-              {!effectiveDurationMinutes ? (
+              <Label>{offHours ? t.pay.offHoursTimeLabel : t.reservation.timeOnlyLabel}</Label>
+              {offHours ? (
+                <Input
+                  type="time"
+                  className="w-36"
+                  value={formData.start_time.startsWith(slotDate) ? formData.start_time.split('T')[1]?.slice(0, 5) ?? '' : ''}
+                  onChange={(e) =>
+                    setFormData({ ...formData, start_time: e.target.value ? `${slotDate}T${e.target.value}` : '' })
+                  }
+                />
+              ) : !effectiveDurationMinutes ? (
                 <p className="text-xs text-muted-foreground">{t.reservation.pickDurationFirst}</p>
               ) : availableSlots.length === 0 && !showOriginalSlot ? (
                 <p className="flex items-center gap-1.5 text-xs text-destructive">
@@ -2870,7 +2964,8 @@ export function ReservationModal({
                   })}
                 </div>
               )}
-              {formData.start_time &&
+              {!offHours &&
+                formData.start_time &&
                 formData.start_time !== originalLocalStart &&
                 !availableSlots.some((s) => toTzLocalInput(s.toISOString(), tz) === formData.start_time) && (
                   <p className="text-xs text-muted-foreground">
@@ -2883,7 +2978,7 @@ export function ReservationModal({
                   {workerHoursWarning}
                 </p>
               )}
-              {hoursError && (
+              {hoursError && !offHours && (
                 <p className="flex items-center gap-1.5 text-xs text-destructive">
                   <Clock className="h-3.5 w-3.5 shrink-0" />
                   {hoursError}
@@ -3097,7 +3192,8 @@ export function ReservationModal({
                     (formData.hours === '' ||
                       formData.hours < (selectedService.min_hours ?? 1) ||
                       formData.hours > (selectedService.max_hours ?? Infinity))) ||
-                  !!hoursError ||
+                  (!!hoursError && !offHours) ||
+                  (workerRequired && !formData.worker_id) ||
                   (repeatEnabled && repeatDays.length === 0)
                 }
                 className="gap-2"

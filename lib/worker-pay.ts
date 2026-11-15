@@ -17,6 +17,8 @@ export interface PaySettings {
   commissionPct: number | null
   tipWorkerPct: number
   excludesTax: boolean
+  /** businesses.off_hours_commission_pct (scripts/115) - null = rule unused. */
+  offHoursPct?: number | null
 }
 
 export interface PayRow {
@@ -28,6 +30,10 @@ export interface PayRow {
   worker_pay_pct?: number | null
   tip_worker_pct?: number | null
   pay_excludes_tax?: boolean | null
+  /** Done outside the business's opening hours (scripts/115). */
+  off_hours?: boolean | null
+  /** The service's fixed commission for every worker (scripts/115). */
+  service_commission_pct?: number | null
 }
 
 export interface Earning {
@@ -56,16 +62,28 @@ export function countsAsServed(row: Pick<PayRow, 'status' | 'end_time'>, now: Da
   return row.status === 'completed' || (row.status === 'confirmed' && new Date(row.end_time) < now)
 }
 
-export function currentServicePct(settings: PaySettings): number | null {
+/** The worker's commission for one appointment under the CURRENT settings.
+ * Precedence (same as the DB trigger in scripts/115): the service's fixed %,
+ * then the after-hours %, then the worker's own %. Salary = 0, not set up =
+ * null. Without a row, it's just the worker's general %. */
+export function currentServicePct(
+  settings: PaySettings,
+  row?: Pick<PayRow, 'off_hours' | 'service_commission_pct'>
+): number | null {
   if (settings.payType === 'salary') return 0
-  if (settings.payType === 'commission') return settings.commissionPct ?? null
-  return null
+  if (settings.payType !== 'commission') return null
+  const servicePct = row?.service_commission_pct
+  if (servicePct !== null && servicePct !== undefined) return Number(servicePct)
+  if (row?.off_hours && settings.offHoursPct !== null && settings.offHoursPct !== undefined) {
+    return Number(settings.offHoursPct)
+  }
+  return settings.commissionPct ?? null
 }
 
 export function earningFor(row: PayRow, settings: PaySettings): Earning {
   const sale = Number((row.price || row.price_usd) ?? 0)
   const snapshot = row.worker_pay_pct !== null && row.worker_pay_pct !== undefined
-  const servicePct = snapshot ? Number(row.worker_pay_pct) : currentServicePct(settings)
+  const servicePct = snapshot ? Number(row.worker_pay_pct) : currentServicePct(settings, row)
   const excludesTax = snapshot ? Boolean(row.pay_excludes_tax) : settings.excludesTax
   const base = round2(excludesTax ? sale / (1 + PE_IGV_RATE) : sale)
   const serviceShare = servicePct === null ? 0 : round2((base * servicePct) / 100)

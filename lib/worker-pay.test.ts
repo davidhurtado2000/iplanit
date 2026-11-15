@@ -82,3 +82,31 @@ describe('helpers', () => {
     expect(formatMoney(12.5, 'S/')).toBe('S/ 12.50')
   })
 })
+
+describe('service and after-hours rules (scripts/115)', () => {
+  const rules: PaySettings = { ...commission40, offHoursPct: 50 }
+
+  it('uses the service fixed % for everyone', () => {
+    expect(earningFor(row({ service_commission_pct: 70 }), rules).servicePct).toBe(70)
+  })
+
+  it('uses the after-hours % when the appointment was after hours', () => {
+    expect(earningFor(row({ off_hours: true }), rules).servicePct).toBe(50)
+  })
+
+  it('lets the service fixed % win over the after-hours rule', () => {
+    expect(earningFor(row({ off_hours: true, service_commission_pct: 70 }), rules).servicePct).toBe(70)
+  })
+
+  it('ignores the after-hours mark when the business has no such rule', () => {
+    expect(earningFor(row({ off_hours: true }), commission40).servicePct).toBe(40)
+  })
+
+  it('never pays a salaried worker a share of services', () => {
+    expect(earningFor(row({ off_hours: true, service_commission_pct: 70 }), { ...rules, payType: 'salary' }).servicePct).toBe(0)
+  })
+
+  it('still prefers the snapshot taken at completion', () => {
+    expect(earningFor(row({ worker_pay_pct: 45, service_commission_pct: 70 }), rules).servicePct).toBe(45)
+  })
+})
