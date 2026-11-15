@@ -664,6 +664,40 @@ export function ReservationModal({
   })()
   // Same default-by-country logic as clients/page.tsx's own form.
   const defaultDocumentType: ClientDocumentType = currentBusiness?.country === 'US' ? 'ein' : 'dni'
+
+  // Pinned actions of the client picker (above the list, so they never get
+  // buried under hundreds of clients).
+  const pickWalkInClient = async () => {
+    if (!currentBusiness || walkInLoading) return
+    setWalkInLoading(true)
+    const { data: walkInId, error: walkInError } = await supabase.rpc('get_walk_in_client', {
+      p_business_id: currentBusiness.id,
+    })
+    if (walkInError || !walkInId) {
+      console.error('[iplanit] walk-in client:', walkInError)
+      toast.error(t.pay.walkInError)
+      setWalkInLoading(false)
+      return
+    }
+    await refetchClients()
+    setFormData((prev) => ({ ...prev, client_id: walkInId as string }))
+    setWalkInLoading(false)
+    setClientComboOpen(false)
+    setClientSearch('')
+  }
+  const startNewClientFromSearch = () => {
+    setNewClientForm({
+      name: clientSearch.trim(),
+      email: '',
+      phone: '',
+      documentType: defaultDocumentType,
+      documentNumber: '',
+      notes: '',
+    })
+    setNewClientError('')
+    setClientComboOpen(false)
+    setIsAddingClient(true)
+  }
   const documentTypeLabels: Record<ClientDocumentType, string> = {
     dni: t.clients.documentTypeDni,
     ruc: t.clients.documentTypeRuc,
@@ -2372,41 +2406,35 @@ export function ReservationModal({
                         value={clientSearch}
                         onValueChange={setClientSearch}
                       />
+                      <div className="flex gap-2 border-b p-2">
+                        <button
+                          type="button"
+                          onClick={startNewClientFromSearch}
+                          className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md border border-primary/30 bg-primary/5 px-2 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/10"
+                        >
+                          <UserPlus className="h-4 w-4 shrink-0" />
+                          <span className="truncate">
+                            {clientSearch.trim()
+                              ? t.reservation.addNewClientNamed.replace('{name}', clientSearch.trim())
+                              : t.reservation.addNewClientTitle}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={walkInLoading}
+                          onClick={pickWalkInClient}
+                          title={t.pay.walkInHint}
+                          className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md border px-2 py-2 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50"
+                        >
+                          {walkInLoading ? (
+                            <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                          ) : (
+                            <User className="h-4 w-4 shrink-0" />
+                          )}
+                          <span className="truncate">{t.pay.walkInShort}</span>
+                        </button>
+                      </div>
                       <CommandList>
-                        <CommandGroup>
-                          <CommandItem
-                            value="__walk_in__"
-                            disabled={walkInLoading}
-                            onSelect={async () => {
-                              if (!currentBusiness) return
-                              setWalkInLoading(true)
-                              const { data: walkInId, error: walkInError } = await supabase.rpc('get_walk_in_client', {
-                                p_business_id: currentBusiness.id,
-                              })
-                              if (walkInError || !walkInId) {
-                                console.error('[iplanit] walk-in client:', walkInError)
-                                toast.error(t.pay.walkInError)
-                                setWalkInLoading(false)
-                                return
-                              }
-                              await refetchClients()
-                              setFormData((prev) => ({ ...prev, client_id: walkInId as string }))
-                              setWalkInLoading(false)
-                              setClientComboOpen(false)
-                              setClientSearch('')
-                            }}
-                          >
-                            {walkInLoading ? (
-                              <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-                            ) : (
-                              <User className="h-4 w-4 shrink-0" />
-                            )}
-                            <div className="flex min-w-0 flex-col">
-                              <span className="truncate font-medium">{t.pay.walkInOption}</span>
-                              <span className="truncate text-xs text-muted-foreground">{t.pay.walkInHint}</span>
-                            </div>
-                          </CommandItem>
-                        </CommandGroup>
                         {clientSearchResults.length === 0 && (
                           <p className="px-2 py-3 text-center text-sm text-muted-foreground">
                             {activeClients.length === 0 ? t.reservation.noClients : t.reservation.noClientsFound}
@@ -2444,26 +2472,6 @@ export function ReservationModal({
                               {t.reservation.clientPickerMore.replace('{count}', clientSearchHidden.toLocaleString())}
                             </p>
                           )}
-                        </CommandGroup>
-                        <CommandGroup>
-                          <CommandItem
-                            onSelect={() => {
-                              setNewClientForm({
-                                name: clientSearch.trim(),
-                                email: '',
-                                phone: '',
-                                documentType: defaultDocumentType,
-                                documentNumber: '',
-                                notes: '',
-                              })
-                              setNewClientError('')
-                              setClientComboOpen(false)
-                              setIsAddingClient(true)
-                            }}
-                          >
-                            <UserPlus className="h-4 w-4 shrink-0" />
-                            {t.reservation.addNewClientOption}
-                          </CommandItem>
                         </CommandGroup>
                       </CommandList>
                     </Command>
