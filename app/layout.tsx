@@ -63,6 +63,9 @@ export const metadata: Metadata = {
     apple: '/apple-touch-icon.png',
   },
   manifest: '/site.webmanifest',
+  // iPhone ("Añadir a pantalla de inicio" from Safari) reads these instead of
+  // the manifest: opens full screen and names the icon "iPlanit".
+  appleWebApp: { capable: true, title: 'iPlanit', statusBarStyle: 'default' },
 }
 
 export default function RootLayout({

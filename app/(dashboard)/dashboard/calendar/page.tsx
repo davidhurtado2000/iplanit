@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { LogoLoader } from '@/components/logo-loader'
 import { CalendarViewComponent, VISIT_BLOCK_COLOR } from '@/components/dashboard/calendar-view'
 import { ReservationModal } from '@/components/dashboard/reservation-modal'
+import { ToConfirmWorker } from '@/components/dashboard/to-confirm-worker'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
@@ -558,6 +559,20 @@ function CalendarPageInner() {
           </>
         }
       />
+
+      {/* "Sin preferencia" bookings whose barber the system picked and nobody
+          has confirmed yet (scripts/116). Renders nothing when there are none. */}
+      {!isExpanded && (
+        <ToConfirmWorker
+          reservations={reservations}
+          workers={workers}
+          clients={clients}
+          services={services}
+          timezone={currentBusiness?.timezone || 'America/Lima'}
+          onOpenReservation={handleSelectReservation}
+          onChanged={refetchReservations}
+        />
+      )}
 
       {hasMultipleSedes && (
         <div className="flex flex-col gap-1 rounded-lg border bg-muted/30 px-3 py-2 sm:flex-row sm:items-center sm:gap-3">

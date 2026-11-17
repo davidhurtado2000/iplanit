@@ -360,7 +360,9 @@ export function ReservationInvoicing({
 
   function whatsappHref(inv: Invoice): string | null {
     if (!clientPhone || !inv.pdfUrl) return null
-    const message = s.whatsappMessage
+    // Addressed to the client (SUNAT receipts only exist in Peru), so always
+    // Spanish - not the staff member's own UI language.
+    const message = STRINGS.es.whatsappMessage
       .replace('{name}', inv.customerName.split(' ')[0] || inv.customerName)
       .replace('{business}', businessName ?? '')
       .replace('{doc}', `${label(inv)} ${inv.serie}-${inv.numero}`)

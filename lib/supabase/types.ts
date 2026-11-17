@@ -374,6 +374,7 @@ export interface Database {
           google_review_url: string | null
           tip_worker_pct: number
           off_hours_commission_pct: number | null
+          no_preference_mode: 'auto' | 'auto_review'
           pay_excludes_tax: boolean
           workers_see_sales: boolean
           client_chooses_worker: boolean
@@ -418,6 +419,7 @@ export interface Database {
           google_review_url?: string | null
           tip_worker_pct?: number
           off_hours_commission_pct?: number | null
+          no_preference_mode?: 'auto' | 'auto_review'
           pay_excludes_tax?: boolean
           workers_see_sales?: boolean
           client_chooses_worker?: boolean
@@ -462,6 +464,7 @@ export interface Database {
           google_review_url?: string | null
           tip_worker_pct?: number
           off_hours_commission_pct?: number | null
+          no_preference_mode?: 'auto' | 'auto_review'
           pay_excludes_tax?: boolean
           workers_see_sales?: boolean
           client_chooses_worker?: boolean
@@ -723,6 +726,7 @@ export interface Database {
           payment_method: string | null
           tip_amount: number | null
           off_hours: boolean
+          worker_auto_assigned: boolean
           worker_pay_pct: number | null
           tip_worker_pct: number | null
           pay_excludes_tax: boolean | null
@@ -759,6 +763,7 @@ export interface Database {
           payment_method?: string | null
           tip_amount?: number | null
           off_hours?: boolean
+          worker_auto_assigned?: boolean
           worker_pay_pct?: number | null
           tip_worker_pct?: number | null
           pay_excludes_tax?: boolean | null
@@ -795,6 +800,7 @@ export interface Database {
           payment_method?: string | null
           tip_amount?: number | null
           off_hours?: boolean
+          worker_auto_assigned?: boolean
           worker_pay_pct?: number | null
           tip_worker_pct?: number | null
           pay_excludes_tax?: boolean | null

@@ -216,7 +216,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
         type: 'list',
         items: [
           '**Cliente de paso (sin datos)**: para quien llega sin cita y no quiere dejar su nombre ni su número (por ejemplo, turistas). No llena tu lista de clientes con nombres sueltos. Si sí da su WhatsApp, mejor créalo normal: así podrás volver a contactarlo.',
-          '**Atención fuera de horario**: actívalo si atiendes con el local cerrado. Te deja elegir cualquier hora y aplica la comisión fuera de horario, si la configuraste.',
+          '**Atención fuera de horario**: actívalo para poder elegir una hora fuera del horario (por ejemplo, un cliente sin cita después de la hora de salida). El sistema mira el horario del barbero y, si la cita empieza después de su hora de salida (o un día que no trabaja), aplica la comisión fuera de horario, si la configuraste.',
         ],
       },
     ],
@@ -459,7 +459,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     audience: 'business',
     plan: 'pro',
     link: { href: '/dashboard/workers', label: 'Ir a Trabajadores' },
-    keywords: ['comision', 'propina', 'porcentaje', 'sueldo', 'pago', 'barbero', 'igv', 'alquiler de silla', 'liquidacion', 'fuera de horario', 'comision por servicio'],
+    keywords: ['comision', 'propina', 'porcentaje', 'sueldo', 'pago', 'barbero', 'igv', 'alquiler de silla', 'liquidacion', 'fuera de horario', 'comision por servicio', 'horas extra', 'despues de las 7'],
     blocks: [
       { type: 'p', text: 'iPlanit no mueve dinero: calcula cuánto le corresponde a cada persona para que sepas cuánto pagarle, y cada uno vea lo que ganó.' },
       { type: 'h', text: '1. Reglas del negocio (una sola vez)' },
@@ -487,7 +487,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       { type: 'h', text: '3. Servicios con comisión propia (opcional)' },
       { type: 'p', text: 'Si un servicio paga distinto para todos (por ejemplo, Decoloración 70%), en **Servicios** → editar → **Configuración avanzada** llena **Comisión del trabajador en este servicio**. Ese % manda sobre el % de cada trabajador.' },
       { type: 'h', text: '4. Atenciones fuera de horario (opcional)' },
-      { type: 'p', text: 'En **Comisiones y propinas**, llena **Comisión fuera del horario del local** (por ejemplo, 50). Se aplica a las reservas marcadas como **Atención fuera de horario**. Si el servicio tiene comisión propia, se usa la del servicio.' },
+      { type: 'p', text: 'En **Comisiones y propinas**, llena **Comisión fuera del horario del barbero** (por ejemplo, 50). Se aplica sola cuando la cita **empieza** fuera del horario del barbero (el que pusiste en su ficha de Trabajadores) o en un día que no trabaja. Un corte que empieza antes de su hora de salida paga la comisión normal, aunque termine después. Si el servicio tiene comisión propia, se usa la del servicio.' },
       { type: 'h', text: '5. Registrar la propina' },
       { type: 'p', text: 'Al completar cada cita, escribe la propina en **¿Cómo pagó?** → **Propina (opcional)**.' },
       { type: 'h', text: '6. Ver cuánto pagar' },
@@ -606,6 +606,40 @@ export const HELP_ARTICLES: HelpArticle[] = [
     related: ['compartir-link', 'agregar-trabajadores'],
   },
 
+  {
+    slug: 'sin-preferencia',
+    category: 'link',
+    title: 'Clientes que eligen "Sin preferencia"',
+    summary: 'Confirma o cambia el barbero que el sistema asignó.',
+    audience: 'business',
+    ownerOnly: true,
+    link: { href: '/dashboard/settings?tab=business', label: 'Ir a Configuración → Negocio' },
+    keywords: ['sin preferencia', 'asignar', 'barbero', 'por confirmar', 'automatico', 'quien atiende'],
+    blocks: [
+      { type: 'p', text: 'Cuando un cliente reserva por tu link y elige **Sin preferencia**, el sistema le da la cita al barbero libre que tenga menos citas ese día. Así el horario queda bien reservado y nunca se agendan más citas de las que tu equipo puede atender.' },
+      { type: 'h', text: 'Revisar quién quedó asignado' },
+      {
+        type: 'steps',
+        items: [
+          'Entra a **Configuracion** → **Negocio** y busca **Tus clientes eligen quién los atiende** (debe estar activado).',
+          'En **Cuando el cliente elige "Sin preferencia"**, elige **Asignar automáticamente y revisar**.',
+          'Toca **Guardar cambios**.',
+        ],
+      },
+      { type: 'p', text: 'Desde ese momento, esas reservas aparecen en un aviso amarillo arriba del **Calendario**: **Por confirmar (N)**. Tócalo para ver la lista.' },
+      {
+        type: 'list',
+        items: [
+          '**Confirmar**: aceptas al barbero que eligió el sistema.',
+          '**Cambiar barbero**: abre la reserva para que elijas a otro.',
+          '**Confirmar todas**: si estás de acuerdo con todas.',
+        ],
+      },
+      { type: 'tip', text: 'Si completas la cita sin confirmarla, se da por confirmada. No se puede completar una cita sin barbero asignado: así las comisiones nunca se pierden.' },
+    ],
+    related: ['personalizar-link', 'como-reserva-cliente'],
+  },
+
   // ─── Avisos ──────────────────────────────────────────────────────────
   {
     slug: 'correos-recordatorios',
@@ -693,6 +727,79 @@ export const HELP_ARTICLES: HelpArticle[] = [
       { type: 'p', text: 'Para silenciarlo en un equipo, entra a **Configuracion** → **Alertas** → **Sonidos** y desactiva **Sonidos de notificacion en este dispositivo**. Con **Probar** escuchas cómo suena.' },
       { type: 'tip', text: 'Se guarda por dispositivo: puedes silenciar la computadora de recepción y dejarlo activo en tu celular.' },
     ],
+  },
+
+  {
+    slug: 'instalar-app',
+    category: 'primeros-pasos',
+    title: 'Instalar iPlanit en tu celular',
+    summary: 'Ten el ícono de iPlanit en tu pantalla, como cualquier app.',
+    audience: 'business',
+    keywords: ['instalar', 'app', 'celular', 'icono', 'pantalla de inicio', 'android', 'iphone', 'play store', 'descargar'],
+    blocks: [
+      { type: 'p', text: 'iPlanit no está en la Play Store ni en la App Store: es una página que se instala desde el navegador. Queda con su propio ícono en tu celular, abre a pantalla completa y no ocupa casi espacio.' },
+      { type: 'h', text: 'En Android (Chrome)' },
+      {
+        type: 'steps',
+        items: [
+          'Abre **iplanit.io** en Chrome e inicia sesión.',
+          'Toca el menú **⋮** (los tres puntos, arriba a la derecha).',
+          'Toca **Instalar app** (o **Agregar a la pantalla principal**).',
+          'Confirma con **Instalar**. El ícono de iPlanit aparece en tu pantalla.',
+        ],
+      },
+      { type: 'h', text: 'En iPhone (Safari)' },
+      {
+        type: 'steps',
+        items: [
+          'Abre **iplanit.io** en **Safari** (en iPhone se instala desde Safari) e inicia sesión.',
+          'Toca el botón **Compartir** (el cuadrado con una flecha hacia arriba).',
+          'Baja y toca **Añadir a pantalla de inicio**.',
+          'Toca **Añadir**.',
+        ],
+      },
+      { type: 'h', text: 'En computadora (Chrome)' },
+      { type: 'p', text: 'A la derecha de la barra de direcciones aparece un ícono de instalar. Tócalo y confirma. Si no lo ves, abre el menú **⋮** → **Transmitir, guardar y compartir** → **Instalar iPlanit**.' },
+      { type: 'tip', text: 'Para compartirlo con tu equipo, mándales el link **iplanit.io** por WhatsApp: abrirlo e instalarlo desde el navegador es la única forma, no existe un archivo para instalar.' },
+      { type: 'warning', text: 'La app instalada necesita internet y no avisa con sonido cuando está cerrada: los sonidos suenan mientras la tengas abierta.' },
+    ],
+    related: ['compartir-link', 'acceso-agenda-trabajador'],
+  },
+  {
+    slug: 'instalar-app-trabajador',
+    category: 'mi-agenda',
+    title: 'Instalar tu agenda en el celular',
+    summary: 'Ten tu agenda a un toque, con su propio ícono.',
+    audience: 'worker',
+    keywords: ['instalar', 'app', 'celular', 'icono', 'pantalla de inicio', 'android', 'iphone'],
+    blocks: [
+      { type: 'p', text: 'iPlanit no está en la Play Store ni en la App Store: es una página que se instala desde el navegador. Queda con su propio ícono en tu celular, abre a pantalla completa y no ocupa casi espacio.' },
+      { type: 'h', text: 'En Android (Chrome)' },
+      {
+        type: 'steps',
+        items: [
+          'Abre **iplanit.io/mi-agenda** en Chrome e inicia sesión.',
+          'Toca el menú **⋮** (los tres puntos, arriba a la derecha).',
+          'Toca **Instalar app** (o **Agregar a la pantalla principal**).',
+          'Confirma con **Instalar**. El ícono de iPlanit aparece en tu pantalla.',
+        ],
+      },
+      { type: 'h', text: 'En iPhone (Safari)' },
+      {
+        type: 'steps',
+        items: [
+          'Abre **iplanit.io/mi-agenda** en **Safari** (en iPhone se instala desde Safari) e inicia sesión.',
+          'Toca el botón **Compartir** (el cuadrado con una flecha hacia arriba).',
+          'Baja y toca **Añadir a pantalla de inicio**.',
+          'Toca **Añadir**.',
+        ],
+      },
+      { type: 'h', text: 'En computadora (Chrome)' },
+      { type: 'p', text: 'A la derecha de la barra de direcciones aparece un ícono de instalar. Tócalo y confirma. Si no lo ves, abre el menú **⋮** → **Transmitir, guardar y compartir** → **Instalar iPlanit**.' },
+      { type: 'tip', text: 'Para compartirlo con tu equipo, mándales el link **iplanit.io** por WhatsApp: abrirlo e instalarlo desde el navegador es la única forma, no existe un archivo para instalar.' },
+      { type: 'warning', text: 'La app instalada necesita internet y no avisa con sonido cuando está cerrada: los sonidos suenan mientras la tengas abierta.' },
+    ],
+    related: ['usar-mi-agenda'],
   },
 
   // ─── Facturación ─────────────────────────────────────────────────────
@@ -919,7 +1026,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
         items: [
           'Abre el enlace que te mandó el negocio por correo o WhatsApp.',
           'Crea tu cuenta con el **mismo email** al que te invitaron.',
-          'Listo: verás tu agenda. Guárdala en la pantalla de inicio de tu celular para abrirla rápido.',
+          'Listo: verás tu agenda. Instálala en tu celular para abrirla con un toque (mira el artículo **Instalar tu agenda en el celular**, abajo).',
         ],
       },
       { type: 'h', text: 'Qué ves' },
@@ -934,7 +1041,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       { type: 'p', text: 'Es solo de lectura. Para mover o cancelar una cita, avísale al negocio.' },
       { type: 'tip', text: '¿Dice "No tienes una agenda vinculada"? Revisa que hayas entrado con el mismo email al que te invitaron.' },
     ],
-    related: ['tu-ganancia'],
+    related: ['instalar-app-trabajador', 'tu-ganancia'],
   },
   {
     slug: 'tu-ganancia',

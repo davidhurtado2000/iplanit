@@ -81,6 +81,10 @@ interface Business {
   workers_see_sales?: boolean
   /** Commission for work outside opening hours (scripts/115) - null = unused. */
   off_hours_commission_pct?: number | null
+  /** What the public link does with "Sin preferencia" (scripts/116): 'auto' =
+   * assign the least busy free barber (as always); 'auto_review' = same, but
+   * flag the booking so reception can confirm or change the barber. */
+  no_preference_mode?: 'auto' | 'auto_review'
   /** Client birthday emails - see scripts/071-client-birthdays.sql. The
    * discount is informational only (mentioned in the email, applied
    * manually by the business) - nothing here touches pricing/checkout. */

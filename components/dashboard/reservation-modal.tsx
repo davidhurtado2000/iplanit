@@ -63,7 +63,7 @@ import {
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
-import { useLanguage } from '@/context/language-context'
+import { useLanguage, getTranslations } from '@/context/language-context'
 import { getWorkerLabel } from '@/lib/worker-label'
 import { useDashboardData, type ClientDocumentType, type Reservation } from '@/context/dashboard-data-context'
 import { StatusBadge } from '@/components/dashboard/status-badge'
@@ -74,6 +74,7 @@ import { capitalizeFirst, cn } from '@/lib/utils'
 import { toTzLocalInput, parseInTimezone, toDateStr } from '@/lib/timezone'
 import { generateAvailableSlots, isDayClosed, intersectSlots, weekParity } from '@/lib/availability'
 import { sendReservationNotification } from '@/lib/email/notify'
+import { offHoursFor } from '@/lib/off-hours'
 import { syncReservationToKommo } from '@/lib/kommo/sync'
 import { isPlanLimitReached, meetsPlan } from '@/lib/plan-limits'
 import { formatDuration } from '@/lib/duration'
@@ -1033,6 +1034,22 @@ export function ReservationModal({
   const onlyPastSlotsLeft =
     availableSlots.length === 0 && !allowPastSlots && slotDate === toDateStr(new Date(), tz) && computeSlots(true).length > 0
 
+  // Whether this appointment counts as "fuera de horario" for commissions:
+  // it starts outside the chosen worker's own schedule (or business hours
+  // when they have none), or on a day they don't work. The database applies
+  // the same rule when saving (scripts/116) - this just explains it here.
+  const offHoursInfo = (() => {
+    if (formData.type !== 'booking' || !formData.worker_id || !formData.start_time) return null
+    const [datePart, timePart] = formData.start_time.split('T')
+    if (!datePart || !timePart) return null
+    return offHoursFor({
+      dateStr: datePart,
+      timeStr: timePart.slice(0, 5),
+      workerHours: selectedWorkerHours,
+      businessHours,
+    })
+  })()
+
   // Non-blocking: the chosen person's own schedule doesn't cover this
   // appointment's time. Staff often record what actually happened, so
   // this informs instead of preventing the save.
@@ -1351,7 +1368,14 @@ export function ReservationModal({
         notes: formData.notes || null,
         // Only sent when it changed, so saving keeps working before
         // scripts/115 adds the column.
-        ...(offHours !== (reservation?.off_hours ?? false) ? { off_hours: offHours } : {}),
+        // Choosing a barber by hand settles the "Sin preferencia" review
+        // (scripts/116) - only sent when it actually applies.
+        ...(effectiveMode === 'edit' && reservation?.worker_auto_assigned && formData.worker_id !== (reservation.worker_id ?? '')
+          ? { worker_auto_assigned: false }
+          : {}),
+        ...((offHoursInfo ? offHoursInfo.off : offHours) !== (reservation?.off_hours ?? false)
+          ? { off_hours: offHoursInfo ? offHoursInfo.off : offHours }
+          : {}),
       }
 
       // Pre-flight overlap check for a fast, friendly error message. Strict
@@ -1528,6 +1552,29 @@ export function ReservationModal({
   }
   const parsedTip = tipInput.trim() === '' ? null : Number(tipInput.replace(',', '.'))
   const tipInvalid = parsedTip !== null && (!Number.isFinite(parsedTip) || parsedTip < 0 || parsedTip > 99999)
+  // "Por confirmar barbero" (scripts/116): the owner accepts the barber the
+  // system picked for a "Sin preferencia" booking.
+  const handleConfirmWorker = async () => {
+    if (!reservation?.id) return
+    try {
+      setIsLoading(true)
+      markOwnReservationWrite()
+      const { error } = await supabase
+        .from('reservations')
+        .update({ worker_auto_assigned: false })
+        .eq('id', reservation.id)
+      if (error) throw error
+      toast.success(t.pay.toConfirmDone)
+      onSave?.()
+      onClose()
+    } catch (error) {
+      console.error('[iplanit] Error confirming worker:', error)
+      toast.error(t.saveError)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const handleSavePayment = async (method: string | null) => {
     if (!reservation?.id) return
     if (tipInvalid) {
@@ -1745,13 +1792,19 @@ export function ReservationModal({
   // Uses the business's own custom template (Settings > Notificaciones,
   // scripts/089-reminder-message-templates.sql) when set, falling back to
   // the built-in default otherwise.
+  //
+  // The built-in text MUST come from the client's language, not `t` (the
+  // staff member's own UI language): with the dashboard in English, a
+  // Spanish business sent "Hi Edwin, this is a reminder ... on Martes, 17 de
+  // noviembre" - English text around a Spanish date.
+  const clientTexts = getTranslations(clientEmailLanguage)
   const whatsappReminderHref =
     reservation && viewClient?.phone
       ? getWhatsappLink(
           viewClient.phone,
           applyReminderPlaceholders(
             currentBusiness?.reminder_whatsapp_message ||
-              (viewService ? t.reservation.whatsappReminderMessage : t.reservation.whatsappReminderMessageNoService),
+              (viewService ? clientTexts.reservation.whatsappReminderMessage : clientTexts.reservation.whatsappReminderMessageNoService),
             {
               client: viewClient.name,
               service: viewService?.name ?? '',
@@ -1907,6 +1960,12 @@ export function ReservationModal({
                   <span>{paymentMethodLabel(reservation.payment_method, t.reservation.paymentGeneric)}</span>
                 </div>
               )}
+              {reservation.off_hours && (
+                <div className="flex items-center gap-3 text-sm">
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-medium">{t.pay.offHoursBadge}</span>
+                </div>
+              )}
               {!!reservation.tip_amount && (
                 <div className="flex items-center gap-3 text-sm">
                   <Wallet className="h-4 w-4 text-muted-foreground" />
@@ -1943,6 +2002,22 @@ export function ReservationModal({
                       ({resourceTypeLabel[viewResource.type]})
                     </span>
                   </span>
+                </div>
+              )}
+              {reservation.worker_auto_assigned && viewWorker && (
+                <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
+                  <p className="text-sm font-medium text-amber-900 dark:text-amber-200">{t.pay.toConfirmBannerTitle}</p>
+                  <p className="text-xs text-amber-900/80 dark:text-amber-200/80">
+                    {t.pay.toConfirmBannerDesc.replace('{name}', viewWorker.name)}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" size="sm" disabled={isLoading} onClick={handleConfirmWorker}>
+                      {t.pay.toConfirmConfirm}
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" disabled={isLoading} onClick={() => setIsEditing(true)}>
+                      {t.pay.toConfirmChange}
+                    </Button>
+                  </div>
                 </div>
               )}
               {viewWorker && (
@@ -2028,7 +2103,11 @@ export function ReservationModal({
                     <DropdownMenuItem
                       onClick={() =>
                         // A visit has nothing to pay for - complete it directly.
-                        reservation.type === 'visit' ? handleUpdateStatus('completed') : openPaymentDialog()
+                        reservation.type === 'visit'
+                          ? handleUpdateStatus('completed')
+                          : workers.some((w) => w.is_active) && !reservation.worker_id
+                            ? toast.error(t.pay.completeNeedsWorker)
+                            : openPaymentDialog()
                       }
                     >
                       {t.reservation.markCompleted}
@@ -2906,6 +2985,34 @@ export function ReservationModal({
                   }}
                 />
               </div>
+            )}
+            {offHoursInfo && (offHours || offHoursInfo.off) && (
+              <p
+                className={cn(
+                  'flex items-start gap-1.5 rounded-md px-3 py-2 text-xs',
+                  offHoursInfo.off
+                    ? 'bg-amber-500/10 text-amber-800 dark:text-amber-300'
+                    : 'bg-muted text-muted-foreground'
+                )}
+              >
+                <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>
+                  {(() => {
+                    const name = selectedWorker?.name ?? ''
+                    const pct = currentBusiness?.off_hours_commission_pct
+                    const pctText =
+                      pct !== null && pct !== undefined
+                        ? ` ${t.pay.offHoursCommissionIs.replace('{pct}', String(Number(pct)))}`
+                        : ''
+                    if (offHoursInfo.reason === 'day_off') return t.pay.offHoursDayOff.replace('{name}', name) + pctText
+                    const msg = (offHoursInfo.off ? t.pay.offHoursOut : t.pay.offHoursIn)
+                      .replace('{name}', name)
+                      .replace('{open}', formatLocalTime(offHoursInfo.open!))
+                      .replace('{close}', formatLocalTime(offHoursInfo.close!))
+                    return offHoursInfo.off ? msg + pctText : msg
+                  })()}
+                </span>
+              </p>
             )}
 
             {/* Date & Time - the slot grid below is generated from real

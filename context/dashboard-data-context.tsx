@@ -66,6 +66,9 @@ export interface Reservation {
   /** Done outside the business's opening hours - changes the commission
    * (scripts/115, lib/worker-pay.ts). Undefined until that script runs. */
   off_hours?: boolean
+  /** The barber was picked automatically for a "Sin preferencia" booking
+   * and nobody has confirmed it yet (scripts/116). Cleared on completion. */
+  worker_auto_assigned?: boolean
   /** 'kommo' = the Kommo integration's webhook cancelled this after its
    * matching lead was marked Lost (see app/api/integrations/kommo/webhook) -
    * distinct from 'business' (staff cancelled it themselves in iPlanit) so

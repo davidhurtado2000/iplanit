@@ -1309,7 +1309,14 @@ function DayView({
                     'relative border-r last:border-r-0',
                     incompatible ? 'cursor-not-allowed' : onCreateAtSlot && 'cursor-pointer hover:bg-muted/30'
                   )}
-                  style={{ flex: `1 1 ${MIN_COL_WIDTH}px`, height: gridHeight, touchAction: onCreateAtSlot ? 'pan-y' : undefined }}
+                  // 'manipulation' = pan in BOTH axes + pinch zoom. This used
+                  // to be 'pan-y', which also applies to everything inside
+                  // the column (reservation blocks included): on a phone,
+                  // swiping sideways over the grid did nothing, and the
+                  // other barbers' columns were only reachable by swiping
+                  // the name header. Drag-to-create is mouse-only, so touch
+                  // never needed that restriction.
+                  style={{ flex: `1 1 ${MIN_COL_WIDTH}px`, height: gridHeight, touchAction: onCreateAtSlot ? 'manipulation' : undefined }}
                   onClick={(e) => handleClick(e, col.id)}
                   onPointerDown={(e) => handlePointerDown(e, col.id)}
                   onPointerMove={(e) => handlePointerMove(e, col.id)}

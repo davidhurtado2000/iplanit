@@ -42,7 +42,7 @@ import { useBusinesses } from '@/hooks/use-businesses'
 import { useAuth } from '@/hooks/use-auth'
 import { meetsPlan } from '@/lib/plan-limits'
 import { WorkerPaySettingsDialog } from '@/components/dashboard/worker-pay-settings-dialog'
-import { useLanguage } from '@/context/language-context'
+import { useLanguage, getTranslations } from '@/context/language-context'
 import { getWorkerLabel } from '@/lib/worker-label'
 import { useDashboardData } from '@/context/dashboard-data-context'
 import { TimeSelect } from '@/components/dashboard/time-select'
@@ -395,7 +395,9 @@ export default function WorkersPage() {
   // message is friendlier than "check your email".
   const handleCopyAccessMessage = async () => {
     if (!accessWorker) return
-    const message = t.workers.accessWhatsappMessage
+    // Addressed to the worker, in the business's language (same rule as the
+    // client reminders) - not the language of whoever is using the dashboard.
+    const message = getTranslations(currentBusiness?.country === 'US' ? 'en' : 'es').workers.accessWhatsappMessage
       .replace('{name}', accessWorker.name.split(' ')[0])
       .replace('{business}', currentBusiness?.name || '')
       .replace('{url}', accessUrl(accessWorker))

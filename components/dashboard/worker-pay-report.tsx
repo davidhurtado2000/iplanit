@@ -147,7 +147,51 @@ export function WorkerPayReport({
         {lines.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">{tr.empty}</p>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* Phones: one card per worker instead of a 9-column table. */}
+          <div className="space-y-3 sm:hidden">
+            {lines.map((l) => (
+              <div key={l.worker.id} className="rounded-lg border p-3">
+                <div className="flex items-baseline justify-between gap-3">
+                  <p className="min-w-0 truncate font-medium">{l.worker.name}</p>
+                  <p className="shrink-0 text-lg font-semibold tabular-nums">{money(l.total)}</p>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {tr.colTotal} · {l.served} {tr.colServed.toLowerCase()} · {l.pctLabel}
+                </p>
+                <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                  <div>
+                    <dt className="text-xs text-muted-foreground">{tr.colSales}</dt>
+                    <dd className="tabular-nums">{money(l.sales)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-muted-foreground">{tr.colServiceShare}</dt>
+                    <dd className="tabular-nums">{money(l.serviceShare)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-muted-foreground">{tr.colTips}</dt>
+                    <dd className="tabular-nums">{money(l.tips)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-muted-foreground">{tr.colTipShare}</dt>
+                    <dd className="tabular-nums">{money(l.tipShare)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-muted-foreground">{tr.colBusiness}</dt>
+                    <dd className="tabular-nums text-muted-foreground">{money(l.businessShare)}</dd>
+                  </div>
+                </dl>
+              </div>
+            ))}
+            {lines.length > 1 && (
+              <div className="flex items-baseline justify-between rounded-lg bg-muted px-3 py-2.5">
+                <span className="font-semibold">{tr.totalsRow}</span>
+                <span className="text-lg font-semibold tabular-nums">{money(totals.total)}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="hidden overflow-x-auto sm:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -194,6 +238,7 @@ export function WorkerPayReport({
               )}
             </Table>
           </div>
+          </>
         )}
         <p className="text-xs text-muted-foreground">{tr.reportNote}</p>
       </CardContent>
