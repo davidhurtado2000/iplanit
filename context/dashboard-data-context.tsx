@@ -319,6 +319,12 @@ const DAY_MS = 24 * 60 * 60 * 1000
 // silently went missing - clients not found, today's bookings not on the
 // calendar. This pages through until a short page comes back. The query must
 // have a stable order (ending in a unique column) so pages don't overlap.
+// The columns of the Client interface below - nothing else about a client is
+// read in the dashboard (fiscal data, Kommo ids, etc. stay in the database).
+// "select *" on 1,300 clients was ~30% heavier for no benefit.
+const CLIENT_COLUMNS =
+  'id, business_id, organization_id, name, email, phone, notes, created_at, is_active, document_type, document_number, birthday_month, birthday_day, is_walk_in'
+
 const PAGE_SIZE = 1000
 async function fetchAllPages<T>(
   page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>
@@ -459,7 +465,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
           fetchAllPagesParallel((from, to) =>
             supabase
               .from('clients')
-              .select('*')
+              .select(CLIENT_COLUMNS)
               .eq('organization_id', currentBusiness.organization_id)
               .order('name')
               .order('id')
@@ -939,7 +945,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
     const { data } = await fetchAllPagesParallel((from, to) =>
       supabase
         .from('clients')
-        .select('*')
+        .select(CLIENT_COLUMNS)
         .eq('organization_id', currentBusiness.organization_id)
         .order('name')
         .order('id')

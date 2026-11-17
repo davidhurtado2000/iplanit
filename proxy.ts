@@ -4,6 +4,30 @@ import { createServerClient } from '@supabase/ssr'
 const protectedRoutes = ['/dashboard', '/app', '/admin', '/mi-agenda']
 const authRoutes = ['/login', '/register', '/forgot-password']
 
+// How long the session check may wait for Supabase before giving up. When
+// the database is overloaded (504/522 in Supabase's edge logs) every protected
+// request would otherwise hang for a minute and then bounce the person to the
+// login page saying their session expired - even though it is perfectly valid.
+const AUTH_TIMEOUT_MS = 6000
+
+function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), AUTH_TIMEOUT_MS)
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer))
+}
+
+// "Supabase didn't answer" (timeout, 5xx, an HTML error page) as opposed to
+// "Supabase answered and says this session is invalid" (a 4xx AuthApiError or
+// no session at all). Only the second one means logged out.
+function isAuthOutage(error: { name?: string; status?: number } | null): boolean {
+  if (!error) return false
+  return (
+    error.name === 'AuthRetryableFetchError' ||
+    error.name === 'AuthUnknownError' ||
+    (typeof error.status === 'number' && error.status >= 500)
+  )
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
@@ -50,6 +74,7 @@ export async function proxy(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      global: { fetch: fetchWithTimeout },
       cookies: {
         getAll() {
           return request.cookies.getAll()
@@ -71,9 +96,37 @@ export async function proxy(request: NextRequest) {
 
   // getUser() is preferred over getSession() in middleware – it validates the
   // JWT server-side and also triggers a token refresh when needed.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // Ordinary pages only decide "dashboard or login", so they trust the session
+  // cookie (getSession: reads it and renews it only when it has expired)
+  // instead of asking Supabase to validate it on EVERY request (getUser = a
+  // network + database round trip per page, the GET /user calls that timed
+  // out during the 2026-11-17 outages). The data itself is protected by
+  // row-level security on every query, which does not depend on this check.
+  // Admin pages keep the strict server-side check.
+  const strict = pathname.startsWith('/admin')
+  let user: { id: string } | null = null
+  let authError: { name?: string; status?: number } | null = null
+  if (strict) {
+    const res = await supabase.auth.getUser()
+    user = res.data.user
+    authError = res.error
+  } else {
+    const res = await supabase.auth.getSession()
+    // Only whether there is a live session matters here - not who it is.
+    user = res.data.session ? { id: 'session' } : null
+    authError = res.error
+  }
+
+  const hadSession = request.cookies.getAll().some((c) => c.name.startsWith('sb-') && c.name.includes('-auth-token'))
+
+  // Supabase is down or too slow to answer: we can't tell whether this session
+  // is valid, so don't log anyone out over it. Someone WITH a session cookie
+  // goes through and the page shows its own loading/error state (their data
+  // is protected by row-level security either way); someone without one still
+  // goes to the login page below.
+  if (isProtectedRoute && !user && hadSession && isAuthOutage(authError)) {
+    return response
+  }
 
   if (isProtectedRoute && !user) {
     const loginUrl = new URL('/login', request.url)
@@ -84,7 +137,6 @@ export async function proxy(request: NextRequest) {
     // bounced instead of silently landing on the login form, as if their
     // click on "Go to dashboard" had done nothing. No cookie at all just
     // means they were never signed in, which needs no explanation.
-    const hadSession = request.cookies.getAll().some((c) => c.name.startsWith('sb-') && c.name.includes('-auth-token'))
     if (hadSession) loginUrl.searchParams.set('expired', '1')
     return NextResponse.redirect(loginUrl)
   }
