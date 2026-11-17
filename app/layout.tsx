@@ -66,6 +66,8 @@ export const metadata: Metadata = {
   // iPhone ("Añadir a pantalla de inicio" from Safari) reads these instead of
   // the manifest: opens full screen and names the icon "iPlanit".
   appleWebApp: { capable: true, title: 'iPlanit', statusBarStyle: 'default' },
+  // Same as translate="no" on <html>: tells Chrome not to offer translating.
+  other: { google: 'notranslate' },
 }
 
 export default function RootLayout({
@@ -74,7 +76,12 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    // translate="no": iPlanit has its own Spanish/English. Chrome's automatic
+    // translation rewrites the page's text behind React's back and crashes it
+    // ("Algo salió mal" on the calendar, 2026-11-17, with the panel in English
+    // being auto-translated). lang starts as Spanish (most businesses) and
+    // LanguageProvider keeps it in sync with the chosen language.
+    <html lang="es" translate="no" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} ${sora.variable} font-sans antialiased`}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <AuthProvider>

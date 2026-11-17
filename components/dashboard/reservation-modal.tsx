@@ -1055,6 +1055,15 @@ export function ReservationModal({
   // Offered only when there is a real choice to make.
   const canPickAnyWorker =
     formData.type === 'booking' && !editingExisting && filteredWorkers.length > 1
+  // The option can disappear after it was chosen (e.g. switching to a
+  // service only one barber does, or to a visit) - drop it then, instead of
+  // leaving the select showing nothing.
+  useEffect(() => {
+    if (anyWorker && !canPickAnyWorker) {
+      setAnyWorker(false)
+      setFormData((prev) => ({ ...prev, start_time: '' }))
+    }
+  }, [anyWorker, canPickAnyWorker])
 
   const computeSlots = (allowPast: boolean) => {
     if (!slotDate || !effectiveDurationMinutes) return []

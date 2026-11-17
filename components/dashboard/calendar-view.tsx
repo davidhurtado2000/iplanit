@@ -1464,7 +1464,11 @@ function DayView({
                         key={r.id}
                         type="button"
                         onClick={() => onSelectReservation(r)}
-                        title={getStatusLabel(r.status, t.reservation)}
+                        title={
+                          r.worker_auto_assigned
+                            ? `${getStatusLabel(r.status, t.reservation)} · ${t.pay.toConfirmBadge}`
+                            : getStatusLabel(r.status, t.reservation)
+                        }
                         className={cn(
                           'absolute left-1 right-1 overflow-hidden rounded-lg px-2.5 py-1.5 text-left text-white shadow-sm transition-all hover:brightness-110 hover:shadow-md',
                           statusBorderClass(r.status),
@@ -1479,6 +1483,7 @@ function DayView({
                         {isShort ? (
                           <p className="flex items-center gap-1 text-[10px] font-semibold leading-tight truncate">
                             {r.type === 'visit' && <Eye className="h-2.5 w-2.5 shrink-0" />}
+                            {r.worker_auto_assigned && <HelpCircle className="h-2.5 w-2.5 shrink-0 text-amber-300" />}
                             {client?.name ?? '—'}
                             {attendeesExtra > 0 && ` +${attendeesExtra}`}
                           </p>
@@ -1486,6 +1491,9 @@ function DayView({
                           <>
                             <p className="flex items-center gap-1 text-xs font-semibold leading-tight truncate">
                               {r.type === 'visit' && <Eye className="h-3 w-3 shrink-0" />}
+                              {/* "Sin preferencia" not confirmed yet (scripts/116):
+                                  the column's barber is only provisional. */}
+                              {r.worker_auto_assigned && <HelpCircle className="h-3 w-3 shrink-0 text-amber-300" />}
                               {client?.name ?? '—'}
                               {attendeesExtra > 0 && (
                                 <span className="font-normal opacity-80">

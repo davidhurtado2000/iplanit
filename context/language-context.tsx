@@ -74,16 +74,16 @@ const TRANSLATIONS = {
       offHoursBadge: 'Fuera de horario',
       toConfirmBadge: 'Por confirmar barbero',
       toConfirmBannerTitle: 'Barbero asignado automáticamente',
-      toConfirmBannerDesc: 'El cliente eligió "Sin preferencia" y el sistema le dio la cita a {name}. Confírmalo o cámbialo.',
+      toConfirmBannerDesc: 'El cliente no eligió barbero. Por ahora está con {name}: confírmalo o elige a otro.',
       toConfirmConfirm: 'Confirmar',
       toConfirmChange: 'Cambiar barbero',
       toConfirmDone: 'Barbero confirmado',
       toConfirmButton: 'Por confirmar ({n})',
       toConfirmDialogTitle: 'Citas por confirmar barbero',
-      toConfirmDialogDesc: 'Reservas de clientes que eligieron "Sin preferencia". El sistema ya les asignó un barbero libre; confírmalo o cámbialo.',
+      toConfirmDialogDesc: 'Clientes que no eligieron barbero. Confirma quién los atiende o cámbialo.',
       toConfirmEmpty: 'No hay citas por confirmar.',
       toConfirmAll: 'Confirmar todas',
-      toConfirmAssignedTo: 'Asignado a {name}',
+      toConfirmAssignedTo: 'Por ahora: {name}',
       completeNeedsWorker: 'Para completar la cita, primero asigna quién la atendió.',
       offHoursOut: 'Esta hora queda fuera del horario de {name} ({open} a {close}): cuenta como fuera de horario.',
       offHoursDayOff: '{name} no trabaja ese día: cuenta como fuera de horario.',
@@ -95,8 +95,8 @@ const TRANSLATIONS = {
       walkInError: 'No se pudo usar el cliente de paso. Intenta de nuevo.',
       workerRequired: 'Elige quién lo atiende.',
       anyWorkerOption: 'Sin preferencia (quien esté libre)',
-      anyWorkerHint: 'Se muestran las horas en que hay alguien libre. Al guardar, se asigna al que tenga menos citas ese día.',
-      anyWorkerHintReview: 'Se muestran las horas en que hay alguien libre. Al guardar, se asigna al que tenga menos citas ese día y la cita queda "Por confirmar barbero".',
+      anyWorkerHint: 'Al guardar, se asigna a quien esté libre y tenga menos citas ese día.',
+      anyWorkerHintReview: 'Al guardar, la cita va a "Por confirmar" en el Calendario para que elijas quién la atiende.',
       noFreeWorker: 'Ya no queda nadie libre a esa hora. Elige otra hora.',
       anyWorkerNoRepeat: 'Para reservas que se repiten, elige un barbero.',
       noWorkerWarning: '{n} citas atendidas sin trabajador asignado: no suman a nadie. Asígnales uno desde el calendario.',
@@ -1353,7 +1353,7 @@ const TRANSLATIONS = {
       noPreferenceAuto: 'Asignar al barbero libre automáticamente',
       noPreferenceReview: 'Asignar automáticamente y revisar',
       noPreferenceAutoDesc: 'El sistema le da la cita al barbero libre con menos citas ese día y no se vuelve a tocar.',
-      noPreferenceReviewDesc: 'El sistema también asigna un barbero libre (así el horario queda bien reservado), pero la cita aparece como "Por confirmar barbero" en el calendario para que tú la confirmes o la cambies.',
+      noPreferenceReviewDesc: 'Las citas sin preferencia aparecen en "Por confirmar", arriba del Calendario, para que elijas quién las atiende.',
       googleReviewTitle: 'Reseñas de Google',
       googleReviewDesc: 'Pega tu enlace para pedir reseñas de Google y lo mandamos solo, automaticamente, unas horas despues de cada cita.',
       googleReviewPlaceholder: 'https://g.page/r/...',
@@ -1959,16 +1959,16 @@ const TRANSLATIONS = {
       offHoursBadge: 'After hours',
       toConfirmBadge: 'Barber to confirm',
       toConfirmBannerTitle: 'Barber assigned automatically',
-      toConfirmBannerDesc: 'The client picked "No preference" and the system gave the booking to {name}. Confirm it or change it.',
+      toConfirmBannerDesc: "The client didn't pick a barber. For now it's with {name}: confirm it or pick someone else.",
       toConfirmConfirm: 'Confirm',
       toConfirmChange: 'Change barber',
       toConfirmDone: 'Barber confirmed',
       toConfirmButton: 'To confirm ({n})',
       toConfirmDialogTitle: 'Bookings with a barber to confirm',
-      toConfirmDialogDesc: 'Bookings from clients who picked "No preference". The system already gave them a free barber; confirm it or change it.',
+      toConfirmDialogDesc: "Clients who didn't pick a barber. Confirm who serves them or change it.",
       toConfirmEmpty: 'Nothing to confirm.',
       toConfirmAll: 'Confirm all',
-      toConfirmAssignedTo: 'Assigned to {name}',
+      toConfirmAssignedTo: 'For now: {name}',
       completeNeedsWorker: 'To complete the appointment, first assign who served it.',
       offHoursOut: "This time is outside {name}'s schedule ({open} to {close}): it counts as after hours.",
       offHoursDayOff: "{name} doesn't work that day: it counts as after hours.",
@@ -1980,8 +1980,8 @@ const TRANSLATIONS = {
       walkInError: "Couldn't use the walk-in client. Please try again.",
       workerRequired: 'Choose who serves them.',
       anyWorkerOption: 'No preference (whoever is free)',
-      anyWorkerHint: 'Shows the times when someone is free. On save, it goes to whoever has the fewest appointments that day.',
-      anyWorkerHintReview: 'Shows the times when someone is free. On save, it goes to whoever has the fewest appointments that day, marked "Barber to confirm".',
+      anyWorkerHint: 'On save, it goes to whoever is free with the fewest appointments that day.',
+      anyWorkerHintReview: 'On save, the booking goes to "To confirm" in the Calendar so you can choose who serves it.',
       noFreeWorker: 'Nobody is free at that time anymore. Pick another time.',
       anyWorkerNoRepeat: 'For repeating bookings, choose a barber.',
       noWorkerWarning: '{n} served appointments with no worker assigned: they count for no one. Assign one from the calendar.',
@@ -3237,7 +3237,7 @@ const TRANSLATIONS = {
       noPreferenceAuto: 'Assign the free barber automatically',
       noPreferenceReview: 'Assign automatically and review',
       noPreferenceAutoDesc: 'The system gives the booking to the free barber with the fewest appointments that day, and that is it.',
-      noPreferenceReviewDesc: 'The system still assigns a free barber (so the time is properly held), but the booking shows as "Barber to confirm" in the calendar so you can confirm or change it.',
+      noPreferenceReviewDesc: 'Bookings with no preference show up in "To confirm", at the top of the Calendar, so you can choose who serves them.',
       googleReviewTitle: 'Google reviews',
       googleReviewDesc: 'Paste your Google review-request link and we send it automatically, a few hours after each appointment.',
       googleReviewPlaceholder: 'https://g.page/r/...',
@@ -3831,6 +3831,13 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem('app-language', profile.language)
     }
   }, [profile])
+
+  // Tell the browser which language the page is really in (it was always
+  // "en"), so Chrome stops offering to translate a Spanish page - its
+  // translation breaks React pages (see app/layout.tsx).
+  useEffect(() => {
+    document.documentElement.lang = language
+  }, [language])
 
   // Page-level language that isn't the visitor's own choice (e.g. the public
   // booking link following the business's language) - shown, but never
