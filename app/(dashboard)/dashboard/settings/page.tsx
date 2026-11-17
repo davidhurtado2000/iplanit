@@ -644,6 +644,7 @@ function SettingsPageInner() {
     google_review_url: '',
     client_chooses_worker: false,
     no_preference_mode: 'auto' as 'auto' | 'auto_review',
+    no_preference_column: false,
     booking_font: null as string | null,
     booking_accent_color: null as string | null,
     booking_bg_color: null as string | null,
@@ -727,6 +728,7 @@ function SettingsPageInner() {
         google_review_url: currentBusiness.google_review_url || '',
         client_chooses_worker: currentBusiness.client_chooses_worker ?? false,
         no_preference_mode: currentBusiness.no_preference_mode ?? 'auto',
+        no_preference_column: currentBusiness.no_preference_column ?? false,
         booking_font: currentBusiness.booking_font ?? null,
         booking_accent_color: currentBusiness.booking_accent_color ?? null,
         booking_bg_color: currentBusiness.booking_bg_color ?? null,
@@ -1131,6 +1133,10 @@ function SettingsPageInner() {
             // scripts/116 - same only-when-changed rule.
             ...(business.no_preference_mode !== (currentBusiness.no_preference_mode ?? 'auto')
               ? { no_preference_mode: business.no_preference_mode }
+              : {}),
+            // scripts/117 - same only-when-changed rule.
+            ...(business.no_preference_column !== (currentBusiness.no_preference_column ?? false)
+              ? { no_preference_column: business.no_preference_column }
               : {}),
             ...(business.booking_font !== (currentBusiness.booking_font ?? null)
               ? { booking_font: business.booking_font }
@@ -1946,9 +1952,17 @@ function SettingsPageInner() {
                       <div className="space-y-2 rounded-lg border p-3">
                         <Label htmlFor="business-no-preference-mode">{t.settings.noPreferenceLabel}</Label>
                         <Select
-                          value={business.no_preference_mode}
+                          value={
+                            business.no_preference_mode === 'auto_review' && business.no_preference_column
+                              ? 'column'
+                              : business.no_preference_mode
+                          }
                           onValueChange={(value) =>
-                            setBusiness({ ...business, no_preference_mode: value as 'auto' | 'auto_review' })
+                            setBusiness({
+                              ...business,
+                              no_preference_mode: value === 'auto' ? 'auto' : 'auto_review',
+                              no_preference_column: value === 'column',
+                            })
                           }
                         >
                           <SelectTrigger id="business-no-preference-mode">
@@ -1957,12 +1971,15 @@ function SettingsPageInner() {
                           <SelectContent>
                             <SelectItem value="auto">{t.settings.noPreferenceAuto}</SelectItem>
                             <SelectItem value="auto_review">{t.settings.noPreferenceReview}</SelectItem>
+                            <SelectItem value="column">{t.settings.noPreferenceColumnOpt}</SelectItem>
                           </SelectContent>
                         </Select>
                         <p className="text-xs text-muted-foreground">
-                          {business.no_preference_mode === 'auto_review'
-                            ? t.settings.noPreferenceReviewDesc
-                            : t.settings.noPreferenceAutoDesc}
+                          {business.no_preference_mode !== 'auto_review'
+                            ? t.settings.noPreferenceAutoDesc
+                            : business.no_preference_column
+                              ? t.settings.noPreferenceColumnDesc
+                              : t.settings.noPreferenceReviewDesc}
                         </p>
                       </div>
                     )}

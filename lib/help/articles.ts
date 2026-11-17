@@ -635,6 +635,8 @@ export const HELP_ARTICLES: HelpArticle[] = [
           '**Confirmar todas**: si estás de acuerdo con todas.',
         ],
       },
+      { type: 'h', text: 'Una columna propia en el calendario' },
+      { type: 'p', text: 'Si prefieres verlas aparte, en esa misma opción elige **Columna "Sin preferencia" en el calendario**. En la vista por día, agrupada por barbero, esas citas aparecen en su propia columna **Sin preferencia** hasta que elijas quién las atiende. En la columna del barbero que tiene el horario guardado verás una marca **Apartado**: ese horario no está libre. Al confirmar o cambiar el barbero, la cita pasa a su columna.' },
       { type: 'tip', text: 'Si completas la cita sin confirmarla, se da por confirmada. No se puede completar una cita sin barbero asignado: así las comisiones nunca se pierden.' },
     ],
     related: ['personalizar-link', 'como-reserva-cliente'],

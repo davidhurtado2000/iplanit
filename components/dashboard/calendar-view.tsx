@@ -69,6 +69,11 @@ function visitPatternStyle(baseColor: string) {
 // A colored left border signals status at a glance without replacing the
 // block's own background (still the service's color, so services stay
 // visually identifiable) - shared by every calendar render mode below.
+// "Sin preferencia" booking whose barber isn't confirmed yet
+// (worker_auto_assigned, scripts/116): violet dashed outline + "?" icon, the
+// same in every view. Not amber - that's already the "pending" status border.
+const NO_PREF_BLOCK_CLASS = 'outline outline-2 outline-dashed outline-violet-500 -outline-offset-2'
+
 function statusBorderClass(status: string): string {
   switch (status) {
     case 'pending':   return 'border-l-4 border-amber-400'
@@ -269,7 +274,14 @@ interface CalendarViewProps {
    * finds out from the calendar itself instead of an empty resource picker
    * inside the reservation form. */
   previewAllowedResourceIds?: string[]
+  /** Day view grouped by worker: bookings whose barber the system picked for
+   * "Sin preferencia" and nobody confirmed yet (worker_auto_assigned) get
+   * their own column instead of the provisional barber's (scripts/117). */
+  noPreferenceColumn?: boolean
 }
+
+// Column id of the "Sin preferencia" column - not a real worker id.
+const NO_PREF_COL = '__no_preference__'
 
 // ─── Main component ────────────────────────────────────────────────────────
 export function CalendarViewComponent({
@@ -300,6 +312,7 @@ export function CalendarViewComponent({
   timeBlocks = [],
   onSelectTimeBlock,
   onBlockAtSlot,
+  noPreferenceColumn = false,
 }: CalendarViewProps) {
   const { t, locale } = useLanguage()
   const [currentDate, setCurrentDate] = useState(() => initialDate ?? new Date())
@@ -625,6 +638,11 @@ export function CalendarViewComponent({
                 <Eye className="h-3 w-3 shrink-0" />
                 <span>{t.calendar.visitLegendLabel}</span>
               </div>
+              <div className="flex items-center gap-2 text-xs text-foreground">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-sm outline outline-2 outline-dashed outline-violet-500" />
+                <HelpCircle className="h-3 w-3 shrink-0" />
+                <span>{t.pay.toConfirmBadge}</span>
+              </div>
               {businessNameById && (
                 <div className="flex items-center gap-2 text-xs text-foreground">
                   <span className="shrink-0 rounded border px-0.5 text-[8px] font-bold leading-none">AB</span>
@@ -668,7 +686,7 @@ export function CalendarViewComponent({
           }}
           transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.2, 0.7, 0.3, 1] }}
         >
-          {view === 'day'   && <DayView   date={currentDate} reservations={reservations} resources={resources} selectedResourceId={selectedResourceId} groupBy={groupBy} workers={workers} selectedWorkerId={selectedWorkerId} timeBlocks={timeBlocks} onSelectTimeBlock={onSelectTimeBlock} onBlockAtSlot={onBlockAtSlot} clientsMap={clientsMap} servicesMap={servicesMap} resourcesMap={resourcesMap} attendeesCountMap={attendeesCountMap} onSelectReservation={onSelectReservation} startHour={startHour} endHour={endHour} timezone={timezone} t={t} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} businessHours={businessHours} onCreateAtSlot={onCreateAtSlot} previewService={previewService} previewAllowedResourceIds={previewAllowedResourceIds} />}
+          {view === 'day'   && <DayView   noPreferenceColumn={noPreferenceColumn} date={currentDate} reservations={reservations} resources={resources} selectedResourceId={selectedResourceId} groupBy={groupBy} workers={workers} selectedWorkerId={selectedWorkerId} timeBlocks={timeBlocks} onSelectTimeBlock={onSelectTimeBlock} onBlockAtSlot={onBlockAtSlot} clientsMap={clientsMap} servicesMap={servicesMap} resourcesMap={resourcesMap} attendeesCountMap={attendeesCountMap} onSelectReservation={onSelectReservation} startHour={startHour} endHour={endHour} timezone={timezone} t={t} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} businessHours={businessHours} onCreateAtSlot={onCreateAtSlot} previewService={previewService} previewAllowedResourceIds={previewAllowedResourceIds} />}
           {view === 'week'  && <WeekView  date={currentDate} reservations={reservations} clientsMap={clientsMap} servicesMap={servicesMap} attendeesCountMap={attendeesCountMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
           {view === 'month' && <MonthView date={currentDate} reservations={reservations} servicesMap={servicesMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
           {view === 'list'  && (
@@ -696,8 +714,9 @@ function DayView({
   date, reservations, resources, selectedResourceId, groupBy, workers, selectedWorkerId, timeBlocks, onSelectTimeBlock, onBlockAtSlot,
   clientsMap, servicesMap, resourcesMap, attendeesCountMap = {}, onSelectReservation,
   startHour, endHour, timezone, t, businessNameById, businessColorIndexById, businessHours, onCreateAtSlot,
-  previewService, previewAllowedResourceIds,
+  previewService, previewAllowedResourceIds, noPreferenceColumn = false,
 }: {
+  noPreferenceColumn?: boolean
   date: Date
   reservations: any[]
   resources: Resource[]
@@ -814,6 +833,10 @@ function DayView({
       if (selectedWorkerId === 'all' && dayRes.some(r => !r.worker_id || !knownWorkerIds.has(r.worker_id))) {
         cols.push({ id: null, label: t.calendar.unassignedWorkerColumn })
       }
+      // "Sin preferencia" first, so reception sees what still needs a barber.
+      if (noPreferenceColumn && selectedWorkerId === 'all') {
+        cols.unshift({ id: NO_PREF_COL, label: t.pay.noPreferenceColumn })
+      }
       return cols
     }
 
@@ -845,7 +868,7 @@ function DayView({
       cols = [{ id: null, label: t.calendar.reservationsFallbackColumn }]
     }
     return cols
-  }, [groupBy, workers, selectedWorkerId, knownWorkerIds, businessHours, dateStr, timezone, blockOccurrences, dayStartInstant, dayEndInstant, resources, selectedResourceId, resourcesMap, dayRes, t, businessNameById, businessColorIndexById])
+  }, [groupBy, workers, selectedWorkerId, knownWorkerIds, businessHours, dateStr, timezone, blockOccurrences, dayStartInstant, dayEndInstant, resources, selectedResourceId, resourcesMap, dayRes, t, businessNameById, businessColorIndexById, noPreferenceColumn])
 
   // Groups consecutive columns that share the same sede into one spanning
   // header cell instead of repeating a (sometimes long) business name on
@@ -867,16 +890,25 @@ function DayView({
   }, [columns])
   const hasSedeGroups = columns.some(c => c.sedeLabel)
 
+  const inNoPrefColumn = (r: any) =>
+    noPreferenceColumn && groupBy === 'worker' && !!r.worker_auto_assigned && r.status !== 'cancelled'
   const getColRes = (colId: string | null) => {
     if (groupBy === 'worker') {
+      if (colId === NO_PREF_COL) return dayRes.filter(inNoPrefColumn)
       return colId === null
-        ? dayRes.filter(r => !r.worker_id || !knownWorkerIds.has(r.worker_id))
-        : dayRes.filter(r => r.worker_id === colId)
+        ? dayRes.filter(r => (!r.worker_id || !knownWorkerIds.has(r.worker_id)) && !inNoPrefColumn(r))
+        : dayRes.filter(r => r.worker_id === colId && !inNoPrefColumn(r))
     }
     return colId === null && resources.length === 0
       ? dayRes
       : dayRes.filter(r => r.resource_id === colId)
   }
+
+  // The provisional barber's column shows a faint "Apartado" block where a
+  // "Sin preferencia" booking holds their time - otherwise that time would
+  // look free but not be bookable for them.
+  const getColHolds = (colId: string | null) =>
+    colId && colId !== NO_PREF_COL ? dayRes.filter(r => inNoPrefColumn(r) && r.worker_id === colId) : []
 
   // Columns grow to fill available width (so 1-2 resources fill the
   // screen instead of hugging the left edge) and only fall back to the
@@ -1203,7 +1235,7 @@ function DayView({
                 // A real person/resource header opens the block form for
                 // them (day off, lunch) - the lock shows on hover so it's
                 // discoverable without cluttering every header.
-                const headerBlocks = !!onBlockAtSlot && col.id !== null && !incompatible
+                const headerBlocks = !!onBlockAtSlot && col.id !== null && col.id !== NO_PREF_COL && !incompatible
                 const headerClass = cn(
                   'group flex min-w-0 items-center justify-center gap-1.5 border-r last:border-r-0 px-3 py-2.5 text-center text-xs font-semibold bg-muted/40',
                   incompatible && 'opacity-40',
@@ -1300,6 +1332,8 @@ function DayView({
             {/* Resource columns */}
             {columns.map(col => {
               const colRes = getColRes(col.id)
+              const colHolds = getColHolds(col.id)
+              const isNoPrefCol = col.id === NO_PREF_COL
               const incompatibleReason = getColIncompatibleReason(col.id)
               const incompatible = !!incompatibleReason
               return (
@@ -1307,7 +1341,9 @@ function DayView({
                   key={String(col.id)}
                   className={cn(
                     'relative border-r last:border-r-0',
-                    incompatible ? 'cursor-not-allowed' : onCreateAtSlot && 'cursor-pointer hover:bg-muted/30'
+                    isNoPrefCol
+                      ? 'bg-violet-500/5'
+                      : incompatible ? 'cursor-not-allowed' : onCreateAtSlot && 'cursor-pointer hover:bg-muted/30'
                   )}
                   // 'manipulation' = pan in BOTH axes + pinch zoom. This used
                   // to be 'pan-y', which also applies to everything inside
@@ -1317,10 +1353,12 @@ function DayView({
                   // the name header. Drag-to-create is mouse-only, so touch
                   // never needed that restriction.
                   style={{ flex: `1 1 ${MIN_COL_WIDTH}px`, height: gridHeight, touchAction: onCreateAtSlot ? 'manipulation' : undefined }}
-                  onClick={(e) => handleClick(e, col.id)}
-                  onPointerDown={(e) => handlePointerDown(e, col.id)}
-                  onPointerMove={(e) => handlePointerMove(e, col.id)}
-                  onPointerUp={(e) => handlePointerUp(e, col.id)}
+                  // The "Sin preferencia" column only lists bookings: creating
+                  // one there would need a barber anyway.
+                  onClick={(e) => !isNoPrefCol && handleClick(e, col.id)}
+                  onPointerDown={(e) => !isNoPrefCol && handlePointerDown(e, col.id)}
+                  onPointerMove={(e) => !isNoPrefCol && handlePointerMove(e, col.id)}
+                  onPointerUp={(e) => !isNoPrefCol && handlePointerUp(e, col.id)}
                   onPointerCancel={() => setDrag(null)}
                   onPointerLeave={() => setHoverPreview((p) => (p?.colId === col.id ? null : p))}
                 >
@@ -1438,7 +1476,28 @@ function DayView({
                       )
                     })}
 
-                  {colRes.length === 0 && (
+                  {colHolds.map(r => (
+                    <button
+                      key={`hold-${r.id}`}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onSelectReservation(r)
+                      }}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      className="absolute left-1 right-1 z-[2] flex items-start gap-1 overflow-hidden rounded-lg border border-dashed border-violet-500/60 bg-violet-500/10 px-2 py-1 text-left text-[10px] font-medium text-violet-800 dark:text-violet-300"
+                      style={{
+                        top: GRID_TOP_PAD + topOffset(r.start_time, effStartHour, timezone) + 1,
+                        height: blockHeight(r.start_time, r.end_time) - 2,
+                      }}
+                      title={t.pay.heldLabel}
+                    >
+                      <HelpCircle className="mt-px h-3 w-3 shrink-0" />
+                      <span className="truncate">{t.pay.heldLabel}</span>
+                    </button>
+                  ))}
+
+                  {colRes.length === 0 && colHolds.length === 0 && (
                     <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                       <span className="text-[10px] text-muted-foreground/30 select-none">—</span>
                     </div>
@@ -1472,6 +1531,7 @@ function DayView({
                         className={cn(
                           'absolute left-1 right-1 overflow-hidden rounded-lg px-2.5 py-1.5 text-left text-white shadow-sm transition-all hover:brightness-110 hover:shadow-md',
                           statusBorderClass(r.status),
+                          r.worker_auto_assigned && NO_PREF_BLOCK_CLASS,
                           (r.status === 'cancelled' || r.status === 'no_show') && 'opacity-45 saturate-50'
                         )}
                         style={{
@@ -1483,7 +1543,7 @@ function DayView({
                         {isShort ? (
                           <p className="flex items-center gap-1 text-[10px] font-semibold leading-tight truncate">
                             {r.type === 'visit' && <Eye className="h-2.5 w-2.5 shrink-0" />}
-                            {r.worker_auto_assigned && <HelpCircle className="h-2.5 w-2.5 shrink-0 text-amber-300" />}
+                            {r.worker_auto_assigned && <HelpCircle className="h-2.5 w-2.5 shrink-0 text-violet-200" />}
                             {client?.name ?? '—'}
                             {attendeesExtra > 0 && ` +${attendeesExtra}`}
                           </p>
@@ -1493,7 +1553,7 @@ function DayView({
                               {r.type === 'visit' && <Eye className="h-3 w-3 shrink-0" />}
                               {/* "Sin preferencia" not confirmed yet (scripts/116):
                                   the column's barber is only provisional. */}
-                              {r.worker_auto_assigned && <HelpCircle className="h-3 w-3 shrink-0 text-amber-300" />}
+                              {r.worker_auto_assigned && <HelpCircle className="h-3 w-3 shrink-0 text-violet-200" />}
                               {client?.name ?? '—'}
                               {attendeesExtra > 0 && (
                                 <span className="font-normal opacity-80">
@@ -1639,6 +1699,7 @@ function WeekView({
                       className={cn(
                         'flex w-full cursor-pointer items-center gap-1 truncate rounded px-1.5 py-0.5 text-[9px] font-medium text-white sm:text-[10px]',
                         statusBorderClass(r.status),
+                        r.worker_auto_assigned && NO_PREF_BLOCK_CLASS,
                         (r.status === 'cancelled' || r.status === 'no_show') && 'opacity-45 saturate-50'
                       )}
                       style={r.type === 'visit' ? visitPatternStyle(VISIT_BLOCK_COLOR) : { backgroundColor: rowColor }}
@@ -1770,6 +1831,7 @@ function MonthView({
                       className={cn(
                         'flex w-full cursor-pointer items-center gap-0.5 truncate rounded px-1 py-0.5 text-[9px] sm:text-[10px] text-white',
                         statusBorderClass(r.status),
+                        r.worker_auto_assigned && NO_PREF_BLOCK_CLASS,
                         (r.status === 'cancelled' || r.status === 'no_show') && 'opacity-45 saturate-50'
                       )}
                       style={r.type === 'visit' ? visitPatternStyle(VISIT_BLOCK_COLOR) : { backgroundColor: rowColor }}

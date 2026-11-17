@@ -603,6 +603,7 @@ function CalendarPageInner() {
           <CalendarViewComponent
             view={view}
             onSelectReservation={handleSelectReservation}
+            noPreferenceColumn={!isExpanded && !!currentBusiness?.no_preference_column && currentBusiness?.no_preference_mode === 'auto_review'}
             onCreateAtSlot={handleCreateAtSlot}
             onViewChange={setView}
             reservations={effectiveReservations}

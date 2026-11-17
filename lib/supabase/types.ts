@@ -375,6 +375,7 @@ export interface Database {
           tip_worker_pct: number
           off_hours_commission_pct: number | null
           no_preference_mode: 'auto' | 'auto_review'
+          no_preference_column: boolean
           pay_excludes_tax: boolean
           workers_see_sales: boolean
           client_chooses_worker: boolean
@@ -420,6 +421,7 @@ export interface Database {
           tip_worker_pct?: number
           off_hours_commission_pct?: number | null
           no_preference_mode?: 'auto' | 'auto_review'
+          no_preference_column?: boolean
           pay_excludes_tax?: boolean
           workers_see_sales?: boolean
           client_chooses_worker?: boolean
@@ -465,6 +467,7 @@ export interface Database {
           tip_worker_pct?: number
           off_hours_commission_pct?: number | null
           no_preference_mode?: 'auto' | 'auto_review'
+          no_preference_column?: boolean
           pay_excludes_tax?: boolean
           workers_see_sales?: boolean
           client_chooses_worker?: boolean

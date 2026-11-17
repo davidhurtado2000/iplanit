@@ -85,6 +85,9 @@ interface Business {
    * assign the least busy free barber (as always); 'auto_review' = same, but
    * flag the booking so reception can confirm or change the barber. */
   no_preference_mode?: 'auto' | 'auto_review'
+  /** With 'auto_review': show those bookings in their own calendar column
+   * (scripts/117). */
+  no_preference_column?: boolean
   /** Client birthday emails - see scripts/071-client-birthdays.sql. The
    * discount is informational only (mentioned in the email, applied
    * manually by the business) - nothing here touches pricing/checkout. */
