@@ -196,7 +196,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'En **Cliente**, busca por nombre, teléfono, correo o DNI. Si es nuevo, toca **+ Crear cliente nuevo**. Si no quiere dar sus datos, elige **Cliente de paso (sin datos)**.',
           'Elige el **Servicio**.',
           'Elige la **Fecha**.',
-          'Elige quién lo atiende (es obligatorio si tienes trabajadores). Los que no trabajan ese día aparecen en gris con **No trabaja este dia**. Si el cliente no tiene preferencia (por ejemplo, llamó y le da igual), elige **Sin preferencia (quien esté libre)**: verás las horas en que hay alguien libre y, al guardar, se asigna al que tenga menos citas ese día.',
+          'Elige quién lo atiende (es obligatorio si tienes trabajadores). Los que no trabajan ese día aparecen en gris con **No trabaja este dia**. Si el cliente no tiene preferencia (por ejemplo, llamó y le da igual), elige **Sin preferencia**: verás las horas en que hay alguien libre y, al guardar, se asigna al que tenga menos citas ese día.',
           'Elige la **Hora**. Solo aparecen los horarios libres.',
           'Revisa el precio (se llena solo, pero puedes cambiarlo) y agrega notas si hace falta.',
           'Toca **Crear reserva**.',
