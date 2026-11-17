@@ -1054,6 +1054,24 @@ export function ReservationModal({
     return free.sort((a, b) => dayCount(a.id) - dayCount(b.id) || a.name.localeCompare(b.name))[0] ?? null
   }
   // Offered only when there is a real choice to make.
+  // Barbers who already have an appointment overlapping the chosen time.
+  // Listed greyed out and not selectable (same rule the save-time check
+  // enforces, so it's explained up front instead of failing on save) - the
+  // case that matters most is assigning a barber to a "Sin preferencia"
+  // booking. Only known once a time is picked; a barber that allows
+  // concurrent services is never busy.
+  const busyWorkerIds = (() => {
+    const ids = new Set<string>()
+    if (!formData.start_time) return ids
+    const start = parseInTimezone(formData.start_time, tz).getTime()
+    const end = start + (effectiveDurationMinutes ?? 60) * 60000
+    for (const r of reservations) {
+      if (!r.worker_id || r.status === 'cancelled' || r.id === reservation?.id) continue
+      if (new Date(r.start_time).getTime() < end && new Date(r.end_time).getTime() > start) ids.add(r.worker_id)
+    }
+    for (const w of workers) if (w.allows_concurrent_services) ids.delete(w.id)
+    return ids
+  })()
   const canPickAnyWorker =
     formData.type === 'booking' && !editingExisting && filteredWorkers.length > 1
   // The option can disappear after it was chosen (e.g. switching to a
@@ -3088,22 +3106,35 @@ export function ReservationModal({
                   <SelectContent>
                     {canPickAnyWorker && <SelectItem value="__any__">{t.pay.anyWorkerOption}</SelectItem>}
                     {!workerRequired && <SelectItem value="_none">{t.reservation.noWorker}</SelectItem>}
-                    {workersByDay.map(({ worker, worksThatDay }) => (
-                      <SelectItem key={worker.id} value={worker.id}>
-                        <span className={cn('flex items-center gap-2', !worksThatDay && 'opacity-60')}>
+                    {workersByDay.map(({ worker, worksThatDay }) => {
+                      const busy = busyWorkerIds.has(worker.id)
+                      return (
+                      <SelectItem key={worker.id} value={worker.id} disabled={busy}>
+                        <span className={cn('flex items-center gap-2', (!worksThatDay || busy) && 'opacity-60')}>
                           <span
                             className="h-2 w-2 shrink-0 rounded-full"
                             style={{ backgroundColor: worker.color || '#3B82F6' }}
                           />
                           <span className="font-medium">{worker.name}</span>
-                          {!worksThatDay && (
-                            <span className="text-xs text-muted-foreground">· {t.reservation.workerOffDayTag}</span>
+                          {busy ? (
+                            <span className="text-xs text-muted-foreground">· {t.reservation.workerBusyTag}</span>
+                          ) : (
+                            !worksThatDay && (
+                              <span className="text-xs text-muted-foreground">· {t.reservation.workerOffDayTag}</span>
+                            )
                           )}
                         </span>
                       </SelectItem>
-                    ))}
+                      )
+                    })}
                   </SelectContent>
                 </Select>
+                {formData.type === 'booking' && !!formData.worker_id && busyWorkerIds.has(formData.worker_id) && (
+                  <p className="flex items-start gap-1.5 text-xs font-medium text-destructive">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    {t.reservation.selectedWorkerBusy.replace('{name}', selectedWorker?.name ?? '')}
+                  </p>
+                )}
                 {anyWorker ? (
                   <p className="text-xs text-muted-foreground">
                     {poolMode
@@ -3468,6 +3499,7 @@ export function ReservationModal({
                       formData.hours > (selectedService.max_hours ?? Infinity))) ||
                   (!!hoursError && !offHours) ||
                   (workerRequired && !formData.worker_id && !anyWorker) ||
+                  (formData.type === 'booking' && !!formData.worker_id && busyWorkerIds.has(formData.worker_id)) ||
                   (repeatEnabled && repeatDays.length === 0)
                 }
                 className="gap-2"

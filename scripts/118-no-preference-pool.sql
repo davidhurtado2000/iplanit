@@ -440,3 +440,19 @@ $$;
 
 revoke all on function public.create_public_reservation(text, uuid, uuid, timestamptz, text, text, text, text, uuid, boolean, integer, text, uuid) from public;
 grant execute on function public.create_public_reservation(text, uuid, uuid, timestamptz, text, text, text, text, uuid, boolean, integer, text, uuid) to anon, authenticated;
+
+-- ============ OPTIONAL PART 4: move existing provisional bookings ============
+-- NOT run with the rest (commented out). Bookings created before the pool
+-- (scripts/116/117) still hold the barber the system picked provisionally
+-- (worker_auto_assigned = true), which keeps showing the "Apartado" mark in
+-- that barber's column and blocks their time. Uncomment and run ONCE, after
+-- switching the business to the pool, to move the still-pending ones into the
+-- pool (no barber, no time held). Completed/cancelled bookings are not touched.
+--
+-- update public.reservations
+-- set worker_id = null,
+--     no_preference_pool = true,
+--     worker_auto_assigned = false
+-- where worker_auto_assigned = true
+--   and status in ('pending', 'confirmed')
+--   and start_time > now();
