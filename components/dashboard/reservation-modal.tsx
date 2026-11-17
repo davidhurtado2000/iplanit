@@ -65,7 +65,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage, getTranslations } from '@/context/language-context'
 import { getWorkerLabel } from '@/lib/worker-label'
-import { useDashboardData, type ClientDocumentType, type Reservation } from '@/context/dashboard-data-context'
+import { useDashboardData, type Client as DataClient, type ClientDocumentType, type Reservation } from '@/context/dashboard-data-context'
 import { StatusBadge } from '@/components/dashboard/status-badge'
 import { ReservationInvoicing } from '@/components/dashboard/reservation-invoicing'
 import { markOwnReservationWrite } from '@/lib/own-actions'
@@ -258,6 +258,7 @@ export function ReservationModal({
     reservationAttendees,
     timeBlocks,
     refetchClients,
+    upsertClientLocal,
     refetchReservationAttendees,
   } = useDashboardData()
   // Parking is a separate concept from a service's linked resource (see the
@@ -327,6 +328,11 @@ export function ReservationModal({
   // while the business is closed (e.g. a walk-in after closing) - any time
   // can be picked, and the after-hours commission applies.
   const [offHours, setOffHours] = useState(false)
+  // "Sin preferencia" in the panel (a client who calls and takes whoever is
+  // free): the slot grid shows times when ANY barber is free, and the least
+  // busy free barber is picked on save - same rule as the public link
+  // (create_public_reservation). Create mode only.
+  const [anyWorker, setAnyWorker] = useState(false)
   const [walkInLoading, setWalkInLoading] = useState(false)
 
   const isUSD = currentBusiness?.currency === 'USD'
@@ -519,6 +525,7 @@ export function ReservationModal({
       })
       setSlotDate(toDateStr(reservation.start_time, tz))
       setOffHours(!!reservation.off_hours)
+      setAnyWorker(false)
       setIsEditing(mode === 'edit')
     } else {
       // Both hints share the same "YYYY-MM-DDTHH:MM" business-local shape
@@ -554,6 +561,7 @@ export function ReservationModal({
       })
       setSlotDate(selectedDate || toDateStr(new Date().toISOString(), tz))
       setOffHours(false)
+      setAnyWorker(false)
       setIsEditing(true)
     }
     setError('')
@@ -680,7 +688,10 @@ export function ReservationModal({
       setWalkInLoading(false)
       return
     }
-    await refetchClients()
+    // Just this one client, not the whole list again.
+    const { data: walkIn } = await supabase.from('clients').select('*').eq('id', walkInId as string).single()
+    if (walkIn) upsertClientLocal(walkIn as unknown as DataClient)
+    else await refetchClients()
     setFormData((prev) => ({ ...prev, client_id: walkInId as string }))
     setWalkInLoading(false)
     setClientComboOpen(false)
@@ -726,10 +737,10 @@ export function ReservationModal({
           notes: newClientForm.notes.trim() || null,
           business_id: currentBusiness.id,
         })
-        .select('id')
+        .select('*')
         .single()
       if (error) throw error
-      await refetchClients()
+      upsertClientLocal(data as unknown as DataClient)
       setFormData((prev) => ({ ...prev, client_id: data.id }))
       setIsAddingClient(false)
       setNewClientForm({ name: '', email: '', phone: '', documentType: defaultDocumentType, documentNumber: '', notes: '' })
@@ -987,8 +998,67 @@ export function ReservationModal({
   const editingPastReservation = editingExisting && !!reservation && new Date(reservation.start_time) < new Date()
   const allowPastSlots = backdated || editingPastReservation
 
+  // Free slots for ONE given worker on slotDate - the same calculation as
+  // the selected-worker path below, but for any worker. Used by
+  // "Sin preferencia" to show times when at least one barber is free, and
+  // to pick who gets the booking on save.
+  const dayBlockOccurrences = (() => {
+    if (!slotDate || timeBlocks.length === 0) return []
+    const dayStart = parseInTimezone(`${slotDate}T00:00`, tz)
+    return expandTimeBlocks(timeBlocks, dayStart, new Date(dayStart.getTime() + 24 * 60 * 60 * 1000), tz)
+  })()
+  const slotsForWorker = (worker: (typeof workers)[number], allowPast: boolean): Date[] => {
+    if (!slotDate || !effectiveDurationMinutes) return []
+    const busy = [
+      ...resourceBusyRanges,
+      ...(worker.allows_concurrent_services
+        ? []
+        : reservations
+            .filter((r) => r.worker_id === worker.id && r.status !== 'cancelled' && r.id !== reservation?.id)
+            .map(expandByBuffer)),
+      ...dayBlockOccurrences
+        .filter(
+          (o) =>
+            (!o.workerId && !o.resourceId) ||
+            o.workerId === worker.id ||
+            (!!formData.resource_id && o.resourceId === formData.resource_id)
+        )
+        .map((o) => ({ start_time: o.start.toISOString(), end_time: o.end.toISOString() })),
+    ]
+    const before = selectedService?.buffer_before_min || 0
+    const after = selectedService?.buffer_after_min || 0
+    const bizSlots = generateAvailableSlots(slotDate, businessHours, effectiveDurationMinutes, busy, tz, before, after, allowPast)
+    const hours = workerHours.filter((h) => h.worker_id === worker.id)
+    if (hours.length === 0) return bizSlots
+    return intersectSlots(
+      bizSlots,
+      generateAvailableSlots(slotDate, hours, effectiveDurationMinutes, busy, tz, before, after, allowPast)
+    )
+  }
+  const anyWorkerSlots = (allowPast: boolean): Date[] => {
+    const byTime = new Map<number, Date>()
+    for (const w of filteredWorkers) for (const slot of slotsForWorker(w, allowPast)) byTime.set(slot.getTime(), slot)
+    return [...byTime.values()].sort((a, b) => a.getTime() - b.getTime())
+  }
+  // The barber who gets a "Sin preferencia" booking: free at that start
+  // time, fewest appointments that day, then by name (as the public link).
+  const pickFreeWorker = (start: Date) => {
+    const free = filteredWorkers.filter((w) =>
+      slotsForWorker(w, allowPastSlots).some((slot) => slot.getTime() === start.getTime())
+    )
+    const dayCount = (workerId: string) =>
+      reservations.filter(
+        (r) => r.worker_id === workerId && r.status !== 'cancelled' && toDateStr(r.start_time, tz) === slotDate
+      ).length
+    return free.sort((a, b) => dayCount(a.id) - dayCount(b.id) || a.name.localeCompare(b.name))[0] ?? null
+  }
+  // Offered only when there is a real choice to make.
+  const canPickAnyWorker =
+    formData.type === 'booking' && !editingExisting && filteredWorkers.length > 1
+
   const computeSlots = (allowPast: boolean) => {
     if (!slotDate || !effectiveDurationMinutes) return []
+    if (anyWorker) return anyWorkerSlots(allowPast)
     const businessSlots = generateAvailableSlots(
       slotDate,
       businessHours,
@@ -1286,6 +1356,10 @@ export function ReservationModal({
       setError(t.reservation.repeatDaysRequired)
       return
     }
+    if (anyWorker && repeatEnabled) {
+      setError(t.pay.anyWorkerNoRepeat)
+      return
+    }
 
     try {
       setIsLoading(true)
@@ -1348,6 +1422,22 @@ export function ReservationModal({
         }
       }
 
+      // "Sin preferencia": decide the barber now, from who is free at
+      // exactly this time.
+      let workerId = formData.worker_id
+      let autoAssigned = false
+      if (anyWorker) {
+        const picked = pickFreeWorker(startDate)
+        if (!picked) {
+          setError(t.pay.noFreeWorker)
+          setIsLoading(false)
+          return
+        }
+        workerId = picked.id
+        autoAssigned = currentBusiness.no_preference_mode === 'auto_review'
+      }
+      const workerForCheck = workers.find((w) => w.id === workerId)
+
       // status deliberately isn't here - only the 'create' branch below sets
       // it (new reservations always start 'pending'). If it were included
       // here, editing an already-confirmed/completed reservation would
@@ -1358,8 +1448,9 @@ export function ReservationModal({
         client_id: formData.client_id,
         service_id: formData.service_id || null,
         resource_id: formData.resource_id || null,
-        worker_id: formData.worker_id || null,
+        worker_id: workerId || null,
         parking_resource_id: parkingResourceId,
+        ...(autoAssigned ? { worker_auto_assigned: true } : {}),
         start_time: startDate.toISOString(),
         end_time: endDate.toISOString(),
         type: formData.type,
@@ -1410,11 +1501,11 @@ export function ReservationModal({
         }
       }
 
-      if (formData.worker_id && !selectedWorker?.allows_concurrent_services) {
+      if (workerId && !workerForCheck?.allows_concurrent_services) {
         let workerConflictQuery = supabase
           .from('reservations')
           .select('id')
-          .eq('worker_id', formData.worker_id)
+          .eq('worker_id', workerId)
           .neq('status', 'cancelled')
           .lt('start_time', reservationData.end_time)
           .gt('end_time', reservationData.start_time)
@@ -2920,23 +3011,27 @@ export function ReservationModal({
                   )}
                 </Label>
                 <Select
-                  value={formData.worker_id || '_none'}
+                  value={anyWorker ? '__any__' : formData.worker_id || '_none'}
                   onValueChange={(val) =>
                     // Changing the worker changes which bookings count as
                     // "busy" for them, which can invalidate whatever slot
                     // was picked - except on an existing appointment
                     // ("who did this cut"), where the time stays as is.
-                    setFormData({
-                      ...formData,
-                      worker_id: val === '_none' ? '' : val,
-                      start_time: editingExisting ? formData.start_time : '',
-                    })
+                    {
+                      setAnyWorker(val === '__any__')
+                      setFormData({
+                        ...formData,
+                        worker_id: val === '_none' || val === '__any__' ? '' : val,
+                        start_time: editingExisting ? formData.start_time : '',
+                      })
+                    }
                   }
                 >
                   <SelectTrigger id="worker">
                     <SelectValue placeholder={t.reservation.selectWorker} />
                   </SelectTrigger>
                   <SelectContent>
+                    {canPickAnyWorker && <SelectItem value="__any__">{t.pay.anyWorkerOption}</SelectItem>}
                     {!workerRequired && <SelectItem value="_none">{t.reservation.noWorker}</SelectItem>}
                     {workersByDay.map(({ worker, worksThatDay }) => (
                       <SelectItem key={worker.id} value={worker.id}>
@@ -2954,14 +3049,19 @@ export function ReservationModal({
                     ))}
                   </SelectContent>
                 </Select>
-                {workerRequired && !formData.worker_id && (
-                  <p className="text-xs text-muted-foreground">{t.pay.workerRequired}</p>
+                {anyWorker ? (
+                  <p className="text-xs text-muted-foreground">
+                    {currentBusiness?.no_preference_mode === 'auto_review' ? t.pay.anyWorkerHintReview : t.pay.anyWorkerHint}
+                  </p>
+                ) : (
+                  workerRequired &&
+                  !formData.worker_id && <p className="text-xs text-muted-foreground">{t.pay.workerRequired}</p>
                 )}
               </div>
             )}
 
-            {/* After hours (scripts/115) - bookings only. */}
-            {formData.type === 'booking' && (
+            {/* After hours (scripts/115) - bookings only, with a specific barber. */}
+            {formData.type === 'booking' && !anyWorker && (
               <div className="flex items-start justify-between gap-3 rounded-lg border p-3">
                 <div className="space-y-0.5">
                   <Label htmlFor="off-hours" className="flex items-center gap-1.5">
@@ -3308,7 +3408,7 @@ export function ReservationModal({
                       formData.hours < (selectedService.min_hours ?? 1) ||
                       formData.hours > (selectedService.max_hours ?? Infinity))) ||
                   (!!hoursError && !offHours) ||
-                  (workerRequired && !formData.worker_id) ||
+                  (workerRequired && !formData.worker_id && !anyWorker) ||
                   (repeatEnabled && repeatDays.length === 0)
                 }
                 className="gap-2"

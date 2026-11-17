@@ -9,7 +9,7 @@ import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
 import { getWorkerLabel } from '@/lib/worker-label'
 import { isAiAddonActive } from '@/lib/ai-usage-client'
-import { createClient } from '@/lib/supabase/client'
+import { isPlatformAdmin as checkPlatformAdmin } from '@/lib/platform-admin'
 import {
   Calendar,
   LayoutDashboard,
@@ -70,8 +70,13 @@ export function MobileNav({ isOpen, onToggle }: MobileNavProps) {
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   useEffect(() => {
     if (!user) return
-    const supabase = createClient()
-    supabase.rpc('is_platform_admin').then(({ data }) => setIsPlatformAdmin(!!data))
+    let cancelled = false
+    checkPlatformAdmin(user.id).then((value) => {
+      if (!cancelled) setIsPlatformAdmin(value)
+    })
+    return () => {
+      cancelled = true
+    }
   }, [user])
 
   const userPlan = profile?.plan || 'free'

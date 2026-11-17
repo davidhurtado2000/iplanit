@@ -271,6 +271,11 @@ type DashboardDataContextType = {
   loadingMoreReservations: boolean
   refetchReservations: () => Promise<void>
   refetchClients: () => Promise<void>
+  /** Add or replace ONE client in the loaded list (after creating/editing
+   * it) - instead of refetchClients(), which re-downloads the whole list
+   * (1,300+ rows for a business like Carppone) for a single change. */
+  upsertClientLocal: (client: Client) => void
+  removeClientLocal: (clientId: string) => void
   refetchServicesAndResources: () => Promise<void>
   refetchServiceResources: () => Promise<void>
   refetchServiceDurationOptions: () => Promise<void>
@@ -318,6 +323,57 @@ async function fetchAllPages<T>(
     all.push(...(data ?? []))
     if (!data || data.length < PAGE_SIZE) return { data: all, error: null }
   }
+}
+
+// Same as fetchAllPages, but asks for the first `firstPages` pages at once
+// instead of one after another - for lists known to be big (clients). On a
+// slow database each page costs about a second, so two in parallel halve the
+// wait; any further pages still go one by one.
+async function fetchAllPagesParallel<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+  firstPages = 2
+): Promise<{ data: T[]; error: unknown }> {
+  const first = await Promise.all(
+    Array.from({ length: firstPages }, (_, i) => page(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1))
+  )
+  const all: T[] = []
+  for (const { data, error } of first) {
+    if (error) return { data: all, error }
+    all.push(...(data ?? []))
+    if (!data || data.length < PAGE_SIZE) return { data: all, error: null }
+  }
+  for (let from = firstPages * PAGE_SIZE; ; from += PAGE_SIZE) {
+    const { data, error } = await page(from, from + PAGE_SIZE - 1)
+    if (error) return { data: all, error }
+    all.push(...(data ?? []))
+    if (!data || data.length < PAGE_SIZE) return { data: all, error: null }
+  }
+}
+
+// Realtime is the single biggest load on the database (Supabase keeps
+// polling for changes while ANY tab is subscribed - ~75% of database time
+// on the small instance). A tab left in the background doesn't need live
+// updates: after `graceMs` hidden, the subscriptions are dropped, and they
+// come back (with a catch-up refetch) when the tab is visible again.
+function usePageActive(graceMs: number) {
+  const [active, setActive] = useState(true)
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const onChange = () => {
+      if (timer) clearTimeout(timer)
+      if (document.visibilityState === 'visible') {
+        setActive(true)
+      } else {
+        timer = setTimeout(() => setActive(false), graceMs)
+      }
+    }
+    document.addEventListener('visibilitychange', onChange)
+    return () => {
+      if (timer) clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onChange)
+    }
+  }, [graceMs])
+  return active
 }
 
 function getDefaultReservationWindow() {
@@ -392,7 +448,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
               .order('id')
               .range(from, to)
           ),
-          fetchAllPages((from, to) =>
+          fetchAllPagesParallel((from, to) =>
             supabase
               .from('clients')
               .select('*')
@@ -517,9 +573,10 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
     reservationsRef.current = reservations
   }, [reservations])
   const knownStatusRef = useRef(new Map<string, Reservation['status']>())
+  const pageActive = usePageActive(2 * 60 * 1000)
 
   useEffect(() => {
-    if (!currentBusiness) return
+    if (!currentBusiness || !pageActive) return
     knownStatusRef.current.clear()
 
     const flushInsertBuffer = () => {
@@ -741,7 +798,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
       flushInsertBuffer()
       flushUpdateBuffer()
     }
-  }, [currentBusiness?.id, t, locale, router])
+  }, [currentBusiness?.id, t, locale, router, pageActive])
 
   // Live-patches the clients list for changes made OUTSIDE this dashboard
   // session - today that's exclusively the Kommo webhook (contacts[add]/
@@ -753,7 +810,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
   // new reservation, a synced client isn't something staff need to react to
   // right now, so this stays a quiet background patch.
   useEffect(() => {
-    if (!currentBusiness) return
+    if (!currentBusiness || !pageActive) return
 
     const channel = supabase
       .channel(`clients-sync-${currentBusiness.organization_id}`)
@@ -778,7 +835,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [currentBusiness?.organization_id])
+  }, [currentBusiness?.organization_id, pageActive])
 
   const refetchReservations = useCallback(async () => {
     if (!currentBusiness) return
@@ -799,6 +856,16 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
     )
     setReservations(data)
   }, [currentBusiness?.id, loadedRange])
+
+  // Back from the background (see usePageActive): the subscriptions were off,
+  // so re-read the reservations once to pick up whatever changed meanwhile.
+  // Clients aren't re-read here on purpose - the whole list is heavy and
+  // only changes from outside the dashboard with the Kommo integration.
+  const wasActiveRef = useRef(pageActive)
+  useEffect(() => {
+    if (pageActive && !wasActiveRef.current) refetchReservations()
+    wasActiveRef.current = pageActive
+  }, [pageActive, refetchReservations])
 
   const ensureReservationsInRange = useCallback(async (from: Date, to: Date) => {
     if (!currentBusiness) return
@@ -837,7 +904,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
 
   const refetchClients = useCallback(async () => {
     if (!currentBusiness) return
-    const { data } = await fetchAllPages((from, to) =>
+    const { data } = await fetchAllPagesParallel((from, to) =>
       supabase
         .from('clients')
         .select('*')
@@ -848,6 +915,17 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
     )
     setClients(data as unknown as Client[])
   }, [currentBusiness?.id, currentBusiness?.organization_id])
+
+  const upsertClientLocal = useCallback((client: Client) => {
+    setClients((prev) => {
+      const exists = prev.some((c) => c.id === client.id)
+      const next = exists ? prev.map((c) => (c.id === client.id ? client : c)) : [...prev, client]
+      return exists ? next : next.sort((a, b) => a.name.localeCompare(b.name))
+    })
+  }, [])
+  const removeClientLocal = useCallback((clientId: string) => {
+    setClients((prev) => prev.filter((c) => c.id !== clientId))
+  }, [])
 
   const refetchServicesAndResources = useCallback(async () => {
     if (!currentBusiness) return
@@ -947,6 +1025,8 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         loadingMoreReservations,
         refetchReservations,
         refetchClients,
+        upsertClientLocal,
+        removeClientLocal,
         refetchServicesAndResources,
         refetchServiceResources,
         refetchServiceDurationOptions,

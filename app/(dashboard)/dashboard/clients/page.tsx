@@ -55,7 +55,7 @@ import {
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useAuth } from '@/hooks/use-auth'
 import { useLanguage } from '@/context/language-context'
-import { useDashboardData, type Reservation } from '@/context/dashboard-data-context'
+import { useDashboardData, type Client as DataClient, type Reservation } from '@/context/dashboard-data-context'
 import { matchesClientSearch } from '@/lib/client-search'
 import { createClient } from '@/lib/supabase/client'
 import { StatusBadge } from '@/components/dashboard/status-badge'
@@ -225,7 +225,7 @@ export default function ClientsPage() {
   const { currentBusiness, businesses } = useBusinesses()
   const { profile } = useAuth()
   const { t, locale } = useLanguage()
-  const { clients: allClients, services, workers, loading, refetchClients } = useDashboardData()
+  const { clients: allClients, services, workers, loading, refetchClients, upsertClientLocal, removeClientLocal } = useDashboardData()
   // The shared "Cliente de paso" (scripts/115) isn't a real client - kept
   // out of this list, its counts and exports.
   const clients = useMemo(() => allClients.filter((c) => !c.is_walk_in), [allClients])
@@ -624,20 +624,25 @@ export default function ClientsPage() {
         // business_id is provenance only (which sede first created this
         // client, scripts/053) - must never be rewritten just because the
         // client is now being edited from a different sede in the org.
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('clients')
           .update(clientData)
           .eq('id', editingClient.id)
+          .select('*')
+          .single()
 
         if (error) throw error
+        upsertClientLocal(data as unknown as DataClient)
       } else {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('clients')
           .insert({ ...clientData, business_id: currentBusiness.id })
+          .select('*')
+          .single()
 
         if (error) throw error
+        upsertClientLocal(data as unknown as DataClient)
       }
-      await refetchClients()
       setIsModalOpen(false)
       toast.success(editingClient ? t.clients.updateSuccess : t.clients.createSuccess)
     } catch (err: any) {
@@ -667,7 +672,7 @@ export default function ClientsPage() {
         .eq('id', deletingClient.id)
 
       if (error) throw error
-      await refetchClients()
+      removeClientLocal(deletingClient.id)
     } catch (err) {
       console.error('[v0] Error deleting client:', err)
     } finally {

@@ -31,7 +31,7 @@ import {
   CalendarCheck,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { createClient } from '@/lib/supabase/client'
+import { isPlatformAdmin as checkPlatformAdmin } from '@/lib/platform-admin'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { SmartAvatarImage } from '@/components/ui/smart-avatar-image'
 import {
@@ -78,8 +78,13 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   useEffect(() => {
     if (!user) return
-    const supabase = createClient()
-    supabase.rpc('is_platform_admin').then(({ data }) => setIsPlatformAdmin(!!data))
+    let cancelled = false
+    checkPlatformAdmin(user.id).then((value) => {
+      if (!cancelled) setIsPlatformAdmin(value)
+    })
+    return () => {
+      cancelled = true
+    }
   }, [user])
 
   useEffect(() => {

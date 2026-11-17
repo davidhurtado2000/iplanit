@@ -94,6 +94,11 @@ const TRANSLATIONS = {
       walkInHint: 'Para quien no quiere dejar sus datos',
       walkInError: 'No se pudo usar el cliente de paso. Intenta de nuevo.',
       workerRequired: 'Elige quién lo atiende.',
+      anyWorkerOption: 'Sin preferencia (quien esté libre)',
+      anyWorkerHint: 'Se muestran las horas en que hay alguien libre. Al guardar, se asigna al que tenga menos citas ese día.',
+      anyWorkerHintReview: 'Se muestran las horas en que hay alguien libre. Al guardar, se asigna al que tenga menos citas ese día y la cita queda "Por confirmar barbero".',
+      noFreeWorker: 'Ya no queda nadie libre a esa hora. Elige otra hora.',
+      anyWorkerNoRepeat: 'Para reservas que se repiten, elige un barbero.',
       noWorkerWarning: '{n} citas atendidas sin trabajador asignado: no suman a nadie. Asígnales uno desde el calendario.',
     },
     timeBlocks: {
@@ -1974,6 +1979,11 @@ const TRANSLATIONS = {
       walkInHint: "For someone who won't leave their details",
       walkInError: "Couldn't use the walk-in client. Please try again.",
       workerRequired: 'Choose who serves them.',
+      anyWorkerOption: 'No preference (whoever is free)',
+      anyWorkerHint: 'Shows the times when someone is free. On save, it goes to whoever has the fewest appointments that day.',
+      anyWorkerHintReview: 'Shows the times when someone is free. On save, it goes to whoever has the fewest appointments that day, marked "Barber to confirm".',
+      noFreeWorker: 'Nobody is free at that time anymore. Pick another time.',
+      anyWorkerNoRepeat: 'For repeating bookings, choose a barber.',
       noWorkerWarning: '{n} served appointments with no worker assigned: they count for no one. Assign one from the calendar.',
     },
     timeBlocks: {
