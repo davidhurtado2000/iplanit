@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReservationExtra } from '@/lib/reservation-services'
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -274,6 +275,9 @@ type DashboardDataContextType = {
   loadingMoreReservations: boolean
   refetchReservations: () => Promise<void>
   refetchClients: () => Promise<void>
+  /** Extra services of appointments with several (scripts/119). */
+  reservationExtras: ReservationExtra[]
+  refetchReservationExtras: () => Promise<void>
   /** Add or replace ONE client in the loaded list (after creating/editing
    * it) - instead of refetchClients(), which re-downloads the whole list
    * (1,300+ rows for a business like Carppone) for a single change. */
@@ -403,6 +407,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
   const [workerHours, setWorkerHours] = useState<WorkerHour[]>([])
   const [workerServices, setWorkerServices] = useState<WorkerService[]>([])
   const [reservationAttendees, setReservationAttendees] = useState<ReservationAttendee[]>([])
+  const [reservationExtras, setReservationExtras] = useState<ReservationExtra[]>([])
   const [calendarStartHour, setCalendarStartHour] = useState(7)
   const [calendarEndHour, setCalendarEndHour] = useState(21)
   const [loading, setLoading] = useState(true)
@@ -439,7 +444,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
     const fetchAll = async () => {
       try {
         const defaultWindow = getDefaultReservationWindow()
-        const [reservationsRes, clientsRes, servicesRes, resourcesRes, hoursRes, workersRes, workerHoursRes, workerServicesRes, serviceResourcesRes, durationOptionsRes, reservationAttendeesRes] = await Promise.all([
+        const [reservationsRes, clientsRes, servicesRes, resourcesRes, hoursRes, workersRes, workerHoursRes, workerServicesRes, serviceResourcesRes, durationOptionsRes, reservationAttendeesRes, reservationExtrasRes] = await Promise.all([
           fetchAllPages<Reservation>((from, to) =>
             supabase
               .from('reservations')
@@ -503,6 +508,16 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
               .order('id')
               .range(from, to)
           ),
+          // Table from scripts/119 - on an older database this just errors
+          // and comes back empty, so nothing else is affected.
+          fetchAllPages<ReservationExtra>((from, to) =>
+            supabase
+              .from('reservation_services')
+              .select('*')
+              .eq('business_id', currentBusiness.id)
+              .order('id')
+              .range(from, to)
+          ),
         ])
 
         setReservations(reservationsRes.data || [])
@@ -517,6 +532,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         setWorkerHours(workerHoursRes.data || [])
         setWorkerServices(workerServicesRes.data || [])
         setReservationAttendees(reservationAttendeesRes.data || [])
+        setReservationExtras(reservationExtrasRes.data || [])
       } catch (err) {
         console.error('[dashboard-data] Error fetching data:', err)
       } finally {
@@ -905,6 +921,19 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
     }
   }, [currentBusiness?.id, loadedRange])
 
+  const refetchReservationExtras = useCallback(async () => {
+    if (!currentBusiness) return
+    const { data } = await fetchAllPages<ReservationExtra>((from, to) =>
+      supabase
+        .from('reservation_services')
+        .select('*')
+        .eq('business_id', currentBusiness.id)
+        .order('id')
+        .range(from, to)
+    )
+    setReservationExtras(data)
+  }, [currentBusiness?.id])
+
   const refetchClients = useCallback(async () => {
     if (!currentBusiness) return
     const { data } = await fetchAllPagesParallel((from, to) =>
@@ -1028,6 +1057,8 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         loadingMoreReservations,
         refetchReservations,
         refetchClients,
+        reservationExtras,
+        refetchReservationExtras,
         upsertClientLocal,
         removeClientLocal,
         refetchServicesAndResources,

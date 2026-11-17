@@ -110,3 +110,36 @@ describe('service and after-hours rules (scripts/115)', () => {
     expect(earningFor(row({ worker_pay_pct: 45, service_commission_pct: 70 }), rules).servicePct).toBe(45)
   })
 })
+
+describe('several services in one appointment (scripts/119)', () => {
+  const rules: PaySettings = { ...commission40, offHoursPct: null }
+
+  it('blends each service at its own % by its share of the price', () => {
+    // S/ 100 total: S/ 70 main service at the worker's 40%, S/ 30 extra at a fixed 70%.
+    const e = earningFor(
+      row({ price: 100, extra_lines: [{ price: 30, commission_pct: 70 }] }),
+      rules
+    )
+    expect(e.servicePct).toBeCloseTo(49, 5) // (70*40 + 30*70) / 100
+    expect(e.serviceShare).toBe(49)
+  })
+
+  it("uses the worker's own % for an extra service without a fixed one", () => {
+    const e = earningFor(row({ price: 100, extra_lines: [{ price: 30, commission_pct: null }] }), rules)
+    expect(e.servicePct).toBe(40)
+  })
+
+  it('is the plain % when there are no extras', () => {
+    expect(earningFor(row({ price: 100 }), rules).servicePct).toBe(40)
+  })
+
+  it('still prefers the snapshot taken at completion', () => {
+    const e = earningFor(row({ price: 100, worker_pay_pct: 45, extra_lines: [{ price: 30, commission_pct: 70 }] }), rules)
+    expect(e.servicePct).toBe(45)
+  })
+
+  it('pays a salaried worker nothing from services even with extras', () => {
+    const e = earningFor(row({ price: 100, extra_lines: [{ price: 30, commission_pct: 70 }] }), { ...rules, payType: 'salary' })
+    expect(e.servicePct).toBe(0)
+  })
+})

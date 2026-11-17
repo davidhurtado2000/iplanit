@@ -85,6 +85,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'Toca **Guardar cambios** al final de esa tarjeta.',
           'Baja hasta **Horario de Atencion**. Activa los días que abres y elige la hora de apertura y cierre de cada uno.',
           'Si todos los días tienen el mismo horario, usa **Aplicar a todos los dias** y luego ajusta solo los distintos.',
+          'Si en tu negocio el horario de cierre es también la **última hora a la que se puede empezar una cita** (por ejemplo, un barbero que cierra a las 8 y recibe a su último cliente a las 8:00), activa **La última cita puede empezar a la hora de cierre**.',
           'Toca **Guardar cambios** debajo del horario.',
         ],
       },
@@ -187,19 +188,30 @@ export const HELP_ARTICLES: HelpArticle[] = [
     summary: 'Agendar una cita desde el calendario.',
     audience: 'business',
     link: { href: '/dashboard/calendar', label: 'Ir al Calendario' },
-    keywords: ['reserva', 'cita', 'agendar', 'nueva', 'turno', 'visita', 'cita pasada', 'walk in', 'sin cita', 'cliente de paso', 'turista', 'extranjero', 'fuera de horario'],
+    keywords: ['reserva', 'cita', 'agendar', 'nueva', 'turno', 'visita', 'cita pasada', 'dos servicios', 'varios servicios', 'corte y barba', 'tinte y barba', 'agregar servicio', 'walk in', 'sin cita', 'cliente de paso', 'turista', 'extranjero', 'fuera de horario'],
     blocks: [
       {
         type: 'steps',
         items: [
           'En **Calendario**, toca **Nueva Reserva**. También puedes tocar un espacio libre del calendario y elegir **Nueva reserva**.',
           'En **Cliente**, busca por nombre, teléfono, correo o DNI. Si es nuevo, toca **+ Crear cliente nuevo**. Si no quiere dar sus datos, elige **Cliente de paso (sin datos)**.',
-          'Elige el **Servicio**.',
+          'Elige el **Servicio**. Si el cliente se hace más de uno (por ejemplo, tinte y barba), toca **Agregar otro servicio** y elige el siguiente: la duración y el precio se suman, y es una sola cita.',
           'Elige la **Fecha**.',
           'Elige quién lo atiende (es obligatorio si tienes trabajadores). Los que no trabajan ese día aparecen en gris con **No trabaja este dia**. Si el cliente no tiene preferencia (por ejemplo, llamó y le da igual), elige **Sin preferencia**: verás las horas en que hay alguien libre y, al guardar, se asigna al que tenga menos citas ese día.',
           'Elige la **Hora**. Solo aparecen los horarios libres.',
           'Revisa el precio (se llena solo, pero puedes cambiarlo) y agrega notas si hace falta.',
           'Toca **Crear reserva**.',
+        ],
+      },
+      { type: 'h', text: 'Varios servicios en una sola cita' },
+      { type: 'p', text: 'Tinte + barba, corte + barba… Con **Agregar otro servicio** (debajo del servicio) los sumas en la misma cita, sin tener que crear una cita por cada uno. El sistema busca un hueco del tamaño total, la cita se ve como **"Corte de cabello + Barba"** en el calendario, y se emite **una sola boleta** por todo. También puedes agregar o quitar un servicio después, con **Editar**.' },
+      {
+        type: 'list',
+        items: [
+          'La **comisión del barbero** se calcula por servicio: cada uno con su porcentaje (por ejemplo, el tinte al 70% y la barba al 40%).',
+          'Solo se pueden agregar servicios de duración y precio fijos.',
+          'Las citas que se repiten no admiten varios servicios.',
+          'En los reportes por servicio, cada servicio cuenta con su propio precio.',
         ],
       },
       { type: 'h', text: 'Otros botones del calendario' },
@@ -1048,7 +1060,8 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         type: 'list',
         items: [
-          'Tus citas por **Día**, **Semana** o **Mes**, con el cliente, el servicio y las notas.',
+          'Tus citas por **Día**, **Semana** o **Mes**, en **Calendario** o en **Lista** (el botón de arriba). En el mes ves cada día con puntos por cita y, si tu pago está configurado, lo que ganaste ese día; toca un día para ver sus citas. En la semana tocas el día que quieres, y el día se ve por horas, con la línea roja de la hora actual.',
+          'Toca cualquier cita para ver su **detalle**: el cliente, los servicios, la hora, las **notas completas** y tu parte.',
           '**Citas**, **Atendidas** y **No vinieron** del periodo.',
           'Lo que generaste, o **Tu ganancia** si el negocio configuró tu comisión.',
         ],

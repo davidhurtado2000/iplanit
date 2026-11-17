@@ -22,6 +22,7 @@ import { sedeAbbr, sedeTint } from '@/lib/sede-colors'
 import { createClient } from '@/lib/supabase/client'
 import { getWorkerLabel } from '@/lib/worker-label'
 import { expandTimeBlocks } from '@/lib/time-blocks'
+import { groupExtras } from '@/lib/reservation-services'
 import { TimeBlockDialog, type TimeBlockPrefill } from '@/components/dashboard/time-block-dialog'
 import type { CalendarView } from '@/lib/types'
 import { Plus, CalendarDays, Clock, Building2, Eye, Loader2, History, Lock } from 'lucide-react'
@@ -113,8 +114,20 @@ function CalendarPageInner() {
     loadingMoreReservations,
     refetchReservations,
     refetchReservationAttendees,
+    reservationExtras,
+    refetchReservationExtras,
     ensureReservationsInRange,
   } = useDashboardData()
+  // reservation id -> names of its extra services, for the calendar blocks.
+  const extraServiceNames = useMemo(() => {
+    const names: Record<string, string[]> = {}
+    for (const [reservationId, list] of groupExtras(reservationExtras)) {
+      names[reservationId] = list
+        .map((e) => services.find((svc) => svc.id === e.service_id)?.name)
+        .filter((n): n is string => !!n)
+    }
+    return names
+  }, [reservationExtras, services])
   // Parking spots are a resource type but are never the "main" resource a
   // reservation is scheduled against (see needsParking/parking_resource_id
   // in reservation-modal.tsx) - showing them as calendar columns would just
@@ -391,6 +404,7 @@ function CalendarPageInner() {
   // if vista expandida isn't even on (fetchOrgData's own guard).
   const handleReservationSaved = () => {
     refetchReservations()
+    refetchReservationExtras()
     refetchReservationAttendees()
     fetchOrgData(true)
   }
@@ -603,6 +617,7 @@ function CalendarPageInner() {
           <CalendarViewComponent
             view={view}
             onSelectReservation={handleSelectReservation}
+            extraServiceNames={extraServiceNames}
             noPreferenceColumn={
               !isExpanded &&
               (currentBusiness?.no_preference_mode === 'pool' ||

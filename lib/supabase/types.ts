@@ -376,6 +376,7 @@ export interface Database {
           off_hours_commission_pct: number | null
           no_preference_mode: 'auto' | 'auto_review' | 'pool'
           no_preference_column: boolean
+          last_slot_at_close: boolean
           pay_excludes_tax: boolean
           workers_see_sales: boolean
           client_chooses_worker: boolean
@@ -422,6 +423,7 @@ export interface Database {
           off_hours_commission_pct?: number | null
           no_preference_mode?: 'auto' | 'auto_review' | 'pool'
           no_preference_column?: boolean
+          last_slot_at_close?: boolean
           pay_excludes_tax?: boolean
           workers_see_sales?: boolean
           client_chooses_worker?: boolean
@@ -468,6 +470,7 @@ export interface Database {
           off_hours_commission_pct?: number | null
           no_preference_mode?: 'auto' | 'auto_review' | 'pool'
           no_preference_column?: boolean
+          last_slot_at_close?: boolean
           pay_excludes_tax?: boolean
           workers_see_sales?: boolean
           client_chooses_worker?: boolean
@@ -1408,6 +1411,42 @@ export interface Database {
         }
         Relationships: []
       }
+      reservation_services: {
+        Row: {
+          id: string
+          business_id: string
+          reservation_id: string
+          service_id: string
+          price: number | null
+          price_usd: number | null
+          duration_minutes: number
+          position: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          business_id: string
+          reservation_id: string
+          service_id: string
+          price?: number | null
+          price_usd?: number | null
+          duration_minutes: number
+          position?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          business_id?: string
+          reservation_id?: string
+          service_id?: string
+          price?: number | null
+          price_usd?: number | null
+          duration_minutes?: number
+          position?: number
+          created_at?: string
+        }
+        Relationships: []
+      }
       worker_services: {
         Row: {
           id: string
@@ -1533,6 +1572,10 @@ export interface Database {
       get_walk_in_client: {
         Args: { p_business_id: string }
         Returns: string
+      }
+      get_public_booking_rules: {
+        Args: { p_business_id: string }
+        Returns: Json
       }
       get_public_pool_info: {
         Args: { p_business_id: string; p_from: string; p_to: string }

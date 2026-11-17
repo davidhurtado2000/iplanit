@@ -193,6 +193,9 @@ export default function PublicBookingPage() {
   const [workers, setWorkers] = useState<PublicWorker[]>([])
   // null = "Sin preferencia" (the server auto-assigns a free worker).
   const [selectedWorkerId, setSelectedWorkerId] = useState<string | null>(null)
+  // The closing time is the last START time (scripts/119) - read from the
+  // business each time slots are computed.
+  const [lastSlotAtClose, setLastSlotAtClose] = useState(false)
 
   // Workers who do this service. Empty when the business hasn't turned on
   // client_chooses_worker (get_public_workers returns nothing then), which
@@ -324,8 +327,8 @@ export default function PublicBookingPage() {
     !!selectedDate &&
     slots.length === 0 &&
     selectedDate === todayInTz(tz) &&
-    generateAvailableSlots(selectedDate, businessHours, effectiveDurationMinutes, [], tz).length === 0 &&
-    generateAvailableSlots(selectedDate, businessHours, effectiveDurationMinutes, [], tz, 0, 0, true).length > 0
+    generateAvailableSlots(selectedDate, businessHours, effectiveDurationMinutes, [], tz, 0, 0, false, lastSlotAtClose).length === 0 &&
+    generateAvailableSlots(selectedDate, businessHours, effectiveDurationMinutes, [], tz, 0, 0, true, lastSlotAtClose).length > 0
 
   useEffect(() => {
     if (step !== 'datetime' || !business || !selectedService || !visibleMonth || !effectiveDurationMinutes) return
@@ -374,6 +377,9 @@ export default function PublicBookingPage() {
       // eligible barber's availability (even when one is picked) to know how
       // many are free. If the RPC doesn't exist yet or the business doesn't
       // use the pool, everything below behaves exactly as before.
+      const { data: rules } = await supabase.rpc('get_public_booking_rules', { p_business_id: business.id })
+      const lastAtClose = !!(rules as { last_slot_at_close?: boolean } | null)?.last_slot_at_close
+      setLastSlotAtClose(lastAtClose)
       let poolRanges: { start_time: string; end_time: string }[] = []
       let poolEnabled = false
       if (eligible.length > 1) {
@@ -421,7 +427,9 @@ export default function PublicBookingPage() {
           busy,
           tz,
           selectedService.buffer_before_min || 0,
-          selectedService.buffer_after_min || 0
+          selectedService.buffer_after_min || 0,
+          false,
+          lastAtClose
         )
 
       const byDay: Record<string, Date[]> = {}

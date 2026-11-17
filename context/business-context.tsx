@@ -88,6 +88,9 @@ interface Business {
   /** With 'auto_review': show those bookings in their own calendar column
    * (scripts/117). */
   no_preference_column?: boolean
+  /** The closing time is the LAST START time (the appointment may end after
+   * it) - scripts/119. Off: the appointment must end by closing time. */
+  last_slot_at_close?: boolean
   /** Client birthday emails - see scripts/071-client-birthdays.sql. The
    * discount is informational only (mentioned in the email, applied
    * manually by the business) - nothing here touches pricing/checkout. */

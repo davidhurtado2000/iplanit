@@ -256,6 +256,7 @@ function AnalyticsPageInner() {
     workers: businessWorkers,
     businessHours,
     loading: dataLoading,
+    reservationExtras,
     ensureReservationsInRange,
   } = useDashboardData()
   const { t, locale } = useLanguage()
@@ -480,8 +481,8 @@ function AnalyticsPageInner() {
     [filteredReservations, from, to, timezone]
   )
   const serviceBreakdown = useMemo(
-    () => getServiceBreakdown(filteredReservations, services, from, to),
-    [filteredReservations, services, from, to]
+    () => getServiceBreakdown(filteredReservations, services, from, to, reservationExtras),
+    [filteredReservations, services, from, to, reservationExtras]
   )
   const revenueByService = useMemo(
     () => [...serviceBreakdown].sort((a, b) => b.revenue - a.revenue),
@@ -570,8 +571,8 @@ function AnalyticsPageInner() {
   // Previous-period equivalents, purely to compute the trend badges below -
   // none of these are rendered on their own.
   const prevServiceBreakdown = useMemo(
-    () => getServiceBreakdown(filteredReservations, services, prevFrom, prevTo),
-    [filteredReservations, services, prevFrom, prevTo]
+    () => getServiceBreakdown(filteredReservations, services, prevFrom, prevTo, reservationExtras),
+    [filteredReservations, services, prevFrom, prevTo, reservationExtras]
   )
   const prevTotalReservations = useMemo(
     () => prevServiceBreakdown.reduce((sum, s) => sum + s.count, 0),
@@ -1356,6 +1357,7 @@ function AnalyticsPageInner() {
                 reservations={businessReservations}
                 workers={filterableWorkers}
                 services={businessServices}
+                extras={reservationExtras}
                 from={from}
                 to={to}
                 currencySymbol={currencySymbol}

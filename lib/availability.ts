@@ -91,7 +91,11 @@ export function generateAvailableSlots(
    * flow (reservation-modal.tsx), never from the public booking page - a
    * visitor should never be able to book a slot that's already gone, but
    * staff backfilling a forgotten appointment needs exactly that. */
-  allowPast = false
+  allowPast = false,
+  /** businesses.last_slot_at_close (scripts/119): the closing time is the
+   * LAST START time - the appointment may run past it. Off (default): the
+   * appointment must end by closing time. */
+  lastSlotAtClose = false
 ): Date[] {
   if (durationMinutes <= 0) return []
 
@@ -114,7 +118,7 @@ export function generateAvailableSlots(
   const now = new Date()
   const slots: Date[] = []
 
-  for (let m = openMinutes; m + durationMinutes <= closeMinutes; m += SLOT_INTERVAL_MINUTES) {
+  for (let m = openMinutes; m + (lastSlotAtClose ? 0 : durationMinutes) <= closeMinutes; m += SLOT_INTERVAL_MINUTES) {
     const hh = String(Math.floor(m / 60)).padStart(2, '0')
     const mm = String(m % 60).padStart(2, '0')
     const slotStart = parseInTimezone(`${dateStr}T${hh}:${mm}`, tz)

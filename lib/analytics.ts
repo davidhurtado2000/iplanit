@@ -1,4 +1,5 @@
 import type { Reservation, Service, BusinessHour, Client, Resource, Worker } from '@/context/dashboard-data-context'
+import { extraAmount, extrasTotal, groupExtras, type ReservationExtra } from '@/lib/reservation-services'
 
 export type DateRangeOption = '7d' | '30d' | '90d' | 'ytd' | 'all'
 
@@ -230,19 +231,29 @@ export function getServiceBreakdown(
   reservations: Reservation[],
   services: Service[],
   from: Date,
-  to: Date
+  to: Date,
+  /** Extra services of appointments with several (scripts/119): each counts
+   * under its own service with its own price; the main service keeps what is
+   * left of the total. The grand total is unchanged. */
+  extras: ReservationExtra[] = []
 ): ServiceBreakdownRow[] {
   const inRange = filterReservations(reservations, from, to).filter((r) => r.type !== 'visit' && r.service_id)
   const byService = new Map<string, { count: number; revenue: number }>()
+  const extrasByReservation = groupExtras(extras)
 
-  for (const r of inRange) {
-    const serviceId = r.service_id as string
+  const add = (serviceId: string, revenue: number, countsRevenue: boolean) => {
     const entry = byService.get(serviceId) ?? { count: 0, revenue: 0 }
     entry.count += 1
-    if (r.status !== 'no_show') {
-      entry.revenue += (r.price || r.price_usd) ?? 0
-    }
+    if (countsRevenue) entry.revenue += revenue
     byService.set(serviceId, entry)
+  }
+
+  for (const r of inRange) {
+    const total = Number((r.price || r.price_usd) ?? 0)
+    const lines = extrasByReservation.get(r.id) ?? []
+    const counts = r.status !== 'no_show'
+    add(r.service_id as string, Math.max(total - extrasTotal(lines), 0), counts)
+    for (const line of lines) add(line.service_id, extraAmount(line), counts)
   }
 
   return Array.from(byService.entries())

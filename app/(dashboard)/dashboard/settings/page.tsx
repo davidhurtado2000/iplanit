@@ -645,6 +645,7 @@ function SettingsPageInner() {
     client_chooses_worker: false,
     no_preference_mode: 'auto' as 'auto' | 'auto_review' | 'pool',
     no_preference_column: false,
+    last_slot_at_close: false,
     booking_font: null as string | null,
     booking_accent_color: null as string | null,
     booking_bg_color: null as string | null,
@@ -729,6 +730,7 @@ function SettingsPageInner() {
         client_chooses_worker: currentBusiness.client_chooses_worker ?? false,
         no_preference_mode: currentBusiness.no_preference_mode ?? 'auto',
         no_preference_column: currentBusiness.no_preference_column ?? false,
+        last_slot_at_close: currentBusiness.last_slot_at_close ?? false,
         booking_font: currentBusiness.booking_font ?? null,
         booking_accent_color: currentBusiness.booking_accent_color ?? null,
         booking_bg_color: currentBusiness.booking_bg_color ?? null,
@@ -1309,6 +1311,12 @@ function SettingsPageInner() {
         .from('business_hours')
         .upsert(rows, { onConflict: 'business_id,day_of_week' })
       if (error) throw error
+
+      // The "last appointment starts at closing time" choice lives on the
+      // business row (scripts/119) but is edited next to the hours.
+      if (business.last_slot_at_close !== (currentBusiness.last_slot_at_close ?? false)) {
+        await updateBusiness(currentBusiness.id, { last_slot_at_close: business.last_slot_at_close })
+      }
 
       // Refresh the shared copy so the calendar/reservation validation picks
       // up the new hours immediately, without a page reload.
@@ -2407,6 +2415,20 @@ function SettingsPageInner() {
                         </div>
                       )
                     })}
+                  </div>
+
+                  <div className="mt-4 flex items-start justify-between gap-3 rounded-lg border p-3">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="last-slot-at-close" className="cursor-pointer">
+                        {t.settings.lastSlotAtCloseLabel}
+                      </Label>
+                      <p className="text-xs text-muted-foreground">{t.settings.lastSlotAtCloseDesc}</p>
+                    </div>
+                    <Switch
+                      id="last-slot-at-close"
+                      checked={business.last_slot_at_close}
+                      onCheckedChange={(checked) => setBusiness({ ...business, last_slot_at_close: checked })}
+                    />
                   </div>
 
                   <Separator className="my-6" />

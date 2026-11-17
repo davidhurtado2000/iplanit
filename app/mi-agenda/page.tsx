@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { CalendarDays, ChevronLeft, ChevronRight, Clock, LogOut, StickyNote } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, Clock, LayoutList, LogOut, StickyNote } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { LanguageToggle } from '@/components/language-toggle'
@@ -14,6 +14,9 @@ import { createClient } from '@/lib/supabase/client'
 import { parseInTimezone, toDateStr } from '@/lib/timezone'
 import { capitalizeFirst, cn } from '@/lib/utils'
 import { countsAsServed, earningFor, formatMoney, summarizeEarnings, type PaySettings } from '@/lib/worker-pay'
+import { DayTimeline, MonthGrid, WeekStrip, type CalendarRow } from '@/components/worker/agenda-calendar'
+import { AppointmentDetail, type AppointmentDetailData } from '@/components/worker/appointment-detail'
+import { formatDuration } from '@/lib/duration'
 
 // Read-only portal for worker accounts (scripts/104-worker-accounts.sql).
 // Lives outside the (dashboard) route group on purpose: a worker account
@@ -59,6 +62,8 @@ interface AgendaRow {
   pay_excludes_tax?: boolean | null
   off_hours?: boolean | null
   service_commission_pct?: number | null
+  /** Extra services of the same appointment (scripts/119). */
+  extras?: { name: string; price: number | null; price_usd: number | null; commission_pct: number | null }[]
 }
 
 type View = 'day' | 'week' | 'month'
@@ -111,6 +116,11 @@ export default function WorkerAgendaPage() {
   // A barber who also owns a business of their own (e.g. tried iPlanit
   // themselves before being invited) still needs a way to get to it.
   const [ownsBusiness, setOwnsBusiness] = useState(false)
+  // "Calendario" (month grid / week strip / day timeline) or "Lista" (the
+  // original cards). Remembered per device.
+  const [display, setDisplay] = useState<'calendar' | 'list'>('calendar')
+  const [selectedDay, setSelectedDay] = useState('')
+  const [detailId, setDetailId] = useState<string | null>(null)
 
   const link = links?.find((l) => l.worker_id === selectedWorkerId) ?? null
   const tz = link?.timezone || 'America/Lima'
@@ -165,6 +175,33 @@ export default function WorkerAgendaPage() {
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [loadRows])
 
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('iplanit-worker-display')
+      if (saved === 'calendar' || saved === 'list') setDisplay(saved)
+    } catch {
+      /* private window / blocked storage: keep the default */
+    }
+  }, [])
+  const chooseDisplay = (next: 'calendar' | 'list') => {
+    setDisplay(next)
+    try {
+      localStorage.setItem('iplanit-worker-display', next)
+    } catch {
+      /* not remembered - fine */
+    }
+  }
+
+  // The day highlighted in the month grid / week strip: today when it falls
+  // in the visible range, otherwise the first day of it.
+  const rangeStartKey = range?.start ?? ''
+  const rangeEndKey = range?.end ?? ''
+  useEffect(() => {
+    if (!rangeStartKey) return
+    const today = todayInTz(tz)
+    setSelectedDay(today >= rangeStartKey && today < rangeEndKey ? today : rangeStartKey)
+  }, [rangeStartKey, rangeEndKey, view, tz])
+
   if (authLoading || !user || links === null) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -216,7 +253,15 @@ export default function WorkerAgendaPage() {
     offHoursPct: link.off_hours_commission_pct ?? null,
   }
   const payConfigured = Boolean(link.pay_type) || served.some((r) => r.worker_pay_pct !== null && r.worker_pay_pct !== undefined)
-  const payRow = (r: AgendaRow) => ({ ...r, price: link.currency === 'USD' ? null : r.price, price_usd: link.currency === 'USD' ? r.price_usd ?? r.price : null })
+  const payRow = (r: AgendaRow) => ({
+    ...r,
+    price: link.currency === 'USD' ? null : r.price,
+    price_usd: link.currency === 'USD' ? r.price_usd ?? r.price : null,
+    extra_lines: (r.extras ?? []).map((e) => ({
+      price: Number((link.currency === 'USD' ? e.price_usd : e.price) ?? e.price ?? e.price_usd ?? 0),
+      commission_pct: e.commission_pct,
+    })),
+  })
   const earnings = summarizeEarnings(rows.map(payRow), paySettings, now)
 
   const fmtTime = (iso: string) =>
@@ -247,6 +292,113 @@ export default function WorkerAgendaPage() {
   }, {})
   const days = Object.keys(rowsByDay).sort()
   const isToday = anchor === todayInTz(tz)
+  const today = todayInTz(tz)
+
+  const labelOf = (row: AgendaRow) =>
+    row.service_name
+      ? [row.service_name, ...(row.extras ?? []).map((e) => e.name)].join(' + ')
+      : row.type === 'visit'
+        ? tr.visit
+        : '—'
+  const calRow = (row: AgendaRow): CalendarRow => ({
+    id: row.id,
+    start_time: row.start_time,
+    end_time: row.end_time,
+    status: row.status,
+    service_color: row.service_color,
+    client_name: row.client_name,
+    label: labelOf(row),
+  })
+  const calRowsByDay: Record<string, CalendarRow[]> = {}
+  for (const [day, list] of Object.entries(rowsByDay)) calRowsByDay[day] = list.map(calRow)
+  // Earnings per day, shown under the count in the month grid.
+  const earnedByDay: Record<string, string> = {}
+  if (payConfigured) {
+    for (const [day, list] of Object.entries(rowsByDay)) {
+      const total = summarizeEarnings(list.map(payRow), paySettings, now).total
+      if (total > 0) earnedByDay[day] = formatMoney(total, currencySymbol)
+    }
+  }
+
+  const detailRow = detailId ? rows.find((r) => r.id === detailId) ?? null : null
+  const detailData: AppointmentDetailData | null = detailRow
+    ? (() => {
+        const minutes = Math.round((new Date(detailRow.end_time).getTime() - new Date(detailRow.start_time).getTime()) / 60000)
+        const e = payConfigured && countsAsServed(detailRow, now) ? earningFor(payRow(detailRow), paySettings) : null
+        return {
+          client: detailRow.client_name || '—',
+          services: detailRow.service_name ? [detailRow.service_name, ...(detailRow.extras ?? []).map((x) => x.name)] : [],
+          dateLabel: fmtDay(toDateStr(detailRow.start_time, tz), { weekday: 'long', day: 'numeric', month: 'long' }),
+          timeLabel: `${fmtTime(detailRow.start_time)} – ${fmtTime(detailRow.end_time)}`,
+          durationLabel: formatDuration(minutes),
+          status: detailRow.status,
+          isVisit: detailRow.type === 'visit',
+          notes: detailRow.notes,
+          offHours: !!detailRow.off_hours,
+          share: e
+            ? {
+                services: formatMoney(e.serviceShare, currencySymbol),
+                tip: e.tip > 0 ? formatMoney(e.tipShare, currencySymbol) : null,
+                total: formatMoney(e.total, currencySymbol),
+              }
+            : null,
+          charged: link.workers_see_sales && money(detailRow) > 0 ? formatMoney(money(detailRow), currencySymbol) : null,
+        }
+      })()
+    : null
+
+  // One appointment as a card (list view, and the selected day of the month
+  // grid). Tapping it opens the detail.
+  const renderCard = (row: AgendaRow) => {
+    const inactive = row.status === 'cancelled' || row.status === 'no_show'
+    return (
+      <button
+        type="button"
+        key={row.id}
+        onClick={() => setDetailId(row.id)}
+        className={cn(
+          'flex w-full gap-3 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-muted/40',
+          inactive && 'opacity-60'
+        )}
+      >
+        <div className="w-1 shrink-0 rounded-full" style={{ backgroundColor: row.service_color || link.color }} />
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex items-start justify-between gap-2">
+            <p className={cn('font-medium', row.status === 'cancelled' && 'line-through')}>{row.client_name || '—'}</p>
+            <span
+              className={cn(
+                'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium',
+                row.status === 'confirmed' && 'bg-primary/10 text-primary',
+                row.status === 'completed' && 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+                row.status === 'pending' && 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+                inactive && 'bg-muted text-muted-foreground'
+              )}
+            >
+              {tr.status[row.status]}
+            </span>
+          </div>
+          <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Clock className="h-3.5 w-3.5" />
+            {fmtTime(row.start_time)} – {fmtTime(row.end_time)}
+            <span>·</span>
+            <span className="truncate">{labelOf(row)}</span>
+          </p>
+          {payConfigured && countsAsServed(row, now) && (
+            <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
+              {t.pay.rowShare.replace('{amount}', formatMoney(earningFor(payRow(row), paySettings).total, currencySymbol))}
+            </p>
+          )}
+          {row.notes && (
+            <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+              <StickyNote className="mt-0.5 h-3 w-3 shrink-0" />
+              <span className="line-clamp-2 whitespace-pre-wrap">{row.notes}</span>
+            </p>
+          )}
+        </div>
+      </button>
+    )
+  }
+  const selectedDayRows = rowsByDay[selectedDay] ?? []
 
   return (
     <div className="min-h-screen bg-background">
@@ -318,6 +470,27 @@ export default function WorkerAgendaPage() {
           ))}
         </div>
 
+        <div className="grid grid-cols-2 rounded-lg border p-1">
+          {([
+            { key: 'calendar', label: tr.displayCalendar, icon: CalendarDays },
+            { key: 'list', label: tr.displayList, icon: LayoutList },
+          ] as const).map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => chooseDisplay(key)}
+              aria-pressed={display === key}
+              className={cn(
+                'flex items-center justify-center gap-1.5 rounded-md py-1.5 text-sm font-medium transition-colors',
+                display === key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {label}
+            </button>
+          ))}
+        </div>
+
         <div className="flex items-center justify-between gap-2">
           <Button variant="ghost" size="icon" onClick={() => shift(-1)}>
             <ChevronLeft className="h-4 w-4" />
@@ -378,6 +551,69 @@ export default function WorkerAgendaPage() {
           <div className="flex justify-center py-10">
             <LogoLoader />
           </div>
+        ) : display === 'calendar' ? (
+          <div className="space-y-4">
+            {view === 'month' && (
+              <>
+                <MonthGrid
+                  monthStart={range.start}
+                  rowsByDay={calRowsByDay}
+                  selectedDay={selectedDay}
+                  today={today}
+                  onSelect={setSelectedDay}
+                  locale={locale}
+                  linkColor={link.color}
+                  extraByDay={earnedByDay}
+                />
+                <DaySection
+                  title={selectedDay ? fmtDay(selectedDay, { weekday: 'long', day: 'numeric', month: 'long' }) : ''}
+                  empty={tr.emptyDay}
+                >
+                  {selectedDayRows.map(renderCard)}
+                </DaySection>
+              </>
+            )}
+            {view === 'week' && (
+              <>
+                <WeekStrip
+                  weekStart={range.start}
+                  rowsByDay={calRowsByDay}
+                  selectedDay={selectedDay}
+                  today={today}
+                  onSelect={setSelectedDay}
+                  locale={locale}
+                  linkColor={link.color}
+                />
+                <DaySection
+                  title={selectedDay ? fmtDay(selectedDay, { weekday: 'long', day: 'numeric', month: 'long' }) : ''}
+                  empty={tr.emptyDay}
+                  hasRows={selectedDayRows.length > 0}
+                >
+                  <DayTimeline
+                    rows={(calRowsByDay[selectedDay] ?? [])}
+                    tz={tz}
+                    locale={locale}
+                    linkColor={link.color}
+                    onOpen={setDetailId}
+                    now={selectedDay === today ? now : null}
+                  />
+                </DaySection>
+              </>
+            )}
+            {view === 'day' &&
+              (rows.length === 0 ? (
+                <p className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">{tr.emptyDay}</p>
+              ) : (
+                <DayTimeline
+                  rows={calRowsByDay[range.start] ?? []}
+                  tz={tz}
+                  locale={locale}
+                  linkColor={link.color}
+                  onOpen={setDetailId}
+                  now={range.start === today ? now : null}
+                />
+              ))}
+          </div>
         ) : rows.length === 0 ? (
           <p className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
             {view === 'day' ? tr.emptyDay : tr.emptyRange}
@@ -391,64 +627,13 @@ export default function WorkerAgendaPage() {
                     {fmtDay(day, { weekday: 'long', day: 'numeric', month: 'short' })}
                   </h2>
                 )}
-                {rowsByDay[day].map((row) => {
-                  const inactive = row.status === 'cancelled' || row.status === 'no_show'
-                  return (
-                    <div
-                      key={row.id}
-                      className={cn('flex gap-3 rounded-lg border bg-card p-3', inactive && 'opacity-60')}
-                    >
-                      <div
-                        className="w-1 shrink-0 rounded-full"
-                        style={{ backgroundColor: row.service_color || link.color }}
-                      />
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <div className="flex items-start justify-between gap-2">
-                          <p className={cn('font-medium', row.status === 'cancelled' && 'line-through')}>
-                            {row.client_name || '—'}
-                          </p>
-                          <span
-                            className={cn(
-                              'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium',
-                              row.status === 'confirmed' && 'bg-primary/10 text-primary',
-                              row.status === 'completed' && 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
-                              row.status === 'pending' && 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
-                              inactive && 'bg-muted text-muted-foreground'
-                            )}
-                          >
-                            {tr.status[row.status]}
-                          </span>
-                        </div>
-                        <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                          <Clock className="h-3.5 w-3.5" />
-                          {fmtTime(row.start_time)} – {fmtTime(row.end_time)}
-                          <span>·</span>
-                          <span className="truncate">
-                            {row.service_name || (row.type === 'visit' ? tr.visit : '—')}
-                          </span>
-                        </p>
-                        {payConfigured && countsAsServed(row, now) && (
-                          <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
-                            {t.pay.rowShare.replace(
-                              '{amount}',
-                              formatMoney(earningFor(payRow(row), paySettings).total, currencySymbol)
-                            )}
-                          </p>
-                        )}
-                        {row.notes && (
-                          <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                            <StickyNote className="mt-0.5 h-3 w-3 shrink-0" />
-                            <span className="whitespace-pre-wrap">{row.notes}</span>
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
+                {rowsByDay[day].map(renderCard)}
               </section>
             ))}
           </div>
         )}
+
+        <AppointmentDetail data={detailData} open={!!detailId} onOpenChange={(open) => !open && setDetailId(null)} />
 
         <p className="text-center text-xs text-muted-foreground">
           {tr.readOnlyNote}{' '}
@@ -469,5 +654,32 @@ export default function WorkerAgendaPage() {
         )}
       </main>
     </div>
+  )
+}
+
+// Title + content for one day, with an empty state. `hasRows` lets a custom
+// child (the timeline) say there is something to draw.
+function DaySection({
+  title,
+  empty,
+  hasRows,
+  children,
+}: {
+  title: string
+  empty: string
+  hasRows?: boolean
+  children: React.ReactNode
+}) {
+  const items = Array.isArray(children) ? children.length > 0 : !!children
+  const hasContent = hasRows ?? items
+  return (
+    <section className="space-y-2">
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</h2>
+      {hasContent ? (
+        <div className="space-y-2">{children}</div>
+      ) : (
+        <p className="rounded-lg border border-dashed py-6 text-center text-sm text-muted-foreground">{empty}</p>
+      )}
+    </section>
   )
 }

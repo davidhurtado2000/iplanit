@@ -40,8 +40,11 @@ export function offHoursFor(opts: {
   timeStr: string
   workerHours: HoursRow[]
   businessHours: HoursRow[]
+  /** businesses.last_slot_at_close: starting exactly at closing time still
+   * counts as normal hours (the last client starts then). */
+  lastSlotAtClose?: boolean
 }): OffHoursResult | null {
-  const { dateStr, timeStr, workerHours, businessHours } = opts
+  const { dateStr, timeStr, workerHours, businessHours, lastSlotAtClose = false } = opts
   // A calendar date has no timezone of its own: read its weekday in UTC.
   const dow = new Date(`${dateStr}T12:00:00Z`).getUTCDay()
 
@@ -64,6 +67,6 @@ export function offHoursFor(opts: {
   const close = row.close_time.slice(0, 5)
   if (row.is_closed) return { off: true, reason: 'day_off' }
   const start = toMinutes(timeStr)
-  const off = start < toMinutes(open) || start >= toMinutes(close)
+  const off = start < toMinutes(open) || (lastSlotAtClose ? start > toMinutes(close) : start >= toMinutes(close))
   return { off, reason: off ? 'outside' : 'inside', open, close }
 }

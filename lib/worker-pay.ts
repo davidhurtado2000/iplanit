@@ -34,6 +34,10 @@ export interface PayRow {
   off_hours?: boolean | null
   /** The service's fixed commission for every worker (scripts/115). */
   service_commission_pct?: number | null
+  /** The appointment's extra services (scripts/119): their price and their
+   * own fixed commission, if any. The main service's share of the price is
+   * what is left after taking these out. */
+  extra_lines?: { price: number; commission_pct?: number | null }[]
 }
 
 export interface Earning {
@@ -80,10 +84,27 @@ export function currentServicePct(
   return settings.commissionPct ?? null
 }
 
+/** The commission % for a whole appointment under the CURRENT settings. With
+ * extra services each one counts at its own %, weighted by its share of the
+ * price (the DB does the same when snapshotting, scripts/119). */
+export function blendedServicePct(settings: PaySettings, row: PayRow): number | null {
+  const primary = currentServicePct(settings, row)
+  const lines = row.extra_lines ?? []
+  if (lines.length === 0 || primary === null) return primary
+  const sale = Number((row.price || row.price_usd) ?? 0)
+  if (sale <= 0) return primary
+  const extrasTotal = lines.reduce((n, l) => n + l.price, 0)
+  const weighted = lines.reduce((n, l) => {
+    const pct = currentServicePct(settings, { off_hours: row.off_hours, service_commission_pct: l.commission_pct })
+    return n + l.price * (pct ?? 0)
+  }, 0)
+  return (Math.max(sale - extrasTotal, 0) * primary + weighted) / sale
+}
+
 export function earningFor(row: PayRow, settings: PaySettings): Earning {
   const sale = Number((row.price || row.price_usd) ?? 0)
   const snapshot = row.worker_pay_pct !== null && row.worker_pay_pct !== undefined
-  const servicePct = snapshot ? Number(row.worker_pay_pct) : currentServicePct(settings, row)
+  const servicePct = snapshot ? Number(row.worker_pay_pct) : blendedServicePct(settings, row)
   const excludesTax = snapshot ? Boolean(row.pay_excludes_tax) : settings.excludesTax
   const base = round2(excludesTax ? sale / (1 + PE_IGV_RATE) : sale)
   const serviceShare = servicePct === null ? 0 : round2((base * servicePct) / 100)

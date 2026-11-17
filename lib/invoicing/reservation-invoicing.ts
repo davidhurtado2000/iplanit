@@ -74,7 +74,7 @@ export async function buildDraftForReservation(opts: {
   overrides?: { amount?: number; description?: string }
 }): Promise<DraftResult & { amount: number | null }> {
   const { admin, reservation } = opts
-  const [{ data: business }, { data: client }, { data: service }] = await Promise.all([
+  const [{ data: business }, { data: client }, { data: service }, { data: extraRows }] = await Promise.all([
     admin.from('businesses').select('currency').eq('id', reservation.business_id).single(),
     admin
       .from('clients')
@@ -84,7 +84,22 @@ export async function buildDraftForReservation(opts: {
     reservation.service_id
       ? admin.from('services').select('name').eq('id', reservation.service_id).maybeSingle()
       : Promise.resolve({ data: null }),
+    // Extra services of the same appointment (scripts/119): one comprobante
+    // for the whole appointment, "Corte de cabello + Barba".
+    admin
+      .from('reservation_services')
+      .select('service_id, position')
+      .eq('reservation_id', reservation.id)
+      .order('position'),
   ])
+  const extraIds = ((extraRows ?? []) as { service_id: string }[]).map((e) => e.service_id)
+  const { data: extraServices } = extraIds.length
+    ? await admin.from('services').select('id, name').in('id', extraIds)
+    : { data: [] as { id: string; name: string }[] }
+  const serviceNameLabel = [
+    (service as { name?: string } | null)?.name ?? 'Servicio',
+    ...extraIds.map((id) => (extraServices ?? []).find((s) => s.id === id)?.name).filter(Boolean),
+  ].join(' + ')
 
   const currency = business?.currency === 'USD' ? 'USD' : 'PEN'
   const price = currency === 'USD' ? reservation.price_usd : reservation.price
@@ -99,7 +114,7 @@ export async function buildDraftForReservation(opts: {
       startTime: reservation.start_time,
       price,
     },
-    serviceName: (service as { name?: string } | null)?.name ?? 'Servicio',
+    serviceName: serviceNameLabel,
     client: client
       ? {
           name: client.name,

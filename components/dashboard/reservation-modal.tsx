@@ -76,6 +76,7 @@ import { generateAvailableSlots, isDayClosed, intersectSlots, weekParity } from 
 import { sendReservationNotification } from '@/lib/email/notify'
 import { offHoursFor } from '@/lib/off-hours'
 import { applyPoolCapacity } from '@/lib/pool-capacity'
+import { extraAmount, groupExtras, serviceLabel } from '@/lib/reservation-services'
 import { syncReservationToKommo } from '@/lib/kommo/sync'
 import { isPlanLimitReached, meetsPlan } from '@/lib/plan-limits'
 import { formatDuration } from '@/lib/duration'
@@ -260,6 +261,8 @@ export function ReservationModal({
     timeBlocks,
     refetchClients,
     upsertClientLocal,
+    reservationExtras,
+    refetchReservationExtras,
     refetchReservationAttendees,
   } = useDashboardData()
   // Parking is a separate concept from a service's linked resource (see the
@@ -334,9 +337,20 @@ export function ReservationModal({
   // busy free barber is picked on save - same rule as the public link
   // (create_public_reservation). Create mode only.
   const [anyWorker, setAnyWorker] = useState(false)
+  // Extra services of the SAME appointment (scripts/119): "tinte + barba" is
+  // one appointment with a summed duration and price, not two bookings. The
+  // main service stays in formData.service_id.
+  // Each extra has its OWN minutes (default: the service's duration; 0 = done
+  // within the appointment, takes no extra agenda time): charging for a
+  // service and blocking time for it are not the same thing - e.g. a quick
+  // beard trim added to an appointment that is already followed by another.
+  const [extraLines, setExtraLines] = useState<{ service_id: string; minutes: number }[]>([])
+  const extraServiceIds = extraLines.map((l) => l.service_id)
   const [walkInLoading, setWalkInLoading] = useState(false)
 
   const isUSD = currentBusiness?.currency === 'USD'
+  // The closing time is the last START time (scripts/119), not the latest end.
+  const lastSlotAtClose = !!currentBusiness?.last_slot_at_close
   const [isEditing, setIsEditing] = useState(mode === 'create')
 
   // Pro and Premium are both unlimited on reservations - only Free is
@@ -497,9 +511,11 @@ export function ReservationModal({
       // The specific duration option originally picked isn't stored - infer
       // it from the reservation's actual duration (end - start) so editing
       // shows the right one preselected instead of forcing a re-pick.
-      const actualDuration = Math.round(
-        (new Date(reservation.end_time).getTime() - new Date(reservation.start_time).getTime()) / 60000
-      )
+      const savedExtras = groupExtras(reservationExtras).get(reservation.id) ?? []
+      const actualDuration =
+        Math.round((new Date(reservation.end_time).getTime() - new Date(reservation.start_time).getTime()) / 60000) -
+        savedExtras.reduce((n, e) => n + e.duration_minutes, 0)
+      setExtraLines(savedExtras.map((e) => ({ service_id: e.service_id, minutes: e.duration_minutes })))
       const matchingOption = serviceDurationOptions.find(
         (o) => o.service_id === reservation.service_id && o.duration_minutes === actualDuration
       )
@@ -563,6 +579,7 @@ export function ReservationModal({
       setSlotDate(selectedDate || toDateStr(new Date().toISOString(), tz))
       setOffHours(false)
       setAnyWorker(false)
+      setExtraLines([])
       setIsEditing(true)
     }
     setError('')
@@ -846,7 +863,7 @@ export function ReservationModal({
   // service without a chosen option, or an hourly service without hours
   // entered yet, has no known duration; a fixed-duration service uses its
   // own duration.
-  const effectiveDurationMinutes =
+  const mainDurationMinutes =
     formData.type === 'visit'
       ? formData.visitDurationMinutes || undefined
       : selectedService?.pricing_mode === 'preset'
@@ -854,6 +871,60 @@ export function ReservationModal({
         : selectedService?.pricing_mode === 'hourly'
           ? (formData.hours || 0) * 60 || undefined
           : selectedService?.duration_minutes
+  // Extra services of the same appointment (a booking only, never a visit).
+  const extraServicesList = (formData.type === 'booking' ? extraServiceIds : [])
+    .map((id) => services.find((s) => s.id === id))
+    .filter((s): s is NonNullable<typeof s> => !!s)
+  const extraPriceOf = (svc: { price: number | null; price_usd: number | null }) =>
+    Number((isUSD ? svc.price_usd : svc.price) ?? 0)
+  const extrasPriceTotal = extraServicesList.reduce((n, svc) => n + extraPriceOf(svc), 0)
+  const extraMinutesOf = (serviceId: string) => extraLines.find((l) => l.service_id === serviceId)?.minutes ?? 0
+  const extrasMinutes = extraServicesList.reduce((n, svc) => n + extraMinutesOf(svc.id), 0)
+  const effectiveDurationMinutes =
+    mainDurationMinutes !== undefined ? mainDurationMinutes + extrasMinutes : undefined
+  // The price field holds the appointment's TOTAL: whatever the main service
+  // suggests plus the extras.
+  const withExtrasPrice = (base: number | '', ignoreExtraId?: string): number | '' => {
+    const extras = ignoreExtraId
+      ? extrasPriceTotal - extraServicesList.filter((x) => x.id === ignoreExtraId).reduce((n, x) => n + extraPriceOf(x), 0)
+      : extrasPriceTotal
+    return base === '' && extras === 0 ? '' : Math.round(((Number(base) || 0) + extras) * 100) / 100
+  }
+  const addExtraService = (serviceId: string) => {
+    const svc = services.find((x) => x.id === serviceId)
+    if (!svc) return
+    // On an existing appointment the extra defaults to 0 minutes: it was
+    // (or is being) done within the booked time, so it must not push into
+    // whatever comes next. A new booking starts from the service's duration.
+    setExtraLines((prev) => [
+      ...prev,
+      { service_id: serviceId, minutes: editingExisting ? 0 : svc.duration_minutes },
+    ])
+    setFormData((prev) => ({
+      ...prev,
+      price: Math.round(((Number(prev.price) || 0) + extraPriceOf(svc)) * 100) / 100,
+      // The duration changed, so a slot picked for the old one may not fit -
+      // except on an existing appointment ("what really happened").
+      start_time: editingExisting ? prev.start_time : '',
+    }))
+  }
+  const removeExtraService = (serviceId: string) => {
+    const svc = services.find((x) => x.id === serviceId)
+    setExtraLines((prev) => prev.filter((l) => l.service_id !== serviceId))
+    setFormData((prev) => ({
+      ...prev,
+      price: Math.max(0, Math.round(((Number(prev.price) || 0) - (svc ? extraPriceOf(svc) : 0)) * 100) / 100),
+      start_time: editingExisting ? prev.start_time : '',
+    }))
+  }
+  // Fixed-duration services not already in this appointment.
+  const addableExtraServices = services.filter(
+    (svc) =>
+      svc.is_active &&
+      svc.pricing_mode === 'fixed' &&
+      svc.id !== formData.service_id &&
+      !extraServiceIds.includes(svc.id)
+  )
 
   // Checks parking as soon as a start time + duration are known, instead of
   // only finding out at save time - same reasoning and same RPC as the
@@ -1028,12 +1099,12 @@ export function ReservationModal({
     ]
     const before = selectedService?.buffer_before_min || 0
     const after = selectedService?.buffer_after_min || 0
-    const bizSlots = generateAvailableSlots(slotDate, businessHours, effectiveDurationMinutes, busy, tz, before, after, allowPast)
+    const bizSlots = generateAvailableSlots(slotDate, businessHours, effectiveDurationMinutes, busy, tz, before, after, allowPast, lastSlotAtClose)
     const hours = workerHours.filter((h) => h.worker_id === worker.id)
     if (hours.length === 0) return bizSlots
     return intersectSlots(
       bizSlots,
-      generateAvailableSlots(slotDate, hours, effectiveDurationMinutes, busy, tz, before, after, allowPast)
+      generateAvailableSlots(slotDate, hours, effectiveDurationMinutes, busy, tz, before, after, allowPast, lastSlotAtClose)
     )
   }
   const anyWorkerSlots = (allowPast: boolean): Date[] => {
@@ -1115,7 +1186,8 @@ export function ReservationModal({
       tz,
       selectedService?.buffer_before_min || 0,
       selectedService?.buffer_after_min || 0,
-      allowPast
+      allowPast,
+      lastSlotAtClose
     )
     if (selectedWorkerHours.length === 0) return businessSlots
     const workerSlots = generateAvailableSlots(
@@ -1126,7 +1198,8 @@ export function ReservationModal({
       tz,
       selectedService?.buffer_before_min || 0,
       selectedService?.buffer_after_min || 0,
-      allowPast
+      allowPast,
+      lastSlotAtClose
     )
     return intersectSlots(businessSlots, workerSlots)
   }
@@ -1165,6 +1238,7 @@ export function ReservationModal({
       timeStr: timePart.slice(0, 5),
       workerHours: selectedWorkerHours,
       businessHours,
+      lastSlotAtClose,
     })
   })()
 
@@ -1189,7 +1263,7 @@ export function ReservationModal({
     }
     const start = toMin(timePart)
     const end = start + (effectiveDurationMinutes || 0)
-    if (start >= toMin(row.open_time) && end <= toMin(row.close_time)) return null
+    if (start >= toMin(row.open_time) && (lastSlotAtClose ? start <= toMin(row.close_time) : end <= toMin(row.close_time))) return null
     return t.reservation.workerOutsideHours
       .replace('{name}', workerName)
       .replace('{open}', formatLocalTime(row.open_time))
@@ -1263,7 +1337,9 @@ export function ReservationModal({
     if (startMinutes < openMinutes) {
       return `${t.reservation.businessOpensAt} ${bh.open_time.slice(0, 5)}`
     }
-    if (durationMinutes > 0 && endMinutes > closeMinutes) {
+    if (lastSlotAtClose) {
+      if (startMinutes > closeMinutes) return `${t.reservation.reservationAfterClose} (${bh.close_time.slice(0, 5)})`
+    } else if (durationMinutes > 0 && endMinutes > closeMinutes) {
       return `${t.reservation.reservationAfterClose} (${bh.close_time.slice(0, 5)})`
     }
     return null
@@ -1406,6 +1482,10 @@ export function ReservationModal({
     }
     if (anyWorker && repeatEnabled) {
       setError(t.pay.anyWorkerNoRepeat)
+      return
+    }
+    if (extraServicesList.length > 0 && repeatEnabled) {
+      setError(t.reservation.extraServicesNoRepeat)
       return
     }
 
@@ -1602,6 +1682,24 @@ export function ReservationModal({
         if (error) throw error
         console.log('[v0] Reservation created successfully')
 
+        // Extra services of the appointment (scripts/119) - before the
+        // confirmation email below, so it can already list them.
+        if (created && extraServicesList.length > 0) {
+          const { error: extrasError } = await supabase.from('reservation_services').insert(
+            extraServicesList.map((svc, i) => ({
+              business_id: currentBusiness.id,
+              reservation_id: created.id,
+              service_id: svc.id,
+              price: isUSD ? null : svc.price,
+              price_usd: isUSD ? svc.price_usd : null,
+              duration_minutes: extraMinutesOf(svc.id),
+              position: i + 1,
+            }))
+          )
+          if (extrasError) console.error('[iplanit] Error saving extra services:', extrasError)
+          else await refetchReservationExtras()
+        }
+
         // Group reservations (scripts/081) - additional attendees staged
         // while this reservation didn't exist yet, inserted now that it
         // does. Before the notification call below so the widened
@@ -1633,6 +1731,33 @@ export function ReservationModal({
         }
       } else if (effectiveMode === 'edit' && reservation?.id) {
         markOwnReservationWrite()
+        // Extra services first, then the reservation: the commission
+        // snapshot (scripts/119) reads them when the price changes.
+        const savedExtras = groupExtras(reservationExtras).get(reservation.id) ?? []
+        const sameExtras =
+          savedExtras.length === extraServicesList.length &&
+          savedExtras.every(
+            (e, i) => e.service_id === extraServicesList[i]?.id && e.duration_minutes === extraMinutesOf(e.service_id)
+          )
+        if (!sameExtras) {
+          const { error: deleteError } = await supabase.from('reservation_services').delete().eq('reservation_id', reservation.id)
+          if (deleteError) throw deleteError
+          if (extraServicesList.length > 0) {
+            const { error: insertError } = await supabase.from('reservation_services').insert(
+              extraServicesList.map((svc, i) => ({
+                business_id: currentBusiness.id,
+                reservation_id: reservation.id,
+                service_id: svc.id,
+                price: isUSD ? null : svc.price,
+                price_usd: isUSD ? svc.price_usd : null,
+                duration_minutes: extraMinutesOf(svc.id),
+                position: i + 1,
+              }))
+            )
+            if (insertError) throw insertError
+          }
+          await refetchReservationExtras()
+        }
         const { error } = await supabase
           .from('reservations')
           .update(reservationData)
@@ -1933,6 +2058,9 @@ export function ReservationModal({
   // Lookup names for view mode
   const viewClient = clients.find((c) => c.id === reservation?.client_id)
   const viewService = services.find((s) => s.id === reservation?.service_id)
+  // "Corte de cabello + Barba": the main service and the extra ones.
+  const viewExtras = reservation ? groupExtras(reservationExtras).get(reservation.id) ?? [] : []
+  const viewServiceLabel = viewService ? serviceLabel(viewService.name, viewExtras, services) : ''
   const viewResource = resources.find((r) => r.id === reservation?.resource_id)
   const viewWorker = workers.find((w) => w.id === reservation?.worker_id)
   // allResources, not the parking-filtered `resources` above - a parking
@@ -1962,7 +2090,7 @@ export function ReservationModal({
               (viewService ? clientTexts.reservation.whatsappReminderMessage : clientTexts.reservation.whatsappReminderMessageNoService),
             {
               client: viewClient.name,
-              service: viewService?.name ?? '',
+              service: viewServiceLabel,
               date: formatReminderDate(reservation.start_time, tz, clientEmailLanguage),
               time: formatReminderTime(reservation.start_time, tz, clientEmailLanguage),
               business: currentBusiness?.name ?? '',
@@ -1989,7 +2117,7 @@ export function ReservationModal({
     lines.push(
       `${reservation.type === 'visit' ? t.reservation.interestedInLabel : t.reservation.serviceLabel} ${
         viewService
-          ? `${viewService.name} (${formatDuration(
+          ? `${viewServiceLabel} (${formatDuration(
               Math.round((new Date(reservation.end_time).getTime() - new Date(reservation.start_time).getTime()) / 60000)
             )})`
           : t.reservation.noServiceVisit
@@ -2093,7 +2221,7 @@ export function ReservationModal({
                 </span>
                 <span>
                   {viewService
-                    ? `${viewService.name} (${formatDuration(
+                    ? `${viewServiceLabel} (${formatDuration(
                         Math.round(
                           (new Date(reservation.end_time).getTime() - new Date(reservation.start_time).getTime()) / 60000
                         )
@@ -2421,6 +2549,8 @@ export function ReservationModal({
                 value={formData.service_id}
                 onValueChange={(val) => {
                   const service = services.find((s) => s.id === val)
+                  // The new main service can't also be an extra one.
+                  if (extraServiceIds.includes(val)) setExtraLines((prev) => prev.filter((l) => l.service_id !== val))
                   // A visit's service is just an interest hint (see the
                   // label above) - never suggest a price for it, since the
                   // price field itself doesn't even show for a visit.
@@ -2436,7 +2566,7 @@ export function ReservationModal({
                     // clears it only if they don't do the new service.
                     duration_option_id: '',
                     hours: '',
-                    price: suggestedPrice,
+                    price: withExtrasPrice(suggestedPrice, val),
                     // Changing the service changes its duration, which can
                     // invalidate whatever slot was already picked.
                     start_time: '',
@@ -2488,7 +2618,7 @@ export function ReservationModal({
                     setFormData({
                       ...formData,
                       duration_option_id: val,
-                      price: option ? ((isUSD ? option.price_usd : option.price) ?? '') : '',
+                      price: withExtrasPrice(option ? ((isUSD ? option.price_usd : option.price) ?? '') : ''),
                       start_time: '',
                     })
                   }}
@@ -2530,7 +2660,7 @@ export function ReservationModal({
                       setFormData({
                         ...formData,
                         hours,
-                        price: hours !== '' && rate ? hours * rate : '',
+                        price: withExtrasPrice(hours !== '' && rate ? hours * rate : ''),
                         start_time: '',
                       })
                     }}
@@ -2555,6 +2685,78 @@ export function ReservationModal({
                     onChange={(minutes) => setFormData({ ...formData, visitDurationMinutes: minutes, start_time: '' })}
                   />
                   <p className="text-xs text-muted-foreground">{t.reservation.visitDurationHint}</p>
+                </div>
+              )}
+
+              {/* More services in the same appointment (scripts/119). */}
+              {formData.type === 'booking' && !!formData.service_id && (
+                <div className="mt-2 space-y-2">
+                  {extraServicesList.map((svc) => (
+                    <div
+                      key={svc.id}
+                      className="flex items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm"
+                    >
+                      <span className="min-w-0 flex-1 truncate">
+                        <span className="font-medium">+ {svc.name}</span>
+                        {extraPriceOf(svc) > 0 && (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            {isUSD ? '$' : 'S/'} {extraPriceOf(svc)}
+                          </span>
+                        )}
+                      </span>
+                      {/* Agenda time this extra adds - 0 = done within the
+                          appointment (a quick beard trim). */}
+                      <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                        <Input
+                          type="number"
+                          min={0}
+                          step={5}
+                          inputMode="numeric"
+                          aria-label={t.reservation.extraMinutesLabel}
+                          title={t.reservation.extraMinutesHint}
+                          className="h-8 w-16 px-2 text-right text-sm"
+                          value={extraMinutesOf(svc.id)}
+                          onChange={(e) => {
+                            const minutes = Math.max(0, parseInt(e.target.value) || 0)
+                            setExtraLines((prev) => prev.map((l) => (l.service_id === svc.id ? { ...l, minutes } : l)))
+                          }}
+                        />
+                        min
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0"
+                        onClick={() => removeExtraService(svc.id)}
+                        aria-label={t.reservation.removeExtraService}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                  {extraServicesList.length > 0 && (
+                    <p className="text-xs text-muted-foreground">{t.reservation.extraMinutesHint}</p>
+                  )}
+                  {addableExtraServices.length > 0 && (
+                    <Select value="" onValueChange={addExtraService}>
+                      <SelectTrigger id="extra-service" className="text-muted-foreground">
+                        <Plus className="mr-1 h-4 w-4 shrink-0" />
+                        <SelectValue placeholder={t.reservation.addExtraService} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {addableExtraServices.map((svc) => (
+                          <SelectItem key={svc.id} value={svc.id}>
+                            <span className="font-medium">{svc.name}</span>
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              {formatDuration(svc.duration_minutes)}
+                              {extraPriceOf(svc) ? ` · ${isUSD ? '$' : 'S/'} ${extraPriceOf(svc)}` : ''}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
               )}
 

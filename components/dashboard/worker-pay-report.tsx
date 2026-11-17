@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, Table
 import { useLanguage } from '@/context/language-context'
 import type { Reservation, Service, Worker } from '@/context/dashboard-data-context'
 import { downloadCsv, toCsv } from '@/lib/csv'
+import { extraAmount, groupExtras, type ReservationExtra } from '@/lib/reservation-services'
 import { countsAsServed, currentServicePct, formatMoney, summarizeEarnings, type EarningSummary, type PaySettings } from '@/lib/worker-pay'
 
 // Analytics -> Pagos (scripts/114, lib/worker-pay.ts): what the owner owes
@@ -19,6 +20,8 @@ interface Props {
   workers: Worker[]
   /** For each service's fixed commission (scripts/115). */
   services: Service[]
+  /** Extra services of appointments with several (scripts/119). */
+  extras: ReservationExtra[]
   from: Date
   to: Date
   currencySymbol: string
@@ -37,6 +40,7 @@ export function WorkerPayReport({
   reservations,
   workers,
   services,
+  extras,
   from,
   to,
   currencySymbol,
@@ -52,12 +56,20 @@ export function WorkerPayReport({
   const { lines, withoutWorker } = useMemo(() => {
     const now = new Date()
     const serviceCommission = new Map(services.map((s) => [s.id, s.worker_commission_pct ?? null]))
+    const extrasByReservation = groupExtras(extras)
     const periodRows = reservations
       .filter((r) => {
         const start = new Date(r.start_time)
         return r.type !== 'visit' && start >= from && start <= to
       })
-      .map((r) => ({ ...r, service_commission_pct: r.service_id ? serviceCommission.get(r.service_id) ?? null : null }))
+      .map((r) => ({
+        ...r,
+        service_commission_pct: r.service_id ? serviceCommission.get(r.service_id) ?? null : null,
+        extra_lines: (extrasByReservation.get(r.id) ?? []).map((e) => ({
+          price: extraAmount(e),
+          commission_pct: serviceCommission.get(e.service_id) ?? null,
+        })),
+      }))
     const inRange = periodRows.filter((r) => r.worker_id)
     // Served appointments nobody was assigned to: their commission goes
     // to no one, so the owner should know they exist.
@@ -80,7 +92,7 @@ export function WorkerPayReport({
       .filter((l) => l.served > 0)
       .sort((a, b) => b.total - a.total)
     return { lines, withoutWorker }
-  }, [reservations, workers, services, from, to, tipWorkerPct, excludesTax, offHoursPct, tr.salary, tr.notSetUp])
+  }, [reservations, workers, services, extras, from, to, tipWorkerPct, excludesTax, offHoursPct, tr.salary, tr.notSetUp])
 
   const totals = useMemo(
     () =>

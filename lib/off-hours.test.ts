@@ -54,4 +54,10 @@ describe('offHoursFor', () => {
   it("can't tell when no hours are configured at all", () => {
     expect(offHoursFor({ dateStr: monday, timeStr: '12:00', workerHours: [], businessHours: [] })).toBeNull()
   })
+
+  it('with last_slot_at_close, starting exactly at closing is normal and one minute later is not', () => {
+    const base = { dateStr: monday, workerHours: [], businessHours: business, lastSlotAtClose: true }
+    expect(offHoursFor({ ...base, timeStr: '19:00' })?.off).toBe(false)
+    expect(offHoursFor({ ...base, timeStr: '19:02' })?.off).toBe(true)
+  })
 })

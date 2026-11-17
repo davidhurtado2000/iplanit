@@ -92,9 +92,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ skipped: 'notifications_disabled' })
     }
 
+    // Appointments with several services (scripts/119): "Corte + Barba".
+    let serviceName = reservation.service_name
+    const { data: extraRows } = await supabase
+      .from('reservation_services')
+      .select('service_id, position')
+      .eq('reservation_id', reservationId)
+      .order('position')
+    const extraIds = (extraRows ?? []).map((e) => e.service_id)
+    if (serviceName && extraIds.length > 0) {
+      const { data: extraServices } = await supabase.from('services').select('id, name').in('id', extraIds)
+      const extraNames = extraIds.map((id) => extraServices?.find((svc) => svc.id === id)?.name).filter(Boolean)
+      if (extraNames.length > 0) serviceName = [serviceName, ...extraNames].join(' + ')
+    }
+
     const sharedEmailData = {
       businessName: reservation.business_name,
-      serviceName: reservation.service_name,
+      serviceName,
       reservationType: reservation.reservation_type,
       startTime: reservation.start_time,
       timezone: reservation.business_timezone,

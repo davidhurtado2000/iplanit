@@ -278,6 +278,9 @@ interface CalendarViewProps {
    * "Sin preferencia" and nobody confirmed yet (worker_auto_assigned) get
    * their own column instead of the provisional barber's (scripts/117). */
   noPreferenceColumn?: boolean
+  /** reservation id -> names of its EXTRA services (scripts/119), shown after
+   * the main one: "Corte de cabello + Barba". */
+  extraServiceNames?: Record<string, string[]>
 }
 
 // Column id of the "Sin preferencia" column - not a real worker id.
@@ -313,6 +316,7 @@ export function CalendarViewComponent({
   onSelectTimeBlock,
   onBlockAtSlot,
   noPreferenceColumn = false,
+  extraServiceNames = {},
 }: CalendarViewProps) {
   const { t, locale } = useLanguage()
   const [currentDate, setCurrentDate] = useState(() => initialDate ?? new Date())
@@ -686,7 +690,7 @@ export function CalendarViewComponent({
           }}
           transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.2, 0.7, 0.3, 1] }}
         >
-          {view === 'day'   && <DayView   noPreferenceColumn={noPreferenceColumn} date={currentDate} reservations={reservations} resources={resources} selectedResourceId={selectedResourceId} groupBy={groupBy} workers={workers} selectedWorkerId={selectedWorkerId} timeBlocks={timeBlocks} onSelectTimeBlock={onSelectTimeBlock} onBlockAtSlot={onBlockAtSlot} clientsMap={clientsMap} servicesMap={servicesMap} resourcesMap={resourcesMap} attendeesCountMap={attendeesCountMap} onSelectReservation={onSelectReservation} startHour={startHour} endHour={endHour} timezone={timezone} t={t} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} businessHours={businessHours} onCreateAtSlot={onCreateAtSlot} previewService={previewService} previewAllowedResourceIds={previewAllowedResourceIds} />}
+          {view === 'day'   && <DayView   noPreferenceColumn={noPreferenceColumn} extraServiceNames={extraServiceNames} date={currentDate} reservations={reservations} resources={resources} selectedResourceId={selectedResourceId} groupBy={groupBy} workers={workers} selectedWorkerId={selectedWorkerId} timeBlocks={timeBlocks} onSelectTimeBlock={onSelectTimeBlock} onBlockAtSlot={onBlockAtSlot} clientsMap={clientsMap} servicesMap={servicesMap} resourcesMap={resourcesMap} attendeesCountMap={attendeesCountMap} onSelectReservation={onSelectReservation} startHour={startHour} endHour={endHour} timezone={timezone} t={t} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} businessHours={businessHours} onCreateAtSlot={onCreateAtSlot} previewService={previewService} previewAllowedResourceIds={previewAllowedResourceIds} />}
           {view === 'week'  && <WeekView  date={currentDate} reservations={reservations} clientsMap={clientsMap} servicesMap={servicesMap} attendeesCountMap={attendeesCountMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
           {view === 'month' && <MonthView date={currentDate} reservations={reservations} servicesMap={servicesMap} onSelectReservation={onSelectReservation} onDayClick={handleDayClick} timezone={timezone} t={t} locale={locale} businessNameById={businessNameById} businessColorIndexById={businessColorIndexById} />}
           {view === 'list'  && (
@@ -714,9 +718,10 @@ function DayView({
   date, reservations, resources, selectedResourceId, groupBy, workers, selectedWorkerId, timeBlocks, onSelectTimeBlock, onBlockAtSlot,
   clientsMap, servicesMap, resourcesMap, attendeesCountMap = {}, onSelectReservation,
   startHour, endHour, timezone, t, businessNameById, businessColorIndexById, businessHours, onCreateAtSlot,
-  previewService, previewAllowedResourceIds, noPreferenceColumn = false,
+  previewService, previewAllowedResourceIds, noPreferenceColumn = false, extraServiceNames = {},
 }: {
   noPreferenceColumn?: boolean
+  extraServiceNames?: Record<string, string[]>
   date: Date
   reservations: any[]
   resources: Resource[]
@@ -1566,7 +1571,7 @@ function DayView({
                             </p>
                             {service && (
                               <p className="text-[10px] leading-tight truncate opacity-80">
-                                {r.type === 'visit' ? `${t.calendar.interestedInShortLabel} ` : ''}{service.name}
+                                {r.type === 'visit' ? `${t.calendar.interestedInShortLabel} ` : ''}{[service.name, ...(extraServiceNames[r.id] ?? [])].join(' + ')}
                               </p>
                             )}
                             <p className="mt-0.5 flex min-w-0 items-center gap-1 text-[10px] leading-tight opacity-70">
