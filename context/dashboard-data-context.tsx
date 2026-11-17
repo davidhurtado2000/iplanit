@@ -69,6 +69,9 @@ export interface Reservation {
   /** The barber was picked automatically for a "Sin preferencia" booking
    * and nobody has confirmed it yet (scripts/116). Cleared on completion. */
   worker_auto_assigned?: boolean
+  /** "Sin preferencia" kept in the pool: no barber yet, holds capacity not a
+   * barber's time (scripts/118). Cleared when a barber is assigned. */
+  no_preference_pool?: boolean
   /** 'kommo' = the Kommo integration's webhook cancelled this after its
    * matching lead was marked Lost (see app/api/integrations/kommo/webhook) -
    * distinct from 'business' (staff cancelled it themselves in iPlanit) so

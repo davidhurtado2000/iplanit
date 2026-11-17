@@ -35,6 +35,7 @@ import { useLanguage } from '@/context/language-context'
 import { capitalizeFirst, cn } from '@/lib/utils'
 import { parseInTimezone } from '@/lib/timezone'
 import { generateAvailableSlots, intersectSlots, isDayClosed } from '@/lib/availability'
+import { applyPoolCapacity } from '@/lib/pool-capacity'
 import { sendReservationNotification } from '@/lib/email/notify'
 import { syncReservationToKommo } from '@/lib/kommo/sync'
 import { TurnstileWidget, type TurnstileWidgetHandle } from '@/components/turnstile-widget'
@@ -368,7 +369,25 @@ export default function PublicBookingPage() {
       )
 
       const eligible = eligibleWorkersFor(selectedService)
-      const candidates = selectedWorkerId ? eligible.filter((w) => w.id === selectedWorkerId) : eligible
+      // "Sin preferencia" as a real pool (scripts/118): bookings with no
+      // barber yet hold capacity, not a particular barber. Needs EVERY
+      // eligible barber's availability (even when one is picked) to know how
+      // many are free. If the RPC doesn't exist yet or the business doesn't
+      // use the pool, everything below behaves exactly as before.
+      let poolRanges: { start_time: string; end_time: string }[] = []
+      let poolEnabled = false
+      if (eligible.length > 1) {
+        const { data: poolInfo } = await supabase.rpc('get_public_pool_info', {
+          p_business_id: business.id,
+          p_from: dayStart.toISOString(),
+          p_to: dayEnd.toISOString(),
+        })
+        const info = poolInfo as { enabled?: boolean; ranges?: { start_time: string; end_time: string }[] } | null
+        poolEnabled = !!info?.enabled
+        poolRanges = info?.ranges ?? []
+      }
+      const candidates =
+        selectedWorkerId && !poolEnabled ? eligible.filter((w) => w.id === selectedWorkerId) : eligible
       const workerBusy = await Promise.all(
         candidates.map(async (worker) => {
           const { data } = await supabase.rpc('get_public_worker_busy_times', {
@@ -420,7 +439,19 @@ export default function PublicBookingPage() {
               ? intersectSlots(businessSlots, slotsOn(date, worker.hours, workerBusy[i]))
               : businessSlots
           })
-          available = intersectSlots(available, unionSlots(perWorker))
+          if (poolEnabled) {
+            const capacity = applyPoolCapacity({
+              perWorkerSlots: perWorker,
+              poolRanges,
+              durationMinutes: effectiveDurationMinutes,
+              bufferBeforeMinutes: selectedService.buffer_before_min || 0,
+              bufferAfterMinutes: selectedService.buffer_after_min || 0,
+            })
+            const chosen = selectedWorkerId ? candidates.findIndex((w) => w.id === selectedWorkerId) : -1
+            available = intersectSlots(available, chosen >= 0 ? capacity.workerSlots[chosen] : capacity.anySlots)
+          } else {
+            available = intersectSlots(available, unionSlots(perWorker))
+          }
         }
         byDay[date] = available
       }

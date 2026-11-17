@@ -830,11 +830,11 @@ function DayView({
       // Bookings nobody has been assigned to yet (e.g. made before the
       // public link let clients pick, or by staff who skipped the field)
       // still need a home instead of silently disappearing.
-      if (selectedWorkerId === 'all' && dayRes.some(r => !r.worker_id || !knownWorkerIds.has(r.worker_id))) {
+      if (selectedWorkerId === 'all' && dayRes.some(r => (!r.worker_id || !knownWorkerIds.has(r.worker_id)) && !r.no_preference_pool)) {
         cols.push({ id: null, label: t.calendar.unassignedWorkerColumn })
       }
       // "Sin preferencia" first, so reception sees what still needs a barber.
-      if (noPreferenceColumn && selectedWorkerId === 'all') {
+      if ((noPreferenceColumn || dayRes.some(r => r.no_preference_pool)) && selectedWorkerId === 'all') {
         cols.unshift({ id: NO_PREF_COL, label: t.pay.noPreferenceColumn })
       }
       return cols
@@ -890,8 +890,11 @@ function DayView({
   }, [columns])
   const hasSedeGroups = columns.some(c => c.sedeLabel)
 
+  // Pool bookings (no barber yet, scripts/118) always live there; the older
+  // "provisional barber" bookings only when that column is switched on.
   const inNoPrefColumn = (r: any) =>
-    noPreferenceColumn && groupBy === 'worker' && !!r.worker_auto_assigned && r.status !== 'cancelled'
+    groupBy === 'worker' &&
+    (!!r.no_preference_pool || (noPreferenceColumn && !!r.worker_auto_assigned && r.status !== 'cancelled'))
   const getColRes = (colId: string | null) => {
     if (groupBy === 'worker') {
       if (colId === NO_PREF_COL) return dayRes.filter(inNoPrefColumn)
@@ -1524,14 +1527,14 @@ function DayView({
                         type="button"
                         onClick={() => onSelectReservation(r)}
                         title={
-                          r.worker_auto_assigned
-                            ? `${getStatusLabel(r.status, t.reservation)} · ${t.pay.toConfirmBadge}`
+                          r.worker_auto_assigned || r.no_preference_pool
+                            ? `${getStatusLabel(r.status, t.reservation)} · ${r.no_preference_pool ? t.pay.poolBadge : t.pay.toConfirmBadge}`
                             : getStatusLabel(r.status, t.reservation)
                         }
                         className={cn(
                           'absolute left-1 right-1 overflow-hidden rounded-lg px-2.5 py-1.5 text-left text-white shadow-sm transition-all hover:brightness-110 hover:shadow-md',
                           statusBorderClass(r.status),
-                          r.worker_auto_assigned && NO_PREF_BLOCK_CLASS,
+                          (r.worker_auto_assigned || r.no_preference_pool) && NO_PREF_BLOCK_CLASS,
                           (r.status === 'cancelled' || r.status === 'no_show') && 'opacity-45 saturate-50'
                         )}
                         style={{
@@ -1543,7 +1546,7 @@ function DayView({
                         {isShort ? (
                           <p className="flex items-center gap-1 text-[10px] font-semibold leading-tight truncate">
                             {r.type === 'visit' && <Eye className="h-2.5 w-2.5 shrink-0" />}
-                            {r.worker_auto_assigned && <HelpCircle className="h-2.5 w-2.5 shrink-0 text-violet-200" />}
+                            {(r.worker_auto_assigned || r.no_preference_pool) && <HelpCircle className="h-2.5 w-2.5 shrink-0 text-violet-200" />}
                             {client?.name ?? '—'}
                             {attendeesExtra > 0 && ` +${attendeesExtra}`}
                           </p>
@@ -1553,7 +1556,7 @@ function DayView({
                               {r.type === 'visit' && <Eye className="h-3 w-3 shrink-0" />}
                               {/* "Sin preferencia" not confirmed yet (scripts/116):
                                   the column's barber is only provisional. */}
-                              {r.worker_auto_assigned && <HelpCircle className="h-3 w-3 shrink-0 text-violet-200" />}
+                              {(r.worker_auto_assigned || r.no_preference_pool) && <HelpCircle className="h-3 w-3 shrink-0 text-violet-200" />}
                               {client?.name ?? '—'}
                               {attendeesExtra > 0 && (
                                 <span className="font-normal opacity-80">
@@ -1699,7 +1702,7 @@ function WeekView({
                       className={cn(
                         'flex w-full cursor-pointer items-center gap-1 truncate rounded px-1.5 py-0.5 text-[9px] font-medium text-white sm:text-[10px]',
                         statusBorderClass(r.status),
-                        r.worker_auto_assigned && NO_PREF_BLOCK_CLASS,
+                        (r.worker_auto_assigned || r.no_preference_pool) && NO_PREF_BLOCK_CLASS,
                         (r.status === 'cancelled' || r.status === 'no_show') && 'opacity-45 saturate-50'
                       )}
                       style={r.type === 'visit' ? visitPatternStyle(VISIT_BLOCK_COLOR) : { backgroundColor: rowColor }}
@@ -1831,7 +1834,7 @@ function MonthView({
                       className={cn(
                         'flex w-full cursor-pointer items-center gap-0.5 truncate rounded px-1 py-0.5 text-[9px] sm:text-[10px] text-white',
                         statusBorderClass(r.status),
-                        r.worker_auto_assigned && NO_PREF_BLOCK_CLASS,
+                        (r.worker_auto_assigned || r.no_preference_pool) && NO_PREF_BLOCK_CLASS,
                         (r.status === 'cancelled' || r.status === 'no_show') && 'opacity-45 saturate-50'
                       )}
                       style={r.type === 'visit' ? visitPatternStyle(VISIT_BLOCK_COLOR) : { backgroundColor: rowColor }}

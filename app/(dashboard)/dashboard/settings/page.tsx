@@ -643,7 +643,7 @@ function SettingsPageInner() {
     worker_label_plural: '',
     google_review_url: '',
     client_chooses_worker: false,
-    no_preference_mode: 'auto' as 'auto' | 'auto_review',
+    no_preference_mode: 'auto' as 'auto' | 'auto_review' | 'pool',
     no_preference_column: false,
     booking_font: null as string | null,
     booking_accent_color: null as string | null,
@@ -1960,7 +1960,7 @@ function SettingsPageInner() {
                           onValueChange={(value) =>
                             setBusiness({
                               ...business,
-                              no_preference_mode: value === 'auto' ? 'auto' : 'auto_review',
+                              no_preference_mode: value === 'auto' ? 'auto' : value === 'pool' ? 'pool' : 'auto_review',
                               no_preference_column: value === 'column',
                             })
                           }
@@ -1970,16 +1970,26 @@ function SettingsPageInner() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="auto">{t.settings.noPreferenceAuto}</SelectItem>
-                            <SelectItem value="auto_review">{t.settings.noPreferenceReview}</SelectItem>
-                            <SelectItem value="column">{t.settings.noPreferenceColumnOpt}</SelectItem>
+                            <SelectItem value="pool">{t.settings.noPreferencePool}</SelectItem>
+                            {/* The two earlier variants (a provisional barber to
+                                review) are only listed for businesses already
+                                using them - the pool above replaces both. */}
+                            {business.no_preference_mode === 'auto_review' && !business.no_preference_column && (
+                              <SelectItem value="auto_review">{t.settings.noPreferenceReview}</SelectItem>
+                            )}
+                            {business.no_preference_mode === 'auto_review' && business.no_preference_column && (
+                              <SelectItem value="column">{t.settings.noPreferenceColumnOpt}</SelectItem>
+                            )}
                           </SelectContent>
                         </Select>
                         <p className="text-xs text-muted-foreground">
-                          {business.no_preference_mode !== 'auto_review'
-                            ? t.settings.noPreferenceAutoDesc
-                            : business.no_preference_column
-                              ? t.settings.noPreferenceColumnDesc
-                              : t.settings.noPreferenceReviewDesc}
+                          {business.no_preference_mode === 'pool'
+                            ? t.settings.noPreferencePoolDesc
+                            : business.no_preference_mode !== 'auto_review'
+                              ? t.settings.noPreferenceAutoDesc
+                              : business.no_preference_column
+                                ? t.settings.noPreferenceColumnDesc
+                                : t.settings.noPreferenceReviewDesc}
                         </p>
                       </div>
                     )}

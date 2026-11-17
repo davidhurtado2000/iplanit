@@ -36,7 +36,7 @@ export function ToConfirmWorker({ reservations, workers, clients, services, time
   const pending = useMemo(
     () =>
       reservations
-        .filter((r) => r.worker_auto_assigned && (r.status === 'pending' || r.status === 'confirmed'))
+        .filter((r) => (r.worker_auto_assigned || r.no_preference_pool) && (r.status === 'pending' || r.status === 'confirmed'))
         .sort((a, b) => a.start_time.localeCompare(b.start_time)),
     [reservations]
   )
@@ -97,22 +97,26 @@ export function ToConfirmWorker({ reservations, workers, clients, services, time
                     <p className="text-sm text-muted-foreground">{fmt(r.start_time)}</p>
                     <p className="truncate text-sm text-muted-foreground">
                       {service?.name ?? t.calendar.unknownService}
-                      {worker && ` · ${tr.toConfirmAssignedTo.replace('{name}', worker.name)}`}
+                      {r.no_preference_pool
+                        ? ` · ${tr.poolNoBarber}`
+                        : worker && ` · ${tr.toConfirmAssignedTo.replace('{name}', worker.name)}`}
                     </p>
                   </div>
                   <div className="flex gap-2">
+                    {!r.no_preference_pool && (
+                      <Button
+                        size="sm"
+                        className="flex-1"
+                        disabled={busyId !== null}
+                        onClick={() => confirm([r.id], r.id)}
+                      >
+                        {busyId === r.id && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                        {tr.toConfirmConfirm}
+                      </Button>
+                    )}
                     <Button
                       size="sm"
-                      className="flex-1"
-                      disabled={busyId !== null}
-                      onClick={() => confirm([r.id], r.id)}
-                    >
-                      {busyId === r.id && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-                      {tr.toConfirmConfirm}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
+                      variant={r.no_preference_pool ? 'default' : 'outline'}
                       className="flex-1"
                       disabled={busyId !== null}
                       onClick={() => {
@@ -120,7 +124,7 @@ export function ToConfirmWorker({ reservations, workers, clients, services, time
                         onOpenReservation(r)
                       }}
                     >
-                      {tr.toConfirmChange}
+                      {r.no_preference_pool ? tr.poolAssign : tr.toConfirmChange}
                     </Button>
                   </div>
                 </div>
@@ -128,11 +132,11 @@ export function ToConfirmWorker({ reservations, workers, clients, services, time
             })}
           </div>
 
-          {pending.length > 1 && (
+          {pending.filter((r) => !r.no_preference_pool).length > 1 && (
             <Button
               variant="secondary"
               disabled={busyId !== null}
-              onClick={() => confirm(pending.map((r) => r.id), 'all')}
+              onClick={() => confirm(pending.filter((r) => !r.no_preference_pool).map((r) => r.id), 'all')}
             >
               {busyId === 'all' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {tr.toConfirmAll}

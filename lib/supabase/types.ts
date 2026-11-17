@@ -374,7 +374,7 @@ export interface Database {
           google_review_url: string | null
           tip_worker_pct: number
           off_hours_commission_pct: number | null
-          no_preference_mode: 'auto' | 'auto_review'
+          no_preference_mode: 'auto' | 'auto_review' | 'pool'
           no_preference_column: boolean
           pay_excludes_tax: boolean
           workers_see_sales: boolean
@@ -420,7 +420,7 @@ export interface Database {
           google_review_url?: string | null
           tip_worker_pct?: number
           off_hours_commission_pct?: number | null
-          no_preference_mode?: 'auto' | 'auto_review'
+          no_preference_mode?: 'auto' | 'auto_review' | 'pool'
           no_preference_column?: boolean
           pay_excludes_tax?: boolean
           workers_see_sales?: boolean
@@ -466,7 +466,7 @@ export interface Database {
           google_review_url?: string | null
           tip_worker_pct?: number
           off_hours_commission_pct?: number | null
-          no_preference_mode?: 'auto' | 'auto_review'
+          no_preference_mode?: 'auto' | 'auto_review' | 'pool'
           no_preference_column?: boolean
           pay_excludes_tax?: boolean
           workers_see_sales?: boolean
@@ -730,6 +730,7 @@ export interface Database {
           tip_amount: number | null
           off_hours: boolean
           worker_auto_assigned: boolean
+          no_preference_pool: boolean
           worker_pay_pct: number | null
           tip_worker_pct: number | null
           pay_excludes_tax: boolean | null
@@ -767,6 +768,7 @@ export interface Database {
           tip_amount?: number | null
           off_hours?: boolean
           worker_auto_assigned?: boolean
+          no_preference_pool?: boolean
           worker_pay_pct?: number | null
           tip_worker_pct?: number | null
           pay_excludes_tax?: boolean | null
@@ -804,6 +806,7 @@ export interface Database {
           tip_amount?: number | null
           off_hours?: boolean
           worker_auto_assigned?: boolean
+          no_preference_pool?: boolean
           worker_pay_pct?: number | null
           tip_worker_pct?: number | null
           pay_excludes_tax?: boolean | null
@@ -1530,6 +1533,10 @@ export interface Database {
       get_walk_in_client: {
         Args: { p_business_id: string }
         Returns: string
+      }
+      get_public_pool_info: {
+        Args: { p_business_id: string; p_from: string; p_to: string }
+        Returns: Json
       }
       is_platform_admin: {
         Args: Record<PropertyKey, never>

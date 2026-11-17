@@ -610,14 +610,27 @@ export const HELP_ARTICLES: HelpArticle[] = [
     slug: 'sin-preferencia',
     category: 'link',
     title: 'Clientes que eligen "Sin preferencia"',
-    summary: 'Confirma o cambia el barbero que el sistema asignó.',
+    summary: 'Qué pasa con los clientes que no eligen barbero y cómo asignarlos.',
     audience: 'business',
     ownerOnly: true,
     link: { href: '/dashboard/settings?tab=business', label: 'Ir a Configuración → Negocio' },
     keywords: ['sin preferencia', 'asignar', 'barbero', 'por confirmar', 'automatico', 'quien atiende'],
     blocks: [
-      { type: 'p', text: 'Cuando un cliente reserva por tu link y elige **Sin preferencia**, el sistema le da la cita al barbero libre que tenga menos citas ese día. Así el horario queda bien reservado y nunca se agendan más citas de las que tu equipo puede atender.' },
-      { type: 'h', text: 'Revisar quién quedó asignado' },
+      { type: 'p', text: 'Cuando un cliente reserva (por tu link o por teléfono) y elige **Sin preferencia**, tienes tres formas de manejarlo. Se elige en **Configuración** → **Negocio** → **Cuando el cliente elige "Sin preferencia"**.' },
+      { type: 'h', text: 'Dejar sin barbero hasta que yo elija (recomendado)' },
+      { type: 'p', text: 'La cita queda en la columna **Sin preferencia** del Calendario y **no ocupa a ningún barbero**. Así, un cliente fiel de Paul todavía puede reservar con Paul a esa hora. Cuando decidas, abre la cita y toca **Asignar barbero**: pasa a su columna.' },
+      {
+        type: 'list',
+        items: [
+          'El sistema **nunca agenda más citas de las que tu equipo puede atender**: una hora deja de ofrecerse cuando ya no quedan barberos libres para todas las citas de ese momento (las que ya tienen barbero y las que están sin barbero).',
+          'No se puede completar una cita que sigue sin barbero.',
+          'Los barberos no ven esas citas en **Mi agenda** hasta que se les asignen.',
+          'Verás una cita sin barbero con un contorno morado punteado y un "?", y también en el aviso **Por confirmar** de arriba del Calendario.',
+        ],
+      },
+      { type: 'h', text: 'Asignar automáticamente' },
+      { type: 'p', text: 'El sistema le da la cita al barbero libre que tenga menos citas ese día, y no se vuelve a tocar.' },
+      { type: 'h', text: 'Asignar automáticamente y revisar (versión anterior)' },
       {
         type: 'steps',
         items: [

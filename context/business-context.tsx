@@ -84,7 +84,7 @@ interface Business {
   /** What the public link does with "Sin preferencia" (scripts/116): 'auto' =
    * assign the least busy free barber (as always); 'auto_review' = same, but
    * flag the booking so reception can confirm or change the barber. */
-  no_preference_mode?: 'auto' | 'auto_review'
+  no_preference_mode?: 'auto' | 'auto_review' | 'pool'
   /** With 'auto_review': show those bookings in their own calendar column
    * (scripts/117). */
   no_preference_column?: boolean

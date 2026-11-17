@@ -75,6 +75,7 @@ import { toTzLocalInput, parseInTimezone, toDateStr } from '@/lib/timezone'
 import { generateAvailableSlots, isDayClosed, intersectSlots, weekParity } from '@/lib/availability'
 import { sendReservationNotification } from '@/lib/email/notify'
 import { offHoursFor } from '@/lib/off-hours'
+import { applyPoolCapacity } from '@/lib/pool-capacity'
 import { syncReservationToKommo } from '@/lib/kommo/sync'
 import { isPlanLimitReached, meetsPlan } from '@/lib/plan-limits'
 import { formatDuration } from '@/lib/duration'
@@ -1065,9 +1066,29 @@ export function ReservationModal({
     }
   }, [anyWorker, canPickAnyWorker])
 
+  // "Sin preferencia" as a real pool (no_preference_mode = 'pool', scripts/118):
+  // bookings without a barber hold capacity, not a barber's time. Offered
+  // while free barbers > pool bookings, for "Sin preferencia" and for a
+  // specific barber alike (lib/pool-capacity.ts).
+  const poolMode = currentBusiness?.no_preference_mode === 'pool'
+  const poolCapacity = (allowPast: boolean) =>
+    applyPoolCapacity({
+      perWorkerSlots: filteredWorkers.map((w) => slotsForWorker(w, allowPast)),
+      poolRanges: poolMode
+        ? reservations.filter((r) => r.no_preference_pool && r.status !== 'cancelled' && r.id !== reservation?.id)
+        : [],
+      durationMinutes: effectiveDurationMinutes ?? 0,
+      bufferBeforeMinutes: selectedService?.buffer_before_min || 0,
+      bufferAfterMinutes: selectedService?.buffer_after_min || 0,
+    })
+
   const computeSlots = (allowPast: boolean) => {
     if (!slotDate || !effectiveDurationMinutes) return []
-    if (anyWorker) return anyWorkerSlots(allowPast)
+    if (anyWorker) return poolMode ? poolCapacity(allowPast).anySlots : anyWorkerSlots(allowPast)
+    if (poolMode && !editingExisting && formData.type === 'booking' && formData.worker_id) {
+      const idx = filteredWorkers.findIndex((w) => w.id === formData.worker_id)
+      if (idx >= 0) return poolCapacity(allowPast).workerSlots[idx]
+    }
     const businessSlots = generateAvailableSlots(
       slotDate,
       businessHours,
@@ -1435,7 +1456,18 @@ export function ReservationModal({
       // exactly this time.
       let workerId = formData.worker_id
       let autoAssigned = false
-      if (anyWorker) {
+      let inPool = false
+      if (anyWorker && poolMode) {
+        // Pool: nobody is assigned yet; just make sure capacity is left.
+        const stillOffered = poolCapacity(allowPastSlots).anySlots.some((slot) => slot.getTime() === startDate.getTime())
+        if (!stillOffered) {
+          setError(t.pay.noFreeWorker)
+          setIsLoading(false)
+          return
+        }
+        workerId = ''
+        inPool = true
+      } else if (anyWorker) {
         const picked = pickFreeWorker(startDate)
         if (!picked) {
           setError(t.pay.noFreeWorker)
@@ -1460,6 +1492,11 @@ export function ReservationModal({
         worker_id: workerId || null,
         parking_resource_id: parkingResourceId,
         ...(autoAssigned ? { worker_auto_assigned: true } : {}),
+        ...(inPool ? { no_preference_pool: true } : {}),
+        // Picking a barber for a pool booking takes it out of the pool.
+        ...(effectiveMode === 'edit' && reservation?.no_preference_pool && formData.worker_id
+          ? { no_preference_pool: false }
+          : {}),
         start_time: startDate.toISOString(),
         end_time: endDate.toISOString(),
         type: formData.type,
@@ -2102,6 +2139,15 @@ export function ReservationModal({
                       ({resourceTypeLabel[viewResource.type]})
                     </span>
                   </span>
+                </div>
+              )}
+              {reservation.no_preference_pool && !reservation.worker_id && (
+                <div className="space-y-2 rounded-lg border border-violet-500/40 bg-violet-500/10 p-3">
+                  <p className="text-sm font-medium text-violet-900 dark:text-violet-200">{t.pay.poolBannerTitle}</p>
+                  <p className="text-xs text-violet-900/80 dark:text-violet-200/80">{t.pay.poolBannerDesc}</p>
+                  <Button type="button" size="sm" disabled={isLoading} onClick={() => setIsEditing(true)}>
+                    {t.pay.poolAssign}
+                  </Button>
                 </div>
               )}
               {reservation.worker_auto_assigned && viewWorker && (
@@ -3060,7 +3106,11 @@ export function ReservationModal({
                 </Select>
                 {anyWorker ? (
                   <p className="text-xs text-muted-foreground">
-                    {currentBusiness?.no_preference_mode === 'auto_review' ? t.pay.anyWorkerHintReview : t.pay.anyWorkerHint}
+                    {poolMode
+                      ? t.pay.anyWorkerHintPool
+                      : currentBusiness?.no_preference_mode === 'auto_review'
+                        ? t.pay.anyWorkerHintReview
+                        : t.pay.anyWorkerHint}
                   </p>
                 ) : (
                   workerRequired &&
