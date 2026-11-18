@@ -214,6 +214,15 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'En los reportes por servicio, cada servicio cuenta con su propio precio.',
         ],
       },
+      { type: 'h', text: 'Cuando la cita no cabe como el sistema la espera' },
+      {
+        type: 'list',
+        items: [
+          '**Duración de esta cita**: si el servicio dura 45 min pero ese cliente se atendió en 30, cambia los minutos debajo del servicio y la cita ocupará solo ese tiempo.',
+          '**¿No sale la hora? Escribirla a mano**: debajo de los horarios, para anotar una hora que no aparece como libre (por ejemplo, un corte rápido entre dos citas).',
+          '**Guardar igual**: si la cita se cruza con otra del mismo barbero, el sistema te avisa. Si ya lo atendió de verdad, toca **Guardar igual** para registrarlo. Si todavía no pasa, mejor elige otra hora.',
+        ],
+      },
       { type: 'h', text: 'Otros botones del calendario' },
       {
         type: 'list',

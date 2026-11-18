@@ -346,6 +346,18 @@ export function ReservationModal({
   // beard trim added to an appointment that is already followed by another.
   const [extraLines, setExtraLines] = useState<{ service_id: string; minutes: number }[]>([])
   const extraServiceIds = extraLines.map((l) => l.service_id)
+  // The duration this appointment REALLY had, when it differs from the
+  // service's (a 45-minute cut that took 30 between two other bookings). Text
+  // so the field can be empty while typing; empty = the service's own.
+  const [durationInput, setDurationInput] = useState('')
+  // Type the start time by hand instead of picking one of the free slots -
+  // for a quick job squeezed into time the grid shows as taken.
+  const [manualTime, setManualTime] = useState(false)
+  // The save was stopped because it overlaps another booking of the same
+  // person; offers "Guardar igual" for what already happened.
+  const [conflictFound, setConflictFound] = useState(false)
+  const forceSaveRef = useRef(false)
+  const formRef = useRef<HTMLFormElement>(null)
   const [walkInLoading, setWalkInLoading] = useState(false)
 
   const isUSD = currentBusiness?.currency === 'USD'
@@ -516,10 +528,18 @@ export function ReservationModal({
         Math.round((new Date(reservation.end_time).getTime() - new Date(reservation.start_time).getTime()) / 60000) -
         savedExtras.reduce((n, e) => n + e.duration_minutes, 0)
       setExtraLines(savedExtras.map((e) => ({ service_id: e.service_id, minutes: e.duration_minutes })))
+      setManualTime(false)
+      setConflictFound(false)
       const matchingOption = serviceDurationOptions.find(
         (o) => o.service_id === reservation.service_id && o.duration_minutes === actualDuration
       )
       const editedService = services.find((s) => s.id === reservation.service_id)
+      // A fixed-duration service whose appointment lasted something else.
+      setDurationInput(
+        editedService?.pricing_mode === 'fixed' && actualDuration > 0 && actualDuration !== editedService.duration_minutes
+          ? String(actualDuration)
+          : ''
+      )
       setFormData({
         client_id: reservation.client_id,
         service_id: reservation.service_id || '',
@@ -580,6 +600,11 @@ export function ReservationModal({
       setOffHours(false)
       setAnyWorker(false)
       setExtraLines([])
+      setDurationInput('')
+      // "Registrar cita pasada" is about something that already happened, so
+      // the time is typed, not picked from free slots.
+      setManualTime(backdated)
+      setConflictFound(false)
       setIsEditing(true)
     }
     setError('')
@@ -863,6 +888,10 @@ export function ReservationModal({
   // service without a chosen option, or an hourly service without hours
   // entered yet, has no known duration; a fixed-duration service uses its
   // own duration.
+  const durationOverride =
+    selectedService?.pricing_mode === 'fixed' && durationInput !== '' && Number(durationInput) >= 5
+      ? Math.round(Number(durationInput))
+      : null
   const mainDurationMinutes =
     formData.type === 'visit'
       ? formData.visitDurationMinutes || undefined
@@ -870,7 +899,7 @@ export function ReservationModal({
         ? selectedDurationOption?.duration_minutes
         : selectedService?.pricing_mode === 'hourly'
           ? (formData.hours || 0) * 60 || undefined
-          : selectedService?.duration_minutes
+          : durationOverride ?? selectedService?.duration_minutes
   // Extra services of the same appointment (a booking only, never a visit).
   const extraServicesList = (formData.type === 'booking' ? extraServiceIds : [])
     .map((id) => services.find((s) => s.id === id))
@@ -1471,6 +1500,15 @@ export function ReservationModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    // "Guardar igual" sets this just before re-submitting.
+    const force =
+      forceSaveRef.current ||
+      // A backdated entry already happened, and the amber "ya tiene una cita a
+      // esa hora" warning is on screen: no second confirmation. A future
+      // booking asks ("Guardar igual") - there a clash is usually a mistake.
+      (backdated && formData.type === 'booking' && !!formData.worker_id && busyWorkerIds.has(formData.worker_id))
+    forceSaveRef.current = false
+    setConflictFound(false)
     setError('')
     if (!profile || !currentBusiness) {
       console.error('[v0] Error: No hay datos de autenticación o negocio')
@@ -1660,8 +1698,13 @@ export function ReservationModal({
 
         const { data: workerConflicts, error: workerConflictError } = await workerConflictQuery
         if (workerConflictError) throw workerConflictError
-        if (workerConflicts && workerConflicts.length > 0) {
+        // A person's overlapping bookings are blocked, but staff can record
+        // what really happened (a quick cut squeezed in between two others):
+        // "Guardar igual" skips this check. A shared RESOURCE can never
+        // overlap (the database enforces it), so that one is not skippable.
+        if (workerConflicts && workerConflicts.length > 0 && !force) {
           setError(t.reservation.timeConflict)
+          setConflictFound(true)
           setIsLoading(false)
           return
         }
@@ -2476,7 +2519,7 @@ export function ReservationModal({
             </DialogFooter>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
             {error && (
               <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
                 {error}
@@ -2549,6 +2592,7 @@ export function ReservationModal({
                 value={formData.service_id}
                 onValueChange={(val) => {
                   const service = services.find((s) => s.id === val)
+                  setDurationInput('')
                   // The new main service can't also be an extra one.
                   if (extraServiceIds.includes(val)) setExtraLines((prev) => prev.filter((l) => l.service_id !== val))
                   // A visit's service is just an interest hint (see the
@@ -2685,6 +2729,36 @@ export function ReservationModal({
                     onChange={(minutes) => setFormData({ ...formData, visitDurationMinutes: minutes, start_time: '' })}
                   />
                   <p className="text-xs text-muted-foreground">{t.reservation.visitDurationHint}</p>
+                </div>
+              )}
+
+              {/* The real duration, when it differs from the service's. */}
+              {formData.type === 'booking' && selectedService?.pricing_mode === 'fixed' && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Label htmlFor="duration-override" className="text-xs font-normal text-muted-foreground">
+                    {t.reservation.durationOfThis}
+                  </Label>
+                  <Input
+                    id="duration-override"
+                    type="number"
+                    min={5}
+                    step={5}
+                    inputMode="numeric"
+                    placeholder={String(selectedService.duration_minutes)}
+                    className="h-8 w-20 text-right text-sm"
+                    value={durationInput}
+                    onChange={(e) => setDurationInput(e.target.value.replace(/[^\d]/g, ''))}
+                  />
+                  <span className="text-xs text-muted-foreground">min</span>
+                  {durationOverride !== null && (
+                    <button
+                      type="button"
+                      className="text-xs text-primary hover:underline"
+                      onClick={() => setDurationInput('')}
+                    >
+                      {t.reservation.durationReset.replace('{n}', String(selectedService.duration_minutes))}
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -3311,7 +3385,7 @@ export function ReservationModal({
                     {workersByDay.map(({ worker, worksThatDay }) => {
                       const busy = busyWorkerIds.has(worker.id)
                       return (
-                      <SelectItem key={worker.id} value={worker.id} disabled={busy}>
+                      <SelectItem key={worker.id} value={worker.id}>
                         <span className={cn('flex items-center gap-2', (!worksThatDay || busy) && 'opacity-60')}>
                           <span
                             className="h-2 w-2 shrink-0 rounded-full"
@@ -3332,7 +3406,7 @@ export function ReservationModal({
                   </SelectContent>
                 </Select>
                 {formData.type === 'booking' && !!formData.worker_id && busyWorkerIds.has(formData.worker_id) && (
-                  <p className="flex items-start gap-1.5 text-xs font-medium text-destructive">
+                  <p className="flex items-start gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-400">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     {t.reservation.selectedWorkerBusy.replace('{name}', selectedWorker?.name ?? '')}
                   </p>
@@ -3413,8 +3487,8 @@ export function ReservationModal({
                 datetime input that only told you about a conflict after
                 trying to save. */}
             <div className="space-y-2">
-              <Label>{offHours ? t.pay.offHoursTimeLabel : t.reservation.timeOnlyLabel}</Label>
-              {offHours ? (
+              <Label>{offHours || manualTime ? t.pay.offHoursTimeLabel : t.reservation.timeOnlyLabel}</Label>
+              {offHours || manualTime ? (
                 <Input
                   type="time"
                   className="w-36"
@@ -3472,6 +3546,7 @@ export function ReservationModal({
                 </div>
               )}
               {!offHours &&
+                !manualTime &&
                 formData.start_time &&
                 formData.start_time !== originalLocalStart &&
                 !availableSlots.some((s) => toTzLocalInput(s.toISOString(), tz) === formData.start_time) && (
@@ -3479,6 +3554,19 @@ export function ReservationModal({
                     {t.reservation.currentTimeLabel}: {formatLocalTime(formData.start_time)}
                   </p>
                 )}
+              {/* Squeezing in a quick job the grid shows as taken. */}
+              {!offHours && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs"
+                  onClick={() => setManualTime((v) => !v)}
+                >
+                  <Clock className="h-3.5 w-3.5" />
+                  {manualTime ? t.reservation.manualTimeBack : t.reservation.manualTimeLink}
+                </Button>
+              )}
               {workerHoursWarning && (
                 <p className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400">
                   <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -3682,6 +3770,26 @@ export function ReservationModal({
               />
             </div>
 
+            {conflictFound && (
+              <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+                <p className="font-medium text-amber-900 dark:text-amber-200">{t.reservation.conflictTitle}</p>
+                <p className="text-xs text-amber-900/80 dark:text-amber-200/80">{t.reservation.conflictDesc}</p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="bg-background"
+                  disabled={isLoading}
+                  onClick={() => {
+                    forceSaveRef.current = true
+                    formRef.current?.requestSubmit()
+                  }}
+                >
+                  {t.reservation.saveAnyway}
+                </Button>
+              </div>
+            )}
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>
                 {t.reservation.cancelBtn}
@@ -3701,7 +3809,6 @@ export function ReservationModal({
                       formData.hours > (selectedService.max_hours ?? Infinity))) ||
                   (!!hoursError && !offHours) ||
                   (workerRequired && !formData.worker_id && !anyWorker) ||
-                  (formData.type === 'booking' && !!formData.worker_id && busyWorkerIds.has(formData.worker_id)) ||
                   (repeatEnabled && repeatDays.length === 0)
                 }
                 className="gap-2"
