@@ -143,3 +143,55 @@ describe('several services in one appointment (scripts/119)', () => {
     expect(e.servicePct).toBe(0)
   })
 })
+
+describe('discounts (scripts/121)', () => {
+  const rules: PaySettings = { ...commission40, offHoursPct: null }
+
+  it('with no discount nothing changes', () => {
+    const e = earningFor(row({ price: 60 }), rules)
+    expect(e.serviceShare).toBe(24)
+    expect(e.absorbedDiscount).toBe(0)
+  })
+
+  it('a discount the business absorbs does not reduce the barber (60 sold at 51)', () => {
+    const e = earningFor(row({ price: 51, discount_amount: 9 }), rules)
+    expect(e.sale).toBe(51) // reports show what was really paid
+    expect(e.base).toBe(60) // commission on the normal price
+    expect(e.serviceShare).toBe(24) // 40% of 60
+    expect(e.businessShare).toBe(27) // 51 paid - 24 to the barber
+  })
+
+  it('a shared discount takes the barber down with it', () => {
+    const e = earningFor(row({ price: 51, discount_amount: 9, discount_shared: true }), rules)
+    expect(e.base).toBe(51)
+    expect(e.serviceShare).toBe(20.4)
+  })
+
+  it('a free service the business absorbs still pays the barber', () => {
+    const e = earningFor(row({ price: null, discount_amount: 60 }), rules)
+    expect(e.sale).toBe(0)
+    expect(e.serviceShare).toBe(24)
+    expect(e.businessShare).toBe(-24) // the business pays out of its own pocket
+  })
+
+  it('works out IGV on the normal price when the business excludes tax', () => {
+    const e = earningFor(row({ price: 51, discount_amount: 9 }), { ...rules, excludesTax: true })
+    expect(e.base).toBeCloseTo(50.85, 2) // 60 / 1.18
+  })
+
+  it('blends extra services over price + discount', () => {
+    // Normal 100 (70 main + 30 extra at 70%), sold at 90 with the 10 absorbed.
+    const e = earningFor(
+      row({ price: 90, discount_amount: 10, extra_lines: [{ price: 30, commission_pct: 70 }] }),
+      rules
+    )
+    expect(e.servicePct).toBeCloseTo(49, 5)
+    expect(e.serviceShare).toBe(49) // 49% of 100
+  })
+
+  it('summarizes sales as what was paid and the share on the normal price', () => {
+    const s = summarizeEarnings([row({ price: 51, discount_amount: 9 })], rules, now)
+    expect(s.sales).toBe(51)
+    expect(s.serviceShare).toBe(24)
+  })
+})

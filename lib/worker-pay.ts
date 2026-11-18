@@ -38,12 +38,21 @@ export interface PayRow {
    * own fixed commission, if any. The main service's share of the price is
    * what is left after taking these out. */
   extra_lines?: { price: number; commission_pct?: number | null }[]
+  /** Discount already taken off the price (scripts/121): `price` is what the
+   * client paid, `price + discount_amount` the normal price. */
+  discount_amount?: number | null
+  /** false/undefined: the business absorbs the discount (the commission is
+   * worked out on price + discount). true: the barber shares it. */
+  discount_shared?: boolean | null
 }
 
 export interface Earning {
   /** What the client paid for the service (tip not included). */
   sale: number
-  /** The amount the commission is worked out on (sale, or sale without IGV). */
+  /** Discount the business absorbed (0 when there is none or it is shared). */
+  absorbedDiscount: number
+  /** The amount the commission is worked out on (sale plus an absorbed
+   * discount, or that without IGV). */
   base: number
   /** Null = this worker's pay isn't set up, so there is nothing to work out. */
   servicePct: number | null
@@ -58,6 +67,16 @@ export interface Earning {
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100
+
+/** What the client paid for the service (the price in the business currency). */
+const paidOf = (row: Pick<PayRow, 'price' | 'price_usd'>) => Number((row.price || row.price_usd) ?? 0)
+
+/** The part of a discount the business absorbs: the barber's commission is
+ * worked out on price + this (scripts/121). 0 when the barber shares it. */
+export function absorbedDiscountOf(row: Pick<PayRow, 'discount_amount' | 'discount_shared'>): number {
+  if (row.discount_shared) return 0
+  return Math.max(Number(row.discount_amount ?? 0), 0)
+}
 
 /** Same rule the worker portal has always used for "Atendidas": completed,
  * or confirmed and already over (many shops never press "Completar").
@@ -91,7 +110,9 @@ export function blendedServicePct(settings: PaySettings, row: PayRow): number | 
   const primary = currentServicePct(settings, row)
   const lines = row.extra_lines ?? []
   if (lines.length === 0 || primary === null) return primary
-  const sale = Number((row.price || row.price_usd) ?? 0)
+  // Weighted over what the commission is worked out on (price + an absorbed
+  // discount), the same as the DB snapshot.
+  const sale = paidOf(row) + absorbedDiscountOf(row)
   if (sale <= 0) return primary
   const extrasTotal = lines.reduce((n, l) => n + l.price, 0)
   const weighted = lines.reduce((n, l) => {
@@ -102,11 +123,13 @@ export function blendedServicePct(settings: PaySettings, row: PayRow): number | 
 }
 
 export function earningFor(row: PayRow, settings: PaySettings): Earning {
-  const sale = Number((row.price || row.price_usd) ?? 0)
+  const sale = paidOf(row)
+  const absorbedDiscount = absorbedDiscountOf(row)
   const snapshot = row.worker_pay_pct !== null && row.worker_pay_pct !== undefined
   const servicePct = snapshot ? Number(row.worker_pay_pct) : blendedServicePct(settings, row)
   const excludesTax = snapshot ? Boolean(row.pay_excludes_tax) : settings.excludesTax
-  const base = round2(excludesTax ? sale / (1 + PE_IGV_RATE) : sale)
+  const commissionSale = sale + absorbedDiscount
+  const base = round2(excludesTax ? commissionSale / (1 + PE_IGV_RATE) : commissionSale)
   const serviceShare = servicePct === null ? 0 : round2((base * servicePct) / 100)
   const tip = Number(row.tip_amount ?? 0)
   const tipPct = snapshot && row.tip_worker_pct !== null && row.tip_worker_pct !== undefined
@@ -114,7 +137,7 @@ export function earningFor(row: PayRow, settings: PaySettings): Earning {
     : settings.tipWorkerPct
   const tipShare = round2((tip * tipPct) / 100)
   const total = round2(serviceShare + tipShare)
-  return { sale, base, servicePct, serviceShare, tip, tipPct, tipShare, total, businessShare: round2(sale + tip - total) }
+  return { sale, absorbedDiscount, base, servicePct, serviceShare, tip, tipPct, tipShare, total, businessShare: round2(sale + tip - total) }
 }
 
 export interface EarningSummary {

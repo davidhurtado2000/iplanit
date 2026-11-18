@@ -350,6 +350,12 @@ export function ReservationModal({
   // service's (a 45-minute cut that took 30 between two other bookings). Text
   // so the field can be empty while typing; empty = the service's own.
   const [durationInput, setDurationInput] = useState('')
+  // Discount (scripts/121): formData.price is the NORMAL price; the client
+  // pays price - discount. By default the business absorbs it, so the
+  // barber's commission is still on the normal price.
+  const [discountInput, setDiscountInput] = useState('')
+  const [discountShared, setDiscountShared] = useState(false)
+  const [showDiscount, setShowDiscount] = useState(false)
   // Type the start time by hand instead of picking one of the free slots -
   // for a quick job squeezed into time the grid shows as taken.
   const [manualTime, setManualTime] = useState(false)
@@ -557,9 +563,19 @@ export function ReservationModal({
         // its (optional, informational-only) service, so this applies
         // whether or not one is attached.
         visitDurationMinutes: reservation.type === 'visit' ? actualDuration : 60,
-        price: (isUSD ? reservation.price_usd : reservation.price) ?? '',
+        // The field holds the NORMAL price: what was paid plus the discount.
+        price: (() => {
+          const paid = isUSD ? reservation.price_usd : reservation.price
+          const discount = Number(reservation.discount_amount ?? 0)
+          return paid === null || paid === undefined
+            ? discount > 0 ? discount : ''
+            : Math.round((Number(paid) + discount) * 100) / 100
+        })(),
         needsParking: !!reservation.parking_resource_id,
       })
+      setDiscountInput(Number(reservation.discount_amount ?? 0) > 0 ? String(reservation.discount_amount) : '')
+      setDiscountShared(!!reservation.discount_shared)
+      setShowDiscount(Number(reservation.discount_amount ?? 0) > 0)
       setSlotDate(toDateStr(reservation.start_time, tz))
       setOffHours(!!reservation.off_hours)
       setAnyWorker(false)
@@ -596,6 +612,9 @@ export function ReservationModal({
         price: '',
         needsParking: false,
       })
+      setDiscountInput('')
+      setDiscountShared(false)
+      setShowDiscount(false)
       setSlotDate(selectedDate || toDateStr(new Date().toISOString(), tz))
       setOffHours(false)
       setAnyWorker(false)
@@ -1498,6 +1517,15 @@ export function ReservationModal({
     return { created, total: occurrences.length, skipped }
   }
 
+  // Discount (scripts/121). Not for a visit (no revenue) or a repeating
+  // series (each session would need its own).
+  const listPrice = Number(formData.price) || 0
+  const discountAllowed = formData.type !== 'visit' && !repeatEnabled
+  const discountAmount = discountAllowed
+    ? Math.round(Math.min(Math.max(Number(discountInput) || 0, 0), listPrice) * 100) / 100
+    : 0
+  const netPrice = Math.round((listPrice - discountAmount) * 100) / 100
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     // "Guardar igual" sets this just before re-submitting.
@@ -1636,8 +1664,14 @@ export function ReservationModal({
         start_time: startDate.toISOString(),
         end_time: endDate.toISOString(),
         type: formData.type,
-        price: isUSD ? null : formData.price || null,
-        price_usd: isUSD ? formData.price || null : null,
+        // The client pays the normal price minus the discount (scripts/121).
+        price: isUSD ? null : netPrice || null,
+        price_usd: isUSD ? netPrice || null : null,
+        // Only sent when there is (or was) a discount, so saving keeps
+        // working before scripts/121 adds the columns.
+        ...(discountAmount > 0 || Number(reservation?.discount_amount ?? 0) > 0
+          ? { discount_amount: discountAmount, discount_shared: discountShared }
+          : {}),
         notes: formData.notes || null,
         // Only sent when it changed, so saving keeps working before
         // scripts/115 adds the column.
@@ -2276,7 +2310,14 @@ export function ReservationModal({
                 <div className="flex items-center gap-3 text-sm">
                   <DollarSign className="h-4 w-4 text-muted-foreground" />
                   <span className="font-medium">{t.reservation.priceLabel}</span>
-                  <span>{isUSD ? '$' : 'S/'} {reservation.price_usd || reservation.price}</span>
+                  <span>
+                    {isUSD ? '$' : 'S/'} {reservation.price_usd || reservation.price}
+                    {Number(reservation.discount_amount ?? 0) > 0 && (
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {t.reservation.discountApplied.replace('{amount}', `${isUSD ? '$' : 'S/'} ${reservation.discount_amount}`)}
+                      </span>
+                    )}
+                  </span>
                 </div>
               )}
               {reservation.payment_method && (
@@ -2873,6 +2914,73 @@ export function ReservationModal({
                     setFormData({ ...formData, price: isNaN(rounded) ? '' : rounded })
                   }}
                 />
+                {/* Discount: the client pays less, the barber's commission
+                    doesn't have to (scripts/121). */}
+                {discountAllowed && listPrice > 0 && !showDiscount && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs text-primary"
+                    onClick={() => setShowDiscount(true)}
+                  >
+                    {t.reservation.addDiscount}
+                  </Button>
+                )}
+                {discountAllowed && showDiscount && (
+                  <div className="space-y-2 rounded-lg border p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <Label htmlFor="reservation-discount" className="text-sm">
+                        {t.reservation.discountLabel} ({isUSD ? '$' : 'S/.'})
+                      </Label>
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground hover:underline"
+                        onClick={() => {
+                          setShowDiscount(false)
+                          setDiscountInput('')
+                          setDiscountShared(false)
+                        }}
+                      >
+                        {t.reservation.removeDiscount}
+                      </button>
+                    </div>
+                    <Input
+                      id="reservation-discount"
+                      type="number"
+                      min={0}
+                      max={listPrice}
+                      step="any"
+                      inputMode="decimal"
+                      value={discountInput}
+                      onChange={(e) => setDiscountInput(e.target.value)}
+                    />
+                    {discountAmount > 0 && (
+                      <>
+                        <p className="text-sm font-medium">
+                          {t.reservation.clientPays.replace('{amount}', `${isUSD ? '$' : 'S/'} ${netPrice}`)}
+                        </p>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-0.5">
+                            <Label htmlFor="discount-business" className="cursor-pointer text-sm">
+                              {t.reservation.discountAbsorbed}
+                            </Label>
+                            <p className="text-xs text-muted-foreground">
+                              {(discountShared ? t.reservation.discountSharedHint : t.reservation.discountAbsorbedHint)
+                                .replace('{normal}', `${isUSD ? '$' : 'S/'} ${listPrice}`)
+                                .replace('{paid}', `${isUSD ? '$' : 'S/'} ${netPrice}`)}
+                            </p>
+                          </div>
+                          <Switch
+                            id="discount-business"
+                            checked={!discountShared}
+                            onCheckedChange={(checked) => setDiscountShared(!checked)}
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
                 {/* Editing an invoiced reservation's price never touches the
                     comprobante already sent to SUNAT. */}
                 {editingExisting && liveInvoiceLabels.length > 0 && (

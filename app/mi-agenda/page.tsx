@@ -58,6 +58,8 @@ interface AgendaRow {
   price_usd: number | null
   tip_amount?: number | null
   worker_pay_pct?: number | null
+  discount_amount?: number | null
+  discount_shared?: boolean | null
   tip_worker_pct?: number | null
   pay_excludes_tax?: boolean | null
   off_hours?: boolean | null

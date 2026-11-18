@@ -737,6 +737,8 @@ export interface Database {
           off_hours: boolean
           worker_auto_assigned: boolean
           no_preference_pool: boolean
+          discount_amount: number
+          discount_shared: boolean
           worker_pay_pct: number | null
           tip_worker_pct: number | null
           pay_excludes_tax: boolean | null
@@ -775,6 +777,8 @@ export interface Database {
           off_hours?: boolean
           worker_auto_assigned?: boolean
           no_preference_pool?: boolean
+          discount_amount?: number
+          discount_shared?: boolean
           worker_pay_pct?: number | null
           tip_worker_pct?: number | null
           pay_excludes_tax?: boolean | null
@@ -813,6 +817,8 @@ export interface Database {
           off_hours?: boolean
           worker_auto_assigned?: boolean
           no_preference_pool?: boolean
+          discount_amount?: number
+          discount_shared?: boolean
           worker_pay_pct?: number | null
           tip_worker_pct?: number | null
           pay_excludes_tax?: boolean | null

@@ -215,6 +215,15 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'En los reportes por servicio, cada servicio cuenta con su propio precio.',
         ],
       },
+      { type: 'h', text: 'Descuentos' },
+      {
+        type: 'list',
+        items: [
+          'Debajo del precio toca **+ Agregar descuento** y escribe cuánto se descuenta. Verás **El cliente paga** el monto final.',
+          'Con **La barbería asume el descuento** activado (lo normal), el barbero cobra su comisión sobre el precio normal y los reportes de ingresos muestran lo que el cliente pagó. Si lo desactivas, el descuento se reparte con el barbero y cobra sobre lo que pagó el cliente.',
+          'Un servicio de cortesía es lo mismo: descuento por el precio completo con la barbería asumiéndolo. El cliente paga 0 y el barbero cobra su comisión.',
+        ],
+      },
       { type: 'h', text: 'Cuando la cita no cabe como el sistema la espera' },
       {
         type: 'list',

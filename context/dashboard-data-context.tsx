@@ -62,6 +62,10 @@ export interface Reservation {
    * lib/worker-pay.ts). Undefined until that script runs. */
   tip_amount?: number | null
   worker_pay_pct?: number | null
+  /** Discount already taken off `price` (scripts/121): price is what the
+   * client paid. Undefined until that script runs. */
+  discount_amount?: number | null
+  discount_shared?: boolean | null
   tip_worker_pct?: number | null
   pay_excludes_tax?: boolean | null
   /** Done outside the business's opening hours - changes the commission
