@@ -646,6 +646,7 @@ function SettingsPageInner() {
     no_preference_mode: 'auto' as 'auto' | 'auto_review' | 'pool',
     no_preference_column: false,
     last_slot_at_close: false,
+    public_slots_on_the_hour: false,
     booking_font: null as string | null,
     booking_accent_color: null as string | null,
     booking_bg_color: null as string | null,
@@ -731,6 +732,7 @@ function SettingsPageInner() {
         no_preference_mode: currentBusiness.no_preference_mode ?? 'auto',
         no_preference_column: currentBusiness.no_preference_column ?? false,
         last_slot_at_close: currentBusiness.last_slot_at_close ?? false,
+        public_slots_on_the_hour: currentBusiness.public_slots_on_the_hour ?? false,
         booking_font: currentBusiness.booking_font ?? null,
         booking_accent_color: currentBusiness.booking_accent_color ?? null,
         booking_bg_color: currentBusiness.booking_bg_color ?? null,
@@ -1316,6 +1318,9 @@ function SettingsPageInner() {
       // business row (scripts/119) but is edited next to the hours.
       if (business.last_slot_at_close !== (currentBusiness.last_slot_at_close ?? false)) {
         await updateBusiness(currentBusiness.id, { last_slot_at_close: business.last_slot_at_close })
+      }
+      if (business.public_slots_on_the_hour !== (currentBusiness.public_slots_on_the_hour ?? false)) {
+        await updateBusiness(currentBusiness.id, { public_slots_on_the_hour: business.public_slots_on_the_hour })
       }
 
       // Refresh the shared copy so the calendar/reservation validation picks
@@ -2428,6 +2433,20 @@ function SettingsPageInner() {
                       id="last-slot-at-close"
                       checked={business.last_slot_at_close}
                       onCheckedChange={(checked) => setBusiness({ ...business, last_slot_at_close: checked })}
+                    />
+                  </div>
+
+                  <div className="mt-3 flex items-start justify-between gap-3 rounded-lg border p-3">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="public-slots-on-the-hour" className="cursor-pointer">
+                        {t.settings.onTheHourLabel}
+                      </Label>
+                      <p className="text-xs text-muted-foreground">{t.settings.onTheHourDesc}</p>
+                    </div>
+                    <Switch
+                      id="public-slots-on-the-hour"
+                      checked={business.public_slots_on_the_hour}
+                      onCheckedChange={(checked) => setBusiness({ ...business, public_slots_on_the_hour: checked })}
                     />
                   </div>
 

@@ -91,6 +91,7 @@ interface Business {
   /** The closing time is the LAST START time (the appointment may end after
    * it) - scripts/119. Off: the appointment must end by closing time. */
   last_slot_at_close?: boolean
+  public_slots_on_the_hour?: boolean
   /** Client birthday emails - see scripts/071-client-birthdays.sql. The
    * discount is informational only (mentioned in the email, applied
    * manually by the business) - nothing here touches pricing/checkout. */

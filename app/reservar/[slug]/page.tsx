@@ -379,6 +379,9 @@ export default function PublicBookingPage() {
       // use the pool, everything below behaves exactly as before.
       const { data: rules } = await supabase.rpc('get_public_booking_rules', { p_business_id: business.id })
       const lastAtClose = !!(rules as { last_slot_at_close?: boolean } | null)?.last_slot_at_close
+      // scripts/120: some businesses only offer clients times on the hour.
+      const onTheHour = !!(rules as { public_slots_on_the_hour?: boolean } | null)?.public_slots_on_the_hour
+      const minuteFmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, minute: '2-digit' })
       setLastSlotAtClose(lastAtClose)
       let poolRanges: { start_time: string; end_time: string }[] = []
       let poolEnabled = false
@@ -419,8 +422,8 @@ export default function PublicBookingPage() {
           .sort((a, b) => a.getTime() - b.getTime())
       }
 
-      const slotsOn = (date: string, hours: PublicBusinessHour[], busy: Busy) =>
-        generateAvailableSlots(
+      const slotsOn = (date: string, hours: PublicBusinessHour[], busy: Busy) => {
+        const all = generateAvailableSlots(
           date,
           hours,
           effectiveDurationMinutes,
@@ -431,6 +434,8 @@ export default function PublicBookingPage() {
           false,
           lastAtClose
         )
+        return onTheHour ? all.filter((slot) => Number(minuteFmt.format(slot)) === 0) : all
+      }
 
       const byDay: Record<string, Date[]> = {}
       for (const date of days) {

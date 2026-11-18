@@ -377,6 +377,7 @@ export interface Database {
           no_preference_mode: 'auto' | 'auto_review' | 'pool'
           no_preference_column: boolean
           last_slot_at_close: boolean
+          public_slots_on_the_hour: boolean
           pay_excludes_tax: boolean
           workers_see_sales: boolean
           client_chooses_worker: boolean
@@ -424,6 +425,7 @@ export interface Database {
           no_preference_mode?: 'auto' | 'auto_review' | 'pool'
           no_preference_column?: boolean
           last_slot_at_close?: boolean
+          public_slots_on_the_hour?: boolean
           pay_excludes_tax?: boolean
           workers_see_sales?: boolean
           client_chooses_worker?: boolean
@@ -471,6 +473,7 @@ export interface Database {
           no_preference_mode?: 'auto' | 'auto_review' | 'pool'
           no_preference_column?: boolean
           last_slot_at_close?: boolean
+          public_slots_on_the_hour?: boolean
           pay_excludes_tax?: boolean
           workers_see_sales?: boolean
           client_chooses_worker?: boolean

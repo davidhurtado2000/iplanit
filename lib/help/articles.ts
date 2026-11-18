@@ -86,6 +86,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'Baja hasta **Horario de Atencion**. Activa los días que abres y elige la hora de apertura y cierre de cada uno.',
           'Si todos los días tienen el mismo horario, usa **Aplicar a todos los dias** y luego ajusta solo los distintos.',
           'Si en tu negocio el horario de cierre es también la **última hora a la que se puede empezar una cita** (por ejemplo, un barbero que cierra a las 8 y recibe a su último cliente a las 8:00), activa **La última cita puede empezar a la hora de cierre**.',
+          'Si quieres que tus clientes solo vean horas en punto en el link (11:00, 12:00, 1:00…), activa **Mostrar a los clientes solo horas en punto**. Desde el panel igual puedes agendar medias horas.',
           'Toca **Guardar cambios** debajo del horario.',
         ],
       },
