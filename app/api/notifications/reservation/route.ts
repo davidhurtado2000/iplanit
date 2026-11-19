@@ -1,8 +1,9 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getResendClient, getBusinessEmailsByReservation, NOTIFICATIONS_FROM_EMAIL } from '@/lib/email/resend'
 import { buildConfirmationEmail, buildCancellationEmail, buildApprovedEmail, type EmailLanguage } from '@/lib/email/templates'
 import type { Database } from '@/lib/supabase/types'
+import { notifyReservationEvent } from '@/lib/push/send'
 
 // Only { type, reservationId, language } come from the caller - every other
 // field in the email (client name/email, business name, service, timezone)
@@ -39,6 +40,13 @@ export async function POST(request: Request) {
     }
     if (!reservationId) {
       return NextResponse.json({ error: 'missing_reservation_id' }, { status: 400 })
+    }
+
+    // The client cancelled it themselves: tell the staff's phones. Does not
+    // depend on the client having an email, and it only announces a
+    // reservation that really is cancelled, once (see lib/push/send.ts).
+    if (type === 'cancellation' && body?.cancelledByClient === true) {
+      after(() => notifyReservationEvent(reservationId, 'cancelled'))
     }
 
     const supabase = createClient<Database>(

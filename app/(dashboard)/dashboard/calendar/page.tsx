@@ -12,6 +12,7 @@ import { LogoLoader } from '@/components/logo-loader'
 import { CalendarViewComponent, VISIT_BLOCK_COLOR } from '@/components/dashboard/calendar-view'
 import { ReservationModal } from '@/components/dashboard/reservation-modal'
 import { ToConfirmWorker } from '@/components/dashboard/to-confirm-worker'
+import { ShareAgendaDialog } from '@/components/dashboard/share-agenda-dialog'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { useBusinesses } from '@/hooks/use-businesses'
 import { useLanguage } from '@/context/language-context'
@@ -25,7 +26,7 @@ import { expandTimeBlocks } from '@/lib/time-blocks'
 import { groupExtras } from '@/lib/reservation-services'
 import { TimeBlockDialog, type TimeBlockPrefill } from '@/components/dashboard/time-block-dialog'
 import type { CalendarView } from '@/lib/types'
-import { Plus, CalendarDays, Clock, Building2, Eye, Loader2, History, Lock } from 'lucide-react'
+import { Plus, CalendarDays, Clock, Building2, Eye, Loader2, History, Lock, Share2 } from 'lucide-react'
 
 interface Reservation {
   id: string
@@ -533,6 +534,7 @@ function CalendarPageInner() {
   // Use the business timezone so "today" is correct regardless of UTC offset
   const tz = currentBusiness?.timezone || 'America/Lima'
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date())
+  const [shareAgendaOpen, setShareAgendaOpen] = useState(false)
   const todayReservations = effectiveReservations.filter((r) => {
     const localDate = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(r.start_time))
     return localDate === today && r.status !== 'cancelled'
@@ -540,6 +542,7 @@ function CalendarPageInner() {
 
   return (
     <div className="space-y-4 pb-20 lg:pb-6">
+      <ShareAgendaDialog open={shareAgendaOpen} onOpenChange={setShareAgendaOpen} />
       <PageHeader
         title={t.calendar.title}
         subtitle={t.calendar.subtitle}
@@ -563,6 +566,10 @@ function CalendarPageInner() {
               <History className="h-4 w-4" />
               <span className="hidden sm:inline">{t.calendar.newBackdated}</span>
               <span className="sm:hidden">{t.calendar.newBackdatedShort}</span>
+            </Button>
+            <Button onClick={() => setShareAgendaOpen(true)} size="sm" variant="outline" className="gap-2">
+              <Share2 className="h-4 w-4" />
+              <span className="hidden sm:inline">{t.calendar.shareAgenda}</span>
             </Button>
             {canManageBlocks && (
               <Button onClick={() => openBlockDialog(null, null)} size="sm" variant="outline" className="gap-2">

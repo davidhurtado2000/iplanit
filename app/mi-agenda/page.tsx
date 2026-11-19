@@ -1,5 +1,6 @@
 'use client'
 
+import { PushNotificationsCard } from '@/components/push-notifications-card'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -432,6 +433,8 @@ export default function WorkerAgendaPage() {
             <p className="truncate text-sm text-muted-foreground">{link.business_name}</p>
           </div>
         </div>
+
+        <PushNotificationsCard />
 
         {links.length > 1 && (
           <div className="flex flex-wrap gap-2">

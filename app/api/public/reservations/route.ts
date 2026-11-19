@@ -1,7 +1,8 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import { verifyTurnstileToken } from '@/lib/turnstile'
+import { notifyReservationEvent } from '@/lib/push/send'
 
 // The public booking page used to call create_public_reservation directly
 // from the browser via the anon key - which meant there was no way to see
@@ -85,6 +86,12 @@ export async function POST(request: Request) {
       console.error('[iplanit] Error creating public reservation:', error)
       return NextResponse.json({ error: 'server_error' }, { status: 500 })
     }
+
+    // Phone notice to the staff. Runs after the answer is sent, so it never
+    // slows the client down, and it swallows its own errors: the booking is
+    // already saved. Does nothing until the push keys and script 122 exist.
+    const reservationId = (data as { reservation_id?: string } | null)?.reservation_id
+    if (reservationId) after(() => notifyReservationEvent(reservationId, 'new'))
 
     return NextResponse.json(data)
   } catch (err) {

@@ -254,6 +254,28 @@ export const HELP_ARTICLES: HelpArticle[] = [
     related: ['completar-cita', 'reservas-recurrentes', 'estados-reserva', 'comisiones-propinas'],
   },
   {
+    slug: 'compartir-agenda',
+    category: 'reservas',
+    title: 'Compartir la agenda del día',
+    summary: 'Mandar la agenda completa por WhatsApp o en PDF, sin captura.',
+    audience: 'business',
+    link: { href: '/dashboard/calendar', label: 'Ir al Calendario' },
+    keywords: ['agenda', 'compartir', 'whatsapp', 'pdf', 'descargar', 'imprimir', 'captura', 'mañana', 'enviar agenda'],
+    blocks: [
+      {
+        type: 'steps',
+        items: [
+          'En **Calendario**, toca **Compartir agenda**.',
+          'Elige el **Día** (por defecto sale mañana; también están **Hoy** y **Mañana**) y, si quieres, un solo barbero.',
+          'Revisa el mensaje. Puedes editarlo antes de enviarlo.',
+          'Toca **WhatsApp** para mandarlo, **Copiar** para pegarlo donde quieras, o **Descargar PDF**.',
+        ],
+      },
+      { type: 'p', text: 'Sale la agenda completa, agrupada por barbero y ordenada por hora, sin las citas canceladas. Con **Descargar PDF** se abre la ventana de impresión: elige **Guardar como PDF**.' },
+    ],
+    related: ['crear-reserva'],
+  },
+  {
     slug: 'estados-reserva',
     category: 'reservas',
     title: 'Estados de una reserva',
@@ -759,6 +781,40 @@ export const HELP_ARTICLES: HelpArticle[] = [
       { type: 'p', text: 'Solo les llega a los clientes que tienen su cumpleaños y su correo guardados.' },
     ],
     related: ['clientes'],
+  },
+  {
+    slug: 'avisos-celular',
+    category: 'avisos',
+    title: 'Avisos en el celular',
+    summary: 'Un aviso cuando un cliente reserva o cancela, aunque la app esté cerrada.',
+    audience: 'business',
+    link: { href: '/dashboard/settings?tab=notifications', label: 'Ir a Configuración → Alertas' },
+    keywords: ['aviso', 'notificacion', 'push', 'alarma', 'celular', 'reserva nueva', 'cancelacion', 'activar'],
+    blocks: [
+      { type: 'p', text: 'Te llega un aviso al celular (o a la computadora) cuando un cliente reserva desde tu link o cancela su cita, aunque la app esté cerrada. Cada persona lo activa en su propio dispositivo.' },
+      {
+        type: 'steps',
+        items: [
+          'Abre iPlanit en el dispositivo donde quieres recibir los avisos.',
+          'Entra a **Configuración** → **Alertas** → **Avisos en el celular**.',
+          'Activa **Activar avisos en este dispositivo** y toca **Permitir** cuando el teléfono lo pida.',
+          'Toca **Probar**: te llega un aviso de prueba.',
+        ],
+      },
+      { type: 'h', text: 'En iPhone' },
+      { type: 'p', text: 'Primero instala iPlanit en la pantalla de inicio (**Compartir** → **Agregar a inicio**) y ábrela desde ese ícono. Los avisos solo funcionan así en iPhone. Necesitas iOS 16.4 o más reciente.' },
+      { type: 'h', text: 'Quién recibe qué' },
+      {
+        type: 'list',
+        items: [
+          'El dueño y el equipo reciben todas las reservas nuevas y cancelaciones del negocio.',
+          'Un barbero con cuenta recibe solo las que son suyas. Lo activa en **Mi agenda**.',
+          'Avisan las reservas hechas desde tu link y las cancelaciones de los clientes. Lo que tú mismo registras en el calendario no genera aviso.',
+        ],
+      },
+      { type: 'tip', text: 'Si no llegan, revisa que el teléfono no tenga el ahorro de batería muy estricto para el navegador o la app, y que los avisos del sitio no estén bloqueados en los ajustes.' },
+    ],
+    related: ['sonidos', 'instalar-app'],
   },
   {
     slug: 'sonidos',
