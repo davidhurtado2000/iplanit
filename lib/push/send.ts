@@ -2,7 +2,7 @@
 // hear about a reservation. Called from the app's own routes (never from the
 // database), and every failure is swallowed: a missing notice must never break
 // a booking.
-import webpush from 'web-push'
+import { sendNotification, setVapidDetails } from 'web-push'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { buildPushMessage, pickRecipients, type PushKind, type PushLanguage } from './message'
 
@@ -28,7 +28,7 @@ export function pushConfigured(): boolean {
 let vapidReady = false
 function ensureVapid() {
   if (vapidReady) return
-  webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC!, VAPID_PRIVATE!)
+  setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC!, VAPID_PRIVATE!)
   vapidReady = true
 }
 
@@ -65,7 +65,7 @@ export async function sendPushToUsers(
   await Promise.all(
     (data as SubscriptionRow[]).map(async (sub) => {
       try {
-        await webpush.sendNotification(
+        await sendNotification(
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
           JSON.stringify(payload),
           { TTL: 60 * 60, urgency: 'high' }
