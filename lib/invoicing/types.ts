@@ -19,6 +19,10 @@ export type InvoiceItem = {
   // SUNAT catálogo 07: 10 gravado, 20 exonerado, 30 inafecto.
   igvAffectationCode: '10' | '20' | '30'
   igvRate: number
+  // Discount on this line WITHOUT IGV, 2 decimals, taken off before the tax
+  // (SUNAT catalogo 53 code "00"). The line's subtotal/igv/total already
+  // include it; unitValue stays the price before the discount.
+  discount?: number
   subtotal: number
   igv: number
   total: number

@@ -355,6 +355,9 @@ export function ReservationModal({
   // barber's commission is still on the normal price.
   const [discountInput, setDiscountInput] = useState('')
   const [discountShared, setDiscountShared] = useState(false)
+  // The discount can be typed as an amount or as a percentage of the normal
+  // price; only the resulting amount is stored.
+  const [discountMode, setDiscountMode] = useState<'amount' | 'percent'>('amount')
   const [showDiscount, setShowDiscount] = useState(false)
   // Type the start time by hand instead of picking one of the free slots -
   // for a quick job squeezed into time the grid shows as taken.
@@ -575,6 +578,7 @@ export function ReservationModal({
       })
       setDiscountInput(Number(reservation.discount_amount ?? 0) > 0 ? String(reservation.discount_amount) : '')
       setDiscountShared(!!reservation.discount_shared)
+      setDiscountMode('amount')
       setShowDiscount(Number(reservation.discount_amount ?? 0) > 0)
       setSlotDate(toDateStr(reservation.start_time, tz))
       setOffHours(!!reservation.off_hours)
@@ -614,6 +618,7 @@ export function ReservationModal({
       })
       setDiscountInput('')
       setDiscountShared(false)
+      setDiscountMode('amount')
       setShowDiscount(false)
       setSlotDate(selectedDate || toDateStr(new Date().toISOString(), tz))
       setOffHours(false)
@@ -1521,8 +1526,11 @@ export function ReservationModal({
   // series (each session would need its own).
   const listPrice = Number(formData.price) || 0
   const discountAllowed = formData.type !== 'visit' && !repeatEnabled
+  const discountTyped = Math.max(Number(discountInput) || 0, 0)
   const discountAmount = discountAllowed
-    ? Math.round(Math.min(Math.max(Number(discountInput) || 0, 0), listPrice) * 100) / 100
+    ? Math.round(
+        Math.min(discountMode === 'percent' ? (listPrice * Math.min(discountTyped, 100)) / 100 : discountTyped, listPrice) * 100
+      ) / 100
     : 0
   const netPrice = Math.round((listPrice - discountAmount) * 100) / 100
 
@@ -2931,7 +2939,7 @@ export function ReservationModal({
                   <div className="space-y-2 rounded-lg border p-3">
                     <div className="flex items-center justify-between gap-2">
                       <Label htmlFor="reservation-discount" className="text-sm">
-                        {t.reservation.discountLabel} ({isUSD ? '$' : 'S/.'})
+                        {t.reservation.discountLabel} ({discountMode === 'percent' ? '%' : isUSD ? '$' : 'S/.'})
                       </Label>
                       <button
                         type="button"
@@ -2940,21 +2948,76 @@ export function ReservationModal({
                           setShowDiscount(false)
                           setDiscountInput('')
                           setDiscountShared(false)
+                          setDiscountMode('amount')
                         }}
                       >
                         {t.reservation.removeDiscount}
                       </button>
                     </div>
+                    <div className="inline-flex rounded-md border p-0.5 text-xs" role="group">
+                      {(['amount', 'percent'] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          aria-pressed={discountMode === mode}
+                          className={cn(
+                            'rounded px-3 py-1 font-medium',
+                            discountMode === mode ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'
+                          )}
+                          onClick={() => {
+                            if (mode === discountMode) return
+                            // Keep what was already worked out, in the new unit.
+                            setDiscountInput(
+                              discountAmount > 0
+                                ? String(
+                                    mode === 'percent'
+                                      ? Math.round((discountAmount / listPrice) * 10000) / 100
+                                      : discountAmount
+                                  )
+                                : ''
+                            )
+                            setDiscountMode(mode)
+                          }}
+                        >
+                          {mode === 'percent' ? '%' : isUSD ? '$' : 'S/'}
+                        </button>
+                      ))}
+                    </div>
                     <Input
                       id="reservation-discount"
                       type="number"
                       min={0}
-                      max={listPrice}
+                      max={discountMode === 'percent' ? 100 : listPrice}
                       step="any"
                       inputMode="decimal"
                       value={discountInput}
                       onChange={(e) => setDiscountInput(e.target.value)}
                     />
+                    <div className="flex flex-wrap gap-1.5">
+                      {[10, 15, 20, 50].map((pct) => (
+                        <button
+                          key={pct}
+                          type="button"
+                          className="rounded-full border px-2.5 py-0.5 text-xs hover:bg-muted"
+                          onClick={() => {
+                            setDiscountMode('percent')
+                            setDiscountInput(String(pct))
+                          }}
+                        >
+                          {pct}%
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        className="rounded-full border px-2.5 py-0.5 text-xs hover:bg-muted"
+                        onClick={() => {
+                          setDiscountMode('percent')
+                          setDiscountInput('100')
+                        }}
+                      >
+                        {t.reservation.discountFree}
+                      </button>
+                    </div>
                     {discountAmount > 0 && (
                       <>
                         <p className="text-sm font-medium">

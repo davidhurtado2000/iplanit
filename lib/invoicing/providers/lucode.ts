@@ -61,6 +61,11 @@ export function toLucodeBody(doc: ProviderDocument): Record<string, unknown> {
       porcentaje_igv: item.igvAffectationCode === '10' ? String(item.igvRate) : '0',
       codigo_tipo_afectacion_igv: item.igvAffectationCode,
       nombre_tributo: TRIBUTO[item.igvAffectationCode],
+      // Discount before tax (catalogo 53 "00"): valor_unitario stays the
+      // price before it and `total` already nets it.
+      ...(item.discount && item.discount > 0
+        ? { descuentos: [{ monto: item.discount.toFixed(2), codigo: '00' }] }
+        : {}),
     })),
     total: doc.total.toFixed(2),
   }

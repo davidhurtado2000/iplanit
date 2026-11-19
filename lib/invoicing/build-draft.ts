@@ -39,7 +39,9 @@ export type DraftInput = {
   currency: Currency
   // Needed only for USD comprobantes, to apply the S/ 700 rule.
   usdToPen?: number
-  reservation: { startTime: string; price: number | null }
+  // `discount` (reservations.discount_amount, scripts/121): already taken
+  // off `price`, in the same terms.
+  reservation: { startTime: string; price: number | null; discount?: number | null }
   serviceName: string
   client: DraftClient | null
   // Edits made in the preview before emitting (discounts, adjustments).
@@ -82,13 +84,25 @@ export function buildReservationDraft(input: DraftInput): DraftResult {
   const client = input.client
   const document = client ? toSunatDocument(client.documentType, client.documentNumber) : null
 
-  const description =
+  const discount = Math.max(Number(input.reservation.discount ?? 0), 0)
+  // Boletas carry the discount as its own SUNAT discount field. A factura
+  // goes out at the amount paid with the discount noted in the description
+  // (Lucode's docs only cover discounts on boletas).
+  const discountOnLine = kind === 'boleta' && discount > 0
+
+  const baseDescription =
     input.overrides?.description?.trim() ||
     `${input.serviceName} - ${limaDateDisplay(new Date(input.reservation.startTime))}`
+  const description =
+    kind === 'factura' && discount > 0 && !input.overrides?.description?.trim()
+      ? `${baseDescription} (descuento ${discount.toFixed(2)})`
+      : baseDescription
 
   const item = buildLine({
     description,
-    amount,
+    // With a line discount the line holds the price BEFORE it.
+    amount: discountOnLine ? round2(amount + discount) : amount,
+    discount: discountOnLine ? discount : undefined,
     pricesIncludeIgv: input.settings.pricesIncludeIgv,
     igvRate: input.settings.igvRate,
     affectation: input.settings.igvAffectation,

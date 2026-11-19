@@ -168,3 +168,51 @@ describe('credit notes', () => {
     })
   })
 })
+
+describe('discounts', () => {
+  it('a boleta carries the discount as its own line field (60 sold at 51)', () => {
+    const result = buildReservationDraft(input({ reservation: { startTime: '2026-11-06T20:00:00Z', price: 51, discount: 9 } }))
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const item = result.draft.items[0]
+    expect(result.draft.total).toBe(51) // what the client paid
+    expect(item.unitPrice).toBe(60) // the line keeps the normal price
+    expect(item.discount).toBe(7.63) // 9 without IGV
+    expect(result.draft.subtotal + result.draft.igv).toBeCloseTo(51, 2)
+  })
+
+  it('picks the discount value so the provider total matches to the cent', () => {
+    for (const [normal, discount] of [[60, 9], [50, 7], [35, 5], [80, 12.5], [45, 4.5], [100, 33.33]]) {
+      const line = buildLine({
+        description: 'x', amount: normal, discount, pricesIncludeIgv: true, igvRate: 18, affectation: 'gravado',
+      })
+      const providerTotal = Math.round((line.unitValue - (line.discount ?? 0)) * 1.18 * 100) / 100
+      expect(providerTotal).toBe(Math.round((normal - discount) * 100) / 100)
+      expect(line.total).toBe(Math.round((normal - discount) * 100) / 100)
+    }
+  })
+
+  it('without IGV in the price, the discount is taken off the base', () => {
+    const line = buildLine({
+      description: 'x', amount: 100, discount: 10, pricesIncludeIgv: false, igvRate: 18, affectation: 'gravado',
+    })
+    expect(line).toMatchObject({ discount: 10, subtotal: 90, igv: 16.2, total: 106.2 })
+  })
+
+  it('a line without a discount has no discount field', () => {
+    expect(buildLine({ description: 'x', amount: 50, pricesIncludeIgv: true, igvRate: 18, affectation: 'gravado' })).not.toHaveProperty('discount')
+  })
+
+  it('a factura goes out at the paid amount with the discount noted', () => {
+    const result = buildReservationDraft(
+      input({
+        kind: 'factura',
+        reservation: { startTime: '2026-11-06T20:00:00Z', price: 51, discount: 9 },
+        client: { name: 'ACME SAC', email: null, documentType: 'ruc', documentNumber: VALID_RUC, fiscalName: 'ACME SAC', fiscalAddress: null },
+      })
+    )
+    expect(result.ok && result.draft.total).toBe(51)
+    expect(result.ok && result.draft.items[0].discount).toBeUndefined()
+    expect(result.ok && result.draft.items[0].description).toContain('descuento 9.00')
+  })
+})

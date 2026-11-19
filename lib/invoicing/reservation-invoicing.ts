@@ -43,6 +43,7 @@ type ReservationData = {
   type: string
   price: number | null
   price_usd: number | null
+  discount_amount: number | null
   payment_method: string | null
   invoice_type_requested: 'boleta' | 'factura' | null
   service_id: string | null
@@ -51,7 +52,7 @@ type ReservationData = {
 export async function loadReservation(admin: SupabaseClient<Database>, businessId: string, reservationId: string) {
   const { data } = await admin
     .from('reservations')
-    .select('id, business_id, client_id, start_time, status, type, price, price_usd, payment_method, invoice_type_requested, service_id')
+    .select('id, business_id, client_id, start_time, status, type, price, price_usd, discount_amount, payment_method, invoice_type_requested, service_id')
     .eq('id', reservationId)
     .eq('business_id', businessId)
     .maybeSingle()
@@ -113,6 +114,7 @@ export async function buildDraftForReservation(opts: {
     reservation: {
       startTime: reservation.start_time,
       price,
+      discount: reservation.discount_amount,
     },
     serviceName: serviceNameLabel,
     client: client

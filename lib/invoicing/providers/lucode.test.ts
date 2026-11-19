@@ -58,6 +58,15 @@ describe('toLucodeBody', () => {
     })
   })
 
+  it('sends a line discount as descuentos with code 00', () => {
+    const item = { ...boleta.items[0], unitValue: 60 / 1.18, unitPrice: 60, discount: 7.63, subtotal: 43.22, igv: 7.78, total: 51 }
+    const body = toLucodeBody({ ...boleta, items: [item], subtotal: 43.22, igv: 7.78, total: 51 })
+    const sent = (body.items as Record<string, unknown>[])[0]
+    expect(sent.descuentos).toEqual([{ monto: '7.63', codigo: '00' }])
+    expect(sent.valor_unitario).toBe((60 / 1.18).toFixed(6))
+    expect(body.total).toBe('51.00')
+  })
+
   it('adds the due date to a factura and maps exonerado items', () => {
     const factura: ProviderDocument = {
       ...boleta,
