@@ -273,6 +273,10 @@ function CalendarPageInner() {
   const [blockDialogOpen, setBlockDialogOpen] = useState(false)
   const [blockEditId, setBlockEditId] = useState<string | null>(null)
   const [blockPrefill, setBlockPrefill] = useState<TimeBlockPrefill | null>(null)
+  // "Compartir agenda" dialog. A hook, so it lives up here with the others,
+  // ABOVE the loading/no-business early returns (a hook below them changes the
+  // hook count when the data finishes loading and crashes the page: React #310).
+  const [shareAgendaOpen, setShareAgendaOpen] = useState(false)
   const openBlockDialog = (editId: string | null, prefill: TimeBlockPrefill | null) => {
     setBlockEditId(editId)
     setBlockPrefill(prefill)
@@ -534,7 +538,6 @@ function CalendarPageInner() {
   // Use the business timezone so "today" is correct regardless of UTC offset
   const tz = currentBusiness?.timezone || 'America/Lima'
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date())
-  const [shareAgendaOpen, setShareAgendaOpen] = useState(false)
   const todayReservations = effectiveReservations.filter((r) => {
     const localDate = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(r.start_time))
     return localDate === today && r.status !== 'cancelled'
