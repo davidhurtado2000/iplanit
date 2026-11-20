@@ -17,7 +17,7 @@ self.addEventListener('push', (event) => {
     self.registration.showNotification(data.title || 'iPlanit', {
       body: data.body || '',
       icon: '/web-app-manifest-192x192.png',
-      badge: '/favicon-96x96.png',
+      badge: '/notification-badge.png',
       tag: data.tag || undefined,
       data: { url: data.url || '/dashboard/calendar' },
     })

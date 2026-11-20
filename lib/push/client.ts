@@ -24,6 +24,15 @@ function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   return out
 }
 
+export type PushPlatform = 'ios' | 'android' | 'desktop'
+
+/** Which kind of device this is, to show the tips that apply to it. Browser only. */
+export function detectPlatform(): PushPlatform {
+  if (typeof navigator === 'undefined') return 'desktop'
+  if (isIos()) return 'ios'
+  return /Android/i.test(navigator.userAgent) ? 'android' : 'desktop'
+}
+
 function isIos(): boolean {
   const ua = navigator.userAgent
   return /iPad|iPhone|iPod/.test(ua) || (ua.includes('Mac') && navigator.maxTouchPoints > 1)

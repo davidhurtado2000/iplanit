@@ -1,5 +1,8 @@
 'use client'
 
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { BellRing } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -7,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { useLanguage } from '@/context/language-context'
-import { usePushNotifications } from '@/lib/push/client'
+import { detectPlatform, usePushNotifications, type PushPlatform } from '@/lib/push/client'
 
 const STRINGS = {
   es: {
@@ -25,6 +28,28 @@ const STRINGS = {
     deniedToast: 'No diste permiso para los avisos.',
     unsupported: 'Este navegador no permite avisos. Usa Chrome (Android o computadora) o instala la app en tu iPhone.',
     iosInstall: 'En iPhone, primero instala iPlanit en la pantalla de inicio (Compartir → Agregar a inicio) y ábrela desde ahí. Después vuelve aquí para activar los avisos.',
+    tipsTitle: '¿No te llega o suena bajo?',
+    tipsSound: 'El sonido es el de tu teléfono, no el de iPlanit: se cambia en los ajustes de notificaciones del teléfono.',
+    tipsMore: 'Ver la guía completa',
+    tips: {
+      android: [
+        'Quita el modo "No molestar" y sube el volumen de notificaciones.',
+        'En los ajustes del teléfono, revisa que las notificaciones de Chrome (o de iPlanit, si la instalaste) estén permitidas.',
+        'Si el teléfono tiene ahorro de batería, saca a Chrome de la lista de apps restringidas.',
+        'Toca Probar: si llega el aviso de prueba, todo está bien.',
+      ],
+      ios: [
+        'Abre iPlanit siempre desde su ícono en la pantalla de inicio, no desde Safari.',
+        'En Ajustes → Notificaciones → iPlanit, deja las notificaciones permitidas y con sonido.',
+        'Revisa que no esté activo un modo de Concentración o No molestar.',
+        'Toca Probar: si llega el aviso de prueba, todo está bien.',
+      ],
+      desktop: [
+        'Revisa que el navegador tenga permitidas las notificaciones para este sitio (el candado junto a la dirección).',
+        'Revisa que Windows o macOS no tengan activado No molestar o el Asistente de concentración.',
+        'Toca Probar: si llega el aviso de prueba, todo está bien.',
+      ],
+    },
   },
   en: {
     title: 'Phone notifications',
@@ -41,6 +66,28 @@ const STRINGS = {
     deniedToast: 'Notification permission was not granted.',
     unsupported: 'This browser does not support notifications. Use Chrome (Android or computer) or install the app on your iPhone.',
     iosInstall: 'On iPhone, first install iPlanit on your home screen (Share → Add to Home Screen) and open it from there. Then come back here to turn notifications on.',
+    tipsTitle: "Not arriving, or too quiet?",
+    tipsSound: "The sound is your phone's, not iPlanit's: change it in the phone's notification settings.",
+    tipsMore: 'See the full guide',
+    tips: {
+      android: [
+        'Turn off Do Not Disturb and raise the notification volume.',
+        "In the phone settings, make sure Chrome's notifications (or iPlanit's, if you installed it) are allowed.",
+        'If the phone has battery saver, take Chrome off the restricted apps list.',
+        'Tap Test: if the test notice arrives, everything is fine.',
+      ],
+      ios: [
+        'Always open iPlanit from its home screen icon, not from Safari.',
+        'In Settings → Notifications → iPlanit, keep notifications allowed and with sound.',
+        'Check that no Focus mode or Do Not Disturb is on.',
+        'Tap Test: if the test notice arrives, everything is fine.',
+      ],
+      desktop: [
+        "Check that the browser allows notifications for this site (the padlock next to the address).",
+        'Check that Windows or macOS do not have Do Not Disturb or Focus assist on.',
+        'Tap Test: if the test notice arrives, everything is fine.',
+      ],
+    },
   },
 }
 
@@ -48,6 +95,11 @@ export function PushNotificationsCard() {
   const { language } = useLanguage()
   const s = STRINGS[language === 'en' ? 'en' : 'es']
   const { state, busy, enable, disable } = usePushNotifications()
+  const pathname = usePathname()
+  // Read after mount: the device type does not exist while rendering on the server.
+  const [platform, setPlatform] = useState<PushPlatform>('desktop')
+  useEffect(() => setPlatform(detectPlatform()), [])
+  const helpHref = pathname?.startsWith('/mi-agenda') ? '/mi-agenda/ayuda' : '/dashboard/ayuda/avisos-celular'
 
   // No key on this deployment: the feature is simply not offered.
   if (state === 'not-configured') return null
@@ -106,6 +158,19 @@ export function PushNotificationsCard() {
           </Button>
         </div>
         {message && <p className="text-sm text-amber-700 dark:text-amber-400">{message}</p>}
+
+        <details className="group rounded-lg border px-3 py-2 text-sm">
+          <summary className="cursor-pointer select-none font-medium">{s.tipsTitle}</summary>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+            {s.tips[platform].map((tip) => (
+              <li key={tip}>{tip}</li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-muted-foreground">{s.tipsSound}</p>
+          <Link href={helpHref} className="mt-2 inline-block text-xs text-primary hover:underline">
+            {s.tipsMore}
+          </Link>
+        </details>
       </CardContent>
     </Card>
   )

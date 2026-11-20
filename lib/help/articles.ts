@@ -1147,6 +1147,49 @@ export const HELP_ARTICLES: HelpArticle[] = [
     related: ['instalar-app-trabajador', 'tu-ganancia'],
   },
   {
+    slug: 'avisos-celular-trabajador',
+    category: 'mi-agenda',
+    title: 'Avisos de tus citas en el celular',
+    summary: 'Un aviso cuando alguien reserva o cancela contigo.',
+    audience: 'worker',
+    link: { href: '/mi-agenda', label: 'Ir a mi agenda' },
+    keywords: ['aviso', 'notificacion', 'push', 'alarma', 'celular', 'reserva', 'sonido'],
+    blocks: [
+      { type: 'p', text: 'Te llega un aviso al celular cuando un cliente reserva contigo o cancela su cita, aunque la app esté cerrada. Solo avisa de **tus** citas.' },
+      { type: 'h', text: 'En Android (Chrome)' },
+      {
+        type: 'steps',
+        items: [
+          'Abre **iplanit.io/mi-agenda** en Chrome e inicia sesión.',
+          'Arriba, en **Avisos en el celular**, activa **Activar avisos en este dispositivo**.',
+          'Toca **Permitir** cuando el teléfono lo pida.',
+          'Toca **Probar**: debe llegarte un aviso.',
+        ],
+      },
+      { type: 'h', text: 'En iPhone' },
+      {
+        type: 'steps',
+        items: [
+          'Necesitas iOS 16.4 o más nuevo.',
+          'Abre **iplanit.io/mi-agenda** en **Safari** e inicia sesión.',
+          'Toca **Compartir** → **Agregar a pantalla de inicio**.',
+          'Cierra Safari y abre iPlanit **desde el ícono nuevo**. En iPhone los avisos solo funcionan así.',
+          'Activa **Activar avisos en este dispositivo**, toca **Permitir** y luego **Probar**.',
+        ],
+      },
+      { type: 'h', text: 'Si no te llega o suena bajo' },
+      {
+        type: 'list',
+        items: [
+          'Quita el modo **No molestar** (o **Concentración** en iPhone) y sube el volumen de notificaciones.',
+          'En los ajustes del teléfono, deja permitidas las notificaciones de Chrome o de iPlanit.',
+          'Si tu teléfono tiene ahorro de batería, saca a Chrome de las apps restringidas.',
+        ],
+      },
+      { type: 'tip', text: 'El sonido es el de tu teléfono, no el de iPlanit. Para cambiarlo, entra a los ajustes de notificaciones del teléfono.' },
+    ],
+  },
+  {
     slug: 'tu-ganancia',
     category: 'mi-agenda',
     title: 'Tu ganancia',

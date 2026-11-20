@@ -113,7 +113,7 @@ export async function notifyReservationEvent(reservationId: string, kind: PushKi
 
     const [{ data: business }, { data: client }, { data: service }, { data: extraRows }, { data: members }, { data: worker }] =
       await Promise.all([
-        admin.from('businesses').select('owner_id, timezone, language').eq('id', r.business_id).maybeSingle(),
+        admin.from('businesses').select('owner_id, timezone, country').eq('id', r.business_id).maybeSingle(),
         admin.from('clients').select('name').eq('id', r.client_id).maybeSingle(),
         r.service_id ? admin.from('services').select('name').eq('id', r.service_id).maybeSingle() : Promise.resolve({ data: null }),
         admin.from('reservation_services').select('service_id, position').eq('reservation_id', reservationId).order('position'),
@@ -130,28 +130,43 @@ export async function notifyReservationEvent(reservationId: string, kind: PushKi
       if (names.length > 0) serviceName = [serviceName, ...names].join(' + ')
     }
 
-    const language: PushLanguage = business.language === 'en' ? 'en' : 'es'
-    const message = buildPushMessage({
-      kind,
-      language,
-      clientName: (client as { name?: string } | null)?.name ?? '-',
-      serviceName: r.type === 'visit' ? null : serviceName,
-      startTime: r.start_time,
-      timezone: business.timezone || 'America/Lima',
-      workerName: (worker as { name?: string } | null)?.name ?? null,
-      pending: kind === 'new' && r.status === 'pending',
-    })
-
     const recipients = pickRecipients({
       ownerId: business.owner_id,
       memberIds: ((members ?? []) as { user_id: string }[]).map((m) => m.user_id),
       workerUserId: (worker as { user_id?: string | null } | null)?.user_id ?? null,
     })
+
+    // Each person hears it in the language of their own profile (businesses
+    // have no language column); without one, by the business country.
+    const everyone = [...recipients.staff, ...recipients.worker]
+    const { data: profiles } = everyone.length
+      ? await admin.from('profiles').select('id, language').in('id', everyone)
+      : { data: [] as { id: string; language: string | null }[] }
+    const fallback: PushLanguage = business.country === 'US' ? 'en' : 'es'
+    const languageOf = (userId: string): PushLanguage => {
+      const lang = (profiles as { id: string; language: string | null }[] | null)?.find((p) => p.id === userId)?.language
+      return lang === 'en' ? 'en' : lang === 'es' ? 'es' : fallback
+    }
+
     const tag = `reservation-${reservationId}-${kind}`
-    await Promise.all([
-      sendPushToUsers(admin, recipients.staff, { ...message, url: '/dashboard/calendar', tag }),
-      sendPushToUsers(admin, recipients.worker, { ...message, url: '/mi-agenda', tag }),
-    ])
+    const sendGroup = async (userIds: string[], url: string) => {
+      for (const language of ['es', 'en'] as PushLanguage[]) {
+        const ids = userIds.filter((id) => languageOf(id) === language)
+        if (ids.length === 0) continue
+        const message = buildPushMessage({
+          kind,
+          language,
+          clientName: (client as { name?: string } | null)?.name ?? '-',
+          serviceName: r.type === 'visit' ? null : serviceName,
+          startTime: r.start_time,
+          timezone: business.timezone || 'America/Lima',
+          workerName: (worker as { name?: string } | null)?.name ?? null,
+          pending: kind === 'new' && r.status === 'pending',
+        })
+        await sendPushToUsers(admin, ids, { ...message, url, tag })
+      }
+    }
+    await Promise.all([sendGroup(recipients.staff, '/dashboard/calendar'), sendGroup(recipients.worker, '/mi-agenda')])
   } catch (err) {
     console.error('[iplanit] reservation push failed:', err)
   }
