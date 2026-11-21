@@ -777,6 +777,14 @@ function DayView({
   const isClosed = businessHours ? isDayClosed(dateStr, businessHours, timezone) : false
   const dayHoursRange = businessHours ? getDayHoursRange(dateStr, businessHours, timezone) : null
 
+  // "Now" for the current-time line; refreshed every 30s so it creeps down
+  // the grid on its own. Kept above any early return (rules of hooks).
+  const [nowTick, setNowTick] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(Date.now()), 30_000)
+    return () => clearInterval(id)
+  }, [])
+
   const dayRes = reservations.filter(
     r => toDateStr(r.start_time, timezone) === dateStr && r.status !== 'cancelled'
   )
@@ -1336,6 +1344,27 @@ function DayView({
                 </div>
               ))}
             </div>
+
+            {/* Current-time line: only on today, only inside the rendered
+                range. pointer-events-none so it never blocks clicks/drags. */}
+            {(() => {
+              if (toDateStr(new Date(nowTick), timezone) !== dateStr) return null
+              const { h, m } = getTzHourMin(new Date(nowTick).toISOString(), timezone)
+              const mins = h * 60 + m
+              if (mins < effStartHour * 60 || mins > effEndHour * 60) return null
+              const top = GRID_TOP_PAD + (mins - effStartHour * 60) * (HOUR_HEIGHT / 60)
+              return (
+                <div className="pointer-events-none absolute inset-x-0 z-30" style={{ top }}>
+                  <div className="absolute -translate-y-1/2 left-0 flex items-center justify-end pr-1" style={{ width: GUTTER }}>
+                    <span className="rounded bg-red-500 px-1 py-0.5 text-[10px] font-semibold leading-none text-white shadow-sm">
+                      {String(h).padStart(2, '0')}:{String(m).padStart(2, '0')}
+                    </span>
+                  </div>
+                  <div className="absolute right-0 h-0.5 -translate-y-1/2 bg-red-500/80" style={{ left: GUTTER }} />
+                  <div className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-red-500 ring-2 ring-background" style={{ left: GUTTER }} />
+                </div>
+              )
+            })()}
 
             {/* Resource columns */}
             {columns.map(col => {

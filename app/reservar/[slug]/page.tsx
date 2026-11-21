@@ -231,13 +231,10 @@ export default function PublicBookingPage() {
   const slots = (selectedDate && slotsByDay[selectedDate]) || []
 
   const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '', documentNumber: '', notes: '' })
-  // "Option A" from the client-accounts conversation - no login, just
-  // recognize a returning client earlier (while they're still typing)
-  // instead of only silently matching them server-side after they submit.
-  const [clientMatch, setClientMatch] = useState<{ name: string; email: string | null; phone: string | null } | null>(
-    null
-  )
-  const [matchDismissed, setMatchDismissed] = useState(false)
+  // (The "are you Juan?" autofill that used to live here was removed on
+  // 2026-11-20: it exposed a client's name, email and phone to anyone who typed
+  // a phone or email. The booking still recognizes returning clients on the
+  // server when it is submitted.)
   const [needsParking, setNeedsParking] = useState(false)
   const [parkingAvailability, setParkingAvailability] = useState<'checking' | 'available' | 'unavailable' | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -478,65 +475,6 @@ export default function PublicBookingPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, business, selectedService, selectedResourceId, selectedWorkerId, workers, visibleMonth, businessHours, effectiveDurationMinutes])
-
-  // "Option A" from the client-accounts conversation (no login, no
-  // accounts) - create_public_reservation already recognizes a returning
-  // client by email/phone and backfills their record on submit
-  // (scripts/064/072/098), but only finds out AFTER they've retyped
-  // everything. This offers the same match earlier, while they're still
-  // typing, so they can just confirm it instead. Never overrides a name
-  // they've already typed themselves - only looks once the name field is
-  // still empty, and only once the email/phone they typed looks real
-  // enough to be worth a lookup (not on every keystroke).
-  useEffect(() => {
-    if (step !== 'contact' || !business) return
-    if (contactForm.name.trim() !== '') {
-      setClientMatch(null)
-      return
-    }
-
-    const email = contactForm.email.trim()
-    const phone = contactForm.phone.trim()
-    const emailLooksReal = email.includes('@') && email.includes('.')
-    const phoneLooksReal = phone.replace(/\D/g, '').length >= 7
-    if (!emailLooksReal && !phoneLooksReal) {
-      setClientMatch(null)
-      return
-    }
-
-    let cancelled = false
-    const timer = setTimeout(async () => {
-      const { data } = await supabase.rpc('find_public_client_match', {
-        p_slug: slug,
-        p_email: emailLooksReal ? email : null,
-        p_phone: phoneLooksReal ? phone : null,
-      })
-      if (cancelled) return
-      const result = data as { match: boolean; name?: string; email?: string | null; phone?: string | null } | null
-      if (result?.match && result.name) {
-        setClientMatch({ name: result.name, email: result.email ?? null, phone: result.phone ?? null })
-        setMatchDismissed(false)
-      } else {
-        setClientMatch(null)
-      }
-    }, 600)
-
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-    }
-  }, [step, business, slug, contactForm.name, contactForm.email, contactForm.phone])
-
-  const handleConfirmClientMatch = () => {
-    if (!clientMatch) return
-    setContactForm((prev) => ({
-      ...prev,
-      name: clientMatch.name,
-      email: prev.email || clientMatch.email || '',
-      phone: prev.phone || clientMatch.phone || '',
-    }))
-    setMatchDismissed(true)
-  }
 
   // Checks parking as soon as a slot is picked, instead of only finding out
   // after the client fills the whole contact form and hits submit -
@@ -1323,33 +1261,6 @@ export default function PublicBookingPage() {
 
                   {submitError && (
                     <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{submitError}</div>
-                  )}
-
-                  {clientMatch && !matchDismissed && (
-                    <div className="flex items-start gap-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
-                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                      <div className="flex-1 text-sm">
-                        <p className="text-foreground">
-                          {tr.returningClientPrompt.replace('{name}', clientMatch.name)}
-                        </p>
-                        <div className="mt-2 flex gap-2">
-                          <Button type="button" size="sm" onClick={handleConfirmClientMatch}>
-                            {tr.returningClientConfirm}
-                          </Button>
-                          <Button type="button" size="sm" variant="ghost" onClick={() => setMatchDismissed(true)}>
-                            {tr.returningClientDeny}
-                          </Button>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setMatchDismissed(true)}
-                        className="shrink-0 text-muted-foreground hover:text-foreground"
-                        aria-label={tr.returningClientDeny}
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
                   )}
 
                   <div className="space-y-2">

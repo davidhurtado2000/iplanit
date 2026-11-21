@@ -8,6 +8,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['**/*.test.ts'],
-    exclude: ['node_modules/**', '.next/**'],
+    // tests-sql/ runs the database scripts on a local Postgres; by hand, see vitest.sql.config.ts
+    exclude: ['node_modules/**', '.next/**', 'tests-sql/**'],
   },
 })
